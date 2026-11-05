@@ -31,6 +31,10 @@ function sharedExpoRows(): string[] {
  * defaults, plus the shared rows and the runner port, whose export list is the
  * manifest's `testPorts` row, whether or not a shared test uses each name yet.
  *
+ * Ignored file: `scripts/sync-check.d.mts` types the sync check for a caller
+ * that imports it. The tests spawn the script, because Jest's Babel cannot
+ * import a file that uses `import.meta`, so nothing imports the types yet.
+ *
  * Ignored dependencies, none of them dead code:
  * - `@tanstack/react-form`, `expo-secure-store`, `react-native-mmkv` and
  *   `react-native-nitro-modules` are the stack's libraries, installed with the
@@ -41,6 +45,7 @@ function sharedExpoRows(): string[] {
  */
 const config: KnipConfig = {
   entry: [...sharedExpoRows(), ...Object.keys(manifest.testPorts ?? {})],
+  ignore: ['scripts/sync-check.d.mts'],
   ignoreDependencies: [
     '@tanstack/react-form',
     'expo-secure-store',

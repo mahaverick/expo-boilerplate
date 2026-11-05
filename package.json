@@ -26,10 +26,11 @@
     "test": "jest --testNamePattern=\"^(?!user-facing copy finds the copy it guards$)\"",
     "test:coverage": "jest --coverage --testNamePattern=\"^(?!user-facing copy finds the copy it guards$)\"",
     "lint:docs": "node scripts/lint-docs.mjs",
+    "sync:check": "node scripts/sync-check.mjs",
     "expo:doctor": "expo-doctor",
     "export": "expo export --platform all --output-dir dist",
     "prepare": "vp config --hooks --no-agent",
-    "gate": "pnpm check && pnpm typecheck && pnpm lint:docs && pnpm knip && pnpm expo:doctor && pnpm test:coverage && pnpm export",
+    "gate": "pnpm check && pnpm typecheck && pnpm lint:docs && pnpm sync:check && pnpm knip && pnpm expo:doctor && pnpm test:coverage && pnpm export",
     "push": "bash scripts/push.sh"
   },
   "dependencies": {
@@ -61,6 +62,8 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
     "@eslint/compat": "^2.1.1",
     "@jest/globals": "^30.5.2",
     "@react-native/jest-preset": "^0.88.1",
