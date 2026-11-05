@@ -266,6 +266,11 @@ export default defineConfig({
         rules: { 'typescript/no-require-imports': 'off' },
       },
       {
+        // A polyfill that loads only where the engine lacks the API: an import is hoisted and always loads, and import() is async and races the first render.
+        files: ['src/polyfills.ts'],
+        rules: { 'typescript/no-require-imports': 'off' },
+      },
+      {
         files: ['scripts/**/*.mjs', 'scripts/**/*.d.mts'],
         rules: typeAwareRulesOff,
         env: { node: true },

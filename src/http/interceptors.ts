@@ -1,0 +1,219 @@
+import {
+  AxiosError,
+  type AxiosInstance,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from 'axios'
+import { isAuthVerdict } from '@/http/auth-verdict'
+import { createTraceparent } from '@/http/traceparent'
+import { getAnalyticsSessionIdFor } from '@/observability/telemetry'
+import { useAuthStore } from '@/states/auth.store'
+import { ACCESS_TOKEN_EXPIRED, REAUTH_REQUIRED, type ApiErrorBody } from '@/types/api.types'
+
+declare module 'axios' {
+  /** Per-request options that this module's response interceptor reads. */
+  interface AxiosRequestConfig {
+    /**
+     * Opts a request out of both the 401 retry path and the 401 verdict path.
+     * Set on the two requests the refresh core (refresh-core.ts) makes itself, on POST
+     * /auth/logout so that useLogout alone handles its failure, and on the
+     * invitation preview, which is asked as a stranger. Without it, a
+     * 401 carrying ACCESS_TOKEN_EXPIRED on one of the refresh core's requests
+     * sends the response interceptor into ensureSession(), which returns the
+     * promise awaiting that very request: a self-wait that never settles and
+     * never logs out.
+     *
+     * /profile is behind requireAuth, which emits that code, so this is
+     * reachable when a freshly minted token is judged expired (clock skew, a
+     * near-zero TTL). /auth/refresh does not emit it, but is marked too: it is
+     * rate limited, so recursing into it is wrong regardless.
+     */
+    skipAuthRetry?: boolean
+    /** Set by the response interceptor so a request is replayed at most once. */
+    _retried?: boolean
+  }
+}
+
+/**
+ * Rejects a 2xx response whose body is not the JSON object every endpoint
+ * promises. Axios parses JSON silently: a 200 carrying an empty body or an
+ * HTML page (a poisoned cache entry, a misrouted proxy response) resolves with
+ * `response.data` as a raw string, and `unwrap()` then yields `undefined` far
+ * from the request. Registered as the third response interceptor, after the blob decoder and the 401 handling, so
+ * silent-refresh replays pass through it too. A responseType other than
+ * `json` opts out, and an empty body under a non-JSON content-type passes as
+ * a no-content response.
+ */
+function rejectMalformedJsonResponse(response: AxiosResponse): AxiosResponse {
+  const responseType = response.config.responseType
+  if (responseType && responseType !== 'json') return response
+
+  if (typeof response.data === 'object' && response.data !== null) return response
+
+  const contentType = String(response.headers['content-type'] ?? '')
+  const declaresJson = contentType.includes('json')
+
+  if (!declaresJson && (response.data === '' || response.data === undefined)) return response
+
+  const method = response.config.method?.toUpperCase() ?? 'GET'
+  throw new AxiosError(
+    `Malformed JSON response body for ${method} ${response.config.url} — ` +
+      (declaresJson
+        ? 'content-type is JSON but the body did not parse to an object '
+        : `expected JSON but got content-type "${contentType}" `) +
+      '(corrupted or poisoned browser cache entry, or a misrouted response)',
+    'ERR_MALFORMED_RESPONSE',
+    response.config,
+    response.request,
+    response
+  )
+}
+
+/**
+ * Parses a JSON error body that arrived as a Blob. A request made with
+ * `responseType: 'blob'` gets its error body as a Blob too, so `code` and
+ * `message` are unreadable to the 401 handling and to `codeFrom`. This
+ * replaces `error.response.data` with the parsed object and rejects with the
+ * same error. Anything else (not an AxiosError, not a JSON Blob, a body that
+ * does not parse) rejects unchanged.
+ */
+async function decodeBlobErrorBody(error: unknown): Promise<never> {
+  if (error instanceof AxiosError && error.response) {
+    const data: unknown = error.response.data
+    if (data instanceof Blob && data.type.includes('json')) {
+      try {
+        const parsed: unknown = JSON.parse(await data.text())
+        error.response.data = parsed
+      } catch {
+        // Leave the Blob in place: the caller still gets the original failure.
+      }
+    }
+  }
+  throw error
+}
+
+/**
+ * What the interceptor chain needs from the app it runs in. Each app's
+ * `client.ts` supplies them, so this file reads no browser global and imports
+ * no per-app module.
+ */
+export interface InterceptorPorts {
+  /**
+   * Whether `config` is a call to this app's own API. Only those carry the
+   * trace and analytics-session headers; an absolute URL to anywhere else
+   * never does.
+   */
+  isApiRequest(config: InternalAxiosRequestConfig): boolean
+  /** The shared refresh: resolves with the new access token. */
+  ensureSession(): Promise<string>
+  /** Ends the session after a 401 verdict: signs the store out, tells the other tabs, and leaves for sign-in. */
+  signOut(): void
+  /** Leaves for sign-in after a refresh that failed with an auth verdict. */
+  redirectToLogin(): void
+}
+
+/**
+ * Sets `traceparent` on every API request that has none (a replay keeps its
+ * original), and `X-POSTHOG-SESSION-ID` when analytics has a session to link
+ * and PostHog's person is the one making the request (anonymous, or the
+ * signed-in user), so the server's span and its analytics events join the
+ * browser's replay and never another person's.
+ */
+function addTraceHeaders(
+  ports: InterceptorPorts,
+  config: InternalAxiosRequestConfig
+): InternalAxiosRequestConfig {
+  if (!ports.isApiRequest(config)) return config
+  if (!config.headers.has('traceparent')) config.headers.set('traceparent', createTraceparent())
+  const sessionId = getAnalyticsSessionIdFor(useAuthStore.getState().user?.id ?? null)
+  if (sessionId) config.headers.set('X-POSTHOG-SESSION-ID', sessionId)
+  return config
+}
+
+/**
+ * Installs `addTraceHeaders`, the bearer-token request interceptor, `decodeBlobErrorBody`,
+ * the 401 handling and `rejectMalformedJsonResponse` on `client`, with the
+ * app's side reached through `ports`.
+ *
+ * `decodeBlobErrorBody` is registered first so the 401 handling and every
+ * interceptor after it read a blob request's JSON error body as they would a
+ * JSON request's.
+ *
+ * An Authorization header already on a request wins over the store's token:
+ * the refresh core sets one on its /profile call while the store still holds
+ * the stale token, and the replay relies on the same precedence. So anything
+ * that sets a default Authorization header (either case) shadows the store's
+ * token on every request; the store is the only source of the bearer token.
+ *
+ * A non-expiry 401 on a request that carried a token is the server's verdict
+ * on it and signs every tab out (`ports.signOut`). An ACCESS_TOKEN_EXPIRED 401 refreshes once
+ * and replays. When that refresh fails, the user is sent to /login only on an
+ * auth verdict (`isAuthVerdict`): any other refresh failure leaves the session
+ * intact, and the replay sits outside the catch so its own failure rejects
+ * with its own error.
+ *
+ * A REAUTH_REQUIRED 401 is neither a verdict nor an expiry: the session is
+ * fine but signed in too long ago for the action asked, so it
+ * rejects untouched, with no refresh and no sign-out, for the caller to handle.
+ */
+export function installInterceptors(client: AxiosInstance, ports: InterceptorPorts): void {
+  client.interceptors.request.use((config) => addTraceHeaders(ports, config))
+  client.interceptors.request.use((config) => {
+    const { accessToken } = useAuthStore.getState()
+    if (accessToken && !config.headers.has('Authorization')) {
+      config.headers.set('Authorization', `Bearer ${accessToken}`)
+    }
+    return config
+  })
+
+  client.interceptors.response.use((response) => response, decodeBlobErrorBody)
+
+  client.interceptors.response.use(
+    (response) => response,
+    async (error: AxiosError<ApiErrorBody>) => {
+      const config = error.config
+
+      // First: a skipAuthRetry request (a refresh call, logout, the invitation preview) must reject plainly; for a refresh call, ensureSession() would await itself.
+      if (config?.skipAuthRetry) {
+        return Promise.reject(error)
+      }
+
+      // A stale step-up judges the sign-in's age, not the session: no refresh, no sign-out.
+      if (error.response?.status === 401 && error.response.data?.code === REAUTH_REQUIRED) {
+        return Promise.reject(error)
+      }
+
+      const isUnauthorized = error.response?.status === 401
+      const isExpired = isUnauthorized && error.response?.data?.code === ACCESS_TOKEN_EXPIRED
+
+      // With no token (a signed-out request), a 401 judged that request, not a session.
+      if (isUnauthorized && !isExpired && config?.headers.has('Authorization')) {
+        ports.signOut()
+        return Promise.reject(error)
+      }
+
+      // `_retried` stops an endpoint that always answers ACCESS_TOKEN_EXPIRED from looping.
+      if (!isExpired || !config || config._retried) {
+        return Promise.reject(error)
+      }
+
+      config._retried = true
+
+      let accessToken: string
+      try {
+        accessToken = await ports.ensureSession()
+      } catch (refreshError) {
+        // The same gate the refresh core (refresh-core.ts) signs out on, so a 502 or 429 never bounces a live session.
+        if (isAuthVerdict(refreshError)) {
+          ports.redirectToLogin()
+        }
+        throw refreshError
+      }
+
+      config.headers.set('Authorization', `Bearer ${accessToken}`)
+      return client.request(config)
+    }
+  )
+
+  client.interceptors.response.use(rejectMalformedJsonResponse)
+}
