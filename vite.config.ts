@@ -349,7 +349,7 @@ export default defineConfig({
       'pnpm-lock.yaml',
       // The local SDD workspace: hand-wrapped briefs and reports, never committed.
       '.superpowers/',
-      // Specs and plans: hand-wrapped prose, shared with the sibling repos as written.
+      // Specs: hand-wrapped prose.
       'docs/superpowers/',
     ],
   },

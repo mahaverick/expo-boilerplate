@@ -22,7 +22,8 @@ table is in [ARCHITECTURE.md](ARCHITECTURE.md#the-ports).
   names ("ported in apex#N", or "not applicable because ...").
 - **Never edit a file that `shared-core.json` gives `expo`.** `pnpm sync:check`
   compares each one with react and fails the gate on any difference. The
-  manifest is one of them.
+  manifest is one of them: `sync:check` compares `shared-core.json` itself
+  too, because the lint and knip exemptions read expo's copy.
 - **The purity rules bind expo rows.** A row uses no browser global or banned
   package and imports only shared files and ports. `scripts/check-shared.mjs`,
   react's copy, enforces them.
@@ -51,7 +52,14 @@ side:
 - **`assignLocation` takes a path or a URL**, as react's contract says. A path
   such as `/login`, the default the shared `useLogout` passes, goes through
   `router.replace`; `Linking.openURL` rejects a path with no scheme. An
-  absolute URL goes through `openURL`, and a refusal is caught.
+  absolute URL goes through `openURL`, and a refusal is caught. The path is
+  cast to `Href`: typed routes list only this app's screens, and the port
+  takes any app path that shared code passes.
+- **`apiClient` keeps the bearer token on the API.** The shared token
+  interceptor sets `Authorization` on every request. `src/http/client.ts`
+  registers a guard before the shared interceptors, and axios runs request
+  interceptors in reverse order of registration, so the guard runs last and
+  removes `Authorization` from any request that `isApiRequest` rejects.
 - **knip reads the manifest.** `knip.ts` enters every expo row, and the runner
   port, whose names are the manifest's `testPorts` row. A shared file or export
   this app does not reach yet is react's code, not dead code here.
@@ -75,12 +83,16 @@ SSH connection opens.
 
 1. `pnpm check`: `vp check` (Oxfmt, then Oxlint with type-aware rules), then
    `eslint . --max-warnings 0` for the rules Oxlint lacks.
-2. `pnpm typecheck`: `tsc --noEmit`.
+2. `pnpm typecheck`: `expo customize tsconfig.json`, then `tsc --noEmit`. The
+   first writes the typed routes (`.expo/types/router.d.ts` and
+   `expo-env.d.ts`) without starting Metro, so the gate and CI check
+   `router` calls against the real routes. Without it, `tsc` sees
+   `Href = string` until a developer's first `pnpm start`.
 3. `pnpm lint:docs`: history phrasing and broken links in markdown and in the
    `#` comments of config and shell files.
-4. `pnpm sync:check`: every expo row of `shared-core.json` is react's copy.
-   With no react checkout it warns and passes; under `CI=true` it fails. Point
-   it at react with `REACT_BOILERPLATE_DIR=<path>`.
+4. `pnpm sync:check`: `shared-core.json` and every expo row in it are
+   react's copies. With no react checkout it warns and passes; under `CI=true`
+   it fails. Point it at react with `REACT_BOILERPLATE_DIR=<path>`.
 5. `pnpm knip`: unused files, exports, types and dependencies.
 6. `pnpm expo:doctor`: `expo-doctor`'s 20 checks, among them the SDK's pinned
    versions.
@@ -274,8 +286,20 @@ Each item is a change for react or for a later plan, with the reason it waits.
   against WCAG's 4.5:1 floor. These are react's colours, so the fix belongs in
   react's `globals.css`. `tests/unit/contrast.test.ts` lists the pair as a
   known shortfall and fails once it clears 4.5:1; remove the entry then.
-- **`scripts/sync-check.mjs` is apex's script with `APP` set to `expo`.** A
-  react PR should make it one shared row, so the copies cannot drift.
+- **`scripts/sync-check.mjs` is apex's script with `APP` set to `expo`**, plus
+  the comparison of `shared-core.json` itself. A react PR should make it one
+  shared row, so the copies cannot drift.
+- **Apex's `sync-check.mjs` never compares `shared-core.json`.** It loops over
+  the manifest's rows, and the manifest is no row of itself. Apex adds the
+  same comparison, or takes it from the shared row above.
+- **The shared token interceptor should ask `ports.isApiRequest`.** It sets
+  `Authorization` on every request through the client, so a request to
+  another origin would carry the bearer token. Expo's guard in
+  `src/http/client.ts` removes it. A react PR guards the interceptor in
+  `src/http/interceptors.ts`; once expo copies it, remove the guard.
+- **`/login` is no route in expo.** The shared `useLogout` passes it to
+  `assignLocation`, which lands on Expo Router's unmatched-route screen. Plan
+  3b adds the sign-in screen at `/login`.
 - **Plans are not tracked.** `docs/superpowers/plans/` is git-ignored, and the
   specs under `docs/superpowers/specs/` are tracked. A plan lives on the
   machine of whoever wrote it.

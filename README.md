@@ -100,27 +100,34 @@ dev client, installs it and starts Metro. Later runs start Metro alone with
   machine at `localhost`. The Android emulator reaches it at `10.0.2.2`. A
   physical phone needs your machine's address on the Wi-Fi network, and a
   firewall that admits port 4040.
+- **An `http://` origin works for dev clients only.** A release build needs an
+  `https://` API URL.
+  - Android allows cleartext only in debug builds, whose manifests set
+    `usesCleartextTraffic`. A release build refuses `http://10.0.2.2:4040`.
+  - iOS App Transport Security allows plain HTTP only to local hosts, in every
+    build. On a phone, `localhost` is the phone itself, so
+    `http://localhost:4040` reaches your machine only from the simulator.
 - **Unset, the base URL is relative.** No request then counts as an API request,
   so none carries the client headers. The tests set it to
   `https://api.example.test`.
 
 ## Scripts
 
-| Script               | What it does                                                                                                                                    |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm start`         | `expo start --dev-client`: Metro for the installed dev client                                                                                   |
-| `pnpm check`         | The static gate: `vp check` (Oxfmt, then Oxlint with type-aware rules), then ESLint at zero warnings                                            |
-| `pnpm typecheck`     | `tsc --noEmit`                                                                                                                                  |
-| `pnpm test`          | Jest through `jest-expo`, with no coverage thresholds                                                                                           |
-| `pnpm test:coverage` | Jest with coverage; fails below the thresholds in `jest.config.ts`                                                                              |
-| `pnpm lint:docs`     | History phrasing and broken links in markdown and config comments. CI runs it                                                                   |
-| `pnpm sync:check`    | Every expo row of `shared-core.json` is react's copy, byte for byte. Without a react checkout it warns and passes, and under `CI=true` it fails |
-| `pnpm styleseed`     | Prints the token table generated from react's `globals.css`; `--write` rewrites `STYLESEED.md`                                                  |
-| `pnpm expo:doctor`   | `expo-doctor`: the SDK's version and configuration checks                                                                                       |
-| `pnpm export`        | A Hermes bundle for iOS and one for Android, into `dist/`                                                                                       |
-| `pnpm gate`          | Every check above in order: check, typecheck, lint:docs, sync:check, knip, expo:doctor, test:coverage, export                                   |
-| `pnpm push [args]`   | `pnpm gate`, then `git push --no-verify` with the arguments                                                                                     |
-| `pnpm knip`          | Unused files, exports and dependencies. It runs knip's binary, so `package.json` has no `knip` script (CLAUDE.md says why)                      |
+| Script               | What it does                                                                                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm start`         | `expo start --dev-client`: Metro for the installed dev client                                                                                             |
+| `pnpm check`         | The static gate: `vp check` (Oxfmt, then Oxlint with type-aware rules), then ESLint at zero warnings                                                      |
+| `pnpm typecheck`     | `expo customize tsconfig.json`, which writes the typed routes, then `tsc --noEmit`                                                                        |
+| `pnpm test`          | Jest through `jest-expo`, with no coverage thresholds                                                                                                     |
+| `pnpm test:coverage` | Jest with coverage; fails below the thresholds in `jest.config.ts`                                                                                        |
+| `pnpm lint:docs`     | History phrasing and broken links in markdown and config comments. CI runs it                                                                             |
+| `pnpm sync:check`    | `shared-core.json` and every expo row in it are react's copies, byte for byte. Without a react checkout it warns and passes, and under `CI=true` it fails |
+| `pnpm styleseed`     | Prints the token table generated from react's `globals.css`; `--write` rewrites `STYLESEED.md`                                                            |
+| `pnpm expo:doctor`   | `expo-doctor`: the SDK's version and configuration checks                                                                                                 |
+| `pnpm export`        | A Hermes bundle for iOS and one for Android, into `dist/`                                                                                                 |
+| `pnpm gate`          | Every check above in order: check, typecheck, lint:docs, sync:check, knip, expo:doctor, test:coverage, export                                             |
+| `pnpm push [args]`   | `pnpm gate`, then `git push --no-verify` with the arguments                                                                                               |
+| `pnpm knip`          | Unused files, exports and dependencies. It runs knip's binary, so `package.json` has no `knip` script (CLAUDE.md says why)                                |
 
 Run the gate against react with:
 
@@ -162,6 +169,14 @@ date, the device and the OS version beside each.
   URL('https://a.test/x?y=1').searchParams.get('y')` returns `"1"`,
       `new Intl.RelativeTimeFormat('en').format(-1, 'day')` returns
       `"1 day ago"`, and `new Intl.PluralRules('en').select(1)` returns `"one"`.
+- [ ] **The other `Intl` APIs the shared files use work.** In the same
+      console, `new Intl.DateTimeFormat('en', { dateStyle: 'medium'
+      }).format(0)` returns a date, and `new Intl.DateTimeFormat('en', {
+      timeZoneName: 'short', hour: 'numeric' }).format(0)` ends in a zone name
+      (`src/lib/format.ts`). `new Intl.DateTimeFormat('en', { timeZone:
+      'Not/AZone' })` throws a `RangeError` (`src/schemas/tenant.schemas.ts`).
+      `new Intl.NumberFormat('en-IN').format(1234567)` returns `"12,34,567"`
+      (`src/lib/billing-format.ts`).
 - [ ] **One request carries `traceparent`.** This proves
       `crypto.getRandomValues`. Send one request through `apiClient` from a
       temporary call in `src/app/index.tsx`, with the API running and

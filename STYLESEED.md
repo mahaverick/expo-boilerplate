@@ -35,7 +35,7 @@ and the config agree byte for byte:
    Level 4 prints them: OKLab to cube-root LMS, cubed, then LMS to linear sRGB.
 3. **Gamut:** each linear channel is clipped to the range 0 to 1. A browser
    can map an out-of-gamut colour by reducing its chroma, so a clipped token
-   can differ from react's rendering by a few steps per channel. Five values
+   can differ from react's rendering by a few steps per channel. Six values
    fall outside sRGB: `destructive`, `warning-strong`, `info` and
    `info-foreground` in light, and `destructive` and `warning-foreground` in
    dark.
