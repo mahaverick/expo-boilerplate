@@ -1,0 +1,14 @@
+catalog:
+  vite-plus: 1.3.0
+peerDependencyRules:
+  # vite-plus bundles its own Vite core and Vitest,
+  # whose peer ranges name upstream Vite's majors.
+  allowAny:
+    - vite
+    - vitest
+  allowedVersions:
+    vite: '*'
+    vitest: '*'
+    # eslint-plugin-react-native 5.0.0 peers ESLint 9 at most. Its rules run on
+    # ESLint 10 through @eslint/compat's fixupPluginRules (eslint.config.js).
+    eslint-plugin-react-native>eslint: '10'

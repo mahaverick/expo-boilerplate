@@ -1,0 +1,68 @@
+{
+  "name": "expo-boilerplate",
+  "private": true,
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=26"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=26",
+      "onFail": "error"
+    }
+  },
+  "description": "Expo boilerplate for Mahaverick Labs projects",
+  "author": {
+    "name": "Mahaverick Labs",
+    "email": "support@mahaverick.com"
+  },
+  "scripts": {
+    "start": "expo start --dev-client",
+    "check": "vp check && eslint . --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "lint:docs": "node scripts/lint-docs.mjs",
+    "expo:doctor": "expo-doctor",
+    "export": "expo export --platform all --output-dir dist",
+    "prepare": "vp config --hooks --no-agent",
+    "gate": "pnpm check && pnpm typecheck && pnpm lint:docs && pnpm knip && pnpm expo:doctor && pnpm export",
+    "push": "bash scripts/push.sh"
+  },
+  "dependencies": {
+    "@tanstack/react-form": "^1.33.5",
+    "@tanstack/react-query": "^5.103.2",
+    "axios": "^1.20.0",
+    "expo": "~58.0.23",
+    "expo-constants": "~58.0.15",
+    "expo-dev-client": "~58.0.18",
+    "expo-linking": "~58.0.16",
+    "expo-router": "~58.0.30",
+    "expo-secure-store": "~58.0.2",
+    "expo-system-ui": "~58.0.7",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-mmkv": "^4.3.2",
+    "react-native-nitro-modules": "^0.37.2",
+    "react-native-safe-area-context": "~5.11.1",
+    "react-native-screens": "~4.30.1",
+    "zod": "^4.6.7",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@eslint/compat": "^2.1.1",
+    "@types/react": "~19.3.0",
+    "babel-plugin-transform-remove-console": "^6.9.4",
+    "eslint": "^10.14.0",
+    "eslint-plugin-check-file": "^3.3.2",
+    "eslint-plugin-jsdoc": "^65.4.3",
+    "eslint-plugin-react-native": "^5.0.0",
+    "expo-doctor": "^1.21.6",
+    "knip": "6.39.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vite-plus": "catalog:"
+  }
+}

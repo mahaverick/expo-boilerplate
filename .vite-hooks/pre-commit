@@ -1,0 +1,8 @@
+# Fast checks on what you changed; the full sweep is `pnpm gate`, which `pnpm push` runs.
+set -e
+
+# Lockfile drift: under a second, and it catches the mistake that sends PRs
+# to CI red, since CI installs with --frozen-lockfile and refuses.
+pnpm install --frozen-lockfile --lockfile-only --ignore-scripts >/dev/null
+
+pnpm exec vp staged
