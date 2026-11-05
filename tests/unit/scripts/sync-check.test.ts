@@ -83,7 +83,7 @@ const SHARED = {
 }
 
 /**
- * A react tree with the manifest and every row, and an expo tree with the expo rows.
+ * A react tree with the manifest and every row, and an expo tree with the manifest and the expo rows.
  * @param expoFiles - Expo files to write over the shared ones (null removes one).
  * @returns The two roots.
  */
@@ -95,7 +95,7 @@ function trees(expoFiles: Record<string, string | null> = {}): { react: string; 
     ...SHARED,
     'src/lib/apex-only.ts': 'export const onlyApex = 1\n',
   })
-  const expoTree: Record<string, string> = { ...SHARED }
+  const expoTree: Record<string, string> = { 'shared-core.json': MANIFEST, ...SHARED }
   for (const [file, text] of Object.entries(expoFiles)) {
     if (text === null) delete expoTree[file]
     else expoTree[file] = text
@@ -128,6 +128,21 @@ describe('sync-check', () => {
     const result = runCli(expo, ['--react', react])
     expect(result.status).toBe(1)
     expect(result.stderr.trim()).toBe('tests/unit/plural.test.ts: missing')
+  })
+
+  it('names an edited manifest', () => {
+    const edited = JSON.stringify({ ...JSON.parse(MANIFEST), files: {} })
+    const { react, expo } = trees({ 'shared-core.json': edited })
+    const result = runCli(expo, ['--react', react])
+    expect(result.status).toBe(1)
+    expect(result.stderr.trim()).toBe('shared-core.json: differs from react-boilerplate')
+  })
+
+  it('names a missing manifest', () => {
+    const { react, expo } = trees({ 'shared-core.json': null })
+    const result = runCli(expo, ['--react', react])
+    expect(result.status).toBe(1)
+    expect(result.stderr.trim()).toBe('shared-core.json: missing')
   })
 
   it('ignores rows that do not name expo', () => {
@@ -191,7 +206,7 @@ describe('sync-check', () => {
     const base = tempDir()
     const expo = path.join(base, 'expo')
     const { react } = trees()
-    writeTree(expo, SHARED)
+    writeTree(expo, { 'shared-core.json': MANIFEST, ...SHARED })
     // The default ../react-boilerplate holds a differing copy, so reading it would report a finding.
     writeTree(path.join(base, 'react-boilerplate'), {
       'shared-core.json': MANIFEST,
@@ -206,7 +221,7 @@ describe('sync-check', () => {
   it('falls back to ../react-boilerplate beside the root', () => {
     const base = tempDir()
     const expo = path.join(base, 'expo')
-    writeTree(expo, SHARED)
+    writeTree(expo, { 'shared-core.json': MANIFEST, ...SHARED })
     writeTree(path.join(base, 'react-boilerplate'), {
       'shared-core.json': MANIFEST,
       ...SHARED,

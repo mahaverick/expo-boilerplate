@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * @file The sync check: every `files` and `tests` row of react-boilerplate's
- * `shared-core.json` that names expo must be byte for byte react's copy, and
+ * @file The sync check: `shared-core.json` and every `files` and `tests` row
+ * of react-boilerplate's copy that names expo must be byte for byte react's, and
  * the rows expo holds must pass the copied `check-shared` rules.
  * It reads react's working tree, so locally it compares against whichever
  * branch that checkout has; CI checks out react's `main`.
@@ -17,6 +17,9 @@ import { checkShared } from './check-shared.mjs'
 
 /** The app this repository is in the manifest. */
 const APP = 'expo'
+
+/** The manifest's path, in both repositories. */
+const MANIFEST = 'shared-core.json'
 
 /** This repository's root. */
 const REPO_ROOT = path.resolve(import.meta.dirname, '..')
@@ -78,7 +81,7 @@ export function syncCheck({
   react = env.REACT_BOILERPLATE_DIR || path.resolve(root, '../react-boilerplate'),
   warn = console.warn,
 } = {}) {
-  const manifestPath = path.join(react, 'shared-core.json')
+  const manifestPath = path.join(react, MANIFEST)
   if (!fs.existsSync(manifestPath)) {
     const message = `sync-check: no react-boilerplate checkout at ${react} (set REACT_BOILERPLATE_DIR or --react)`
     if (env.CI === 'true') return [message]
@@ -89,7 +92,8 @@ export function syncCheck({
   if (error) return [`sync-check: ${error}`]
 
   const findings = []
-  for (const file of expoRows) {
+  // The manifest is no row of itself, yet lint and knip read expo's copy, so it is compared too.
+  for (const file of [MANIFEST, ...expoRows]) {
     const ours = path.join(root, file)
     const theirs = path.join(react, file)
     if (!fs.existsSync(ours)) findings.push(`${file}: missing`)
