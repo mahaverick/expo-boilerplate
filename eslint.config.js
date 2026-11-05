@@ -16,6 +16,21 @@ const SLEEP_MESSAGE =
   'Wait on a condition, not a duration: findBy*/waitFor, fake timers, or a settle helper that names what cannot be observed.'
 
 /**
+ * A Tailwind palette class, such as `bg-red-500`, `text-white` or
+ * `border-slate-950/50`, anywhere in a string, as an esquery regex.
+ */
+const PALETTE_CLASS =
+  '/(^|[\\s:])-?(bg|text|border|border-[trblxyse]|divide|outline|ring|ring-offset|fill|stroke|shadow|decoration|accent|caret|placeholder|from|via|to)-(slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-[0-9]{2,3}([\\s\\x2f]|$)|(^|[\\s:])(bg|text|border|divide|outline|ring|fill|stroke|shadow|decoration|accent|caret|placeholder|from|via|to)-(black|white)([\\s\\x2f]|$)/'
+const PALETTE_MESSAGE =
+  'Use a STYLESEED token class (bg-background, text-primary-foreground), not a Tailwind palette class. The tokens are in STYLESEED.md.'
+
+/** A colour literal: a hex colour, or a CSS colour function such as `rgb(` or `oklch(`. */
+const COLOUR_LITERAL =
+  '/^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$|(^|[^a-zA-Z-])(rgba?|hsla?|hwb|lab|lch|oklab|oklch)\\(/'
+const COLOUR_MESSAGE =
+  'Use a STYLESEED token class (bg-background, text-foreground), not a colour literal. The tokens are in STYLESEED.md.'
+
+/**
  * Every named function, method and class; inline callbacks and constructors
  * are exempt by construction.
  */
@@ -77,6 +92,34 @@ module.exports = tseslint.config(
       'react-native/no-raw-text': 'error',
       'react-native/no-single-element-style-arrays': 'error',
       'react-native/split-platform-components': 'error',
+    },
+  },
+  {
+    /**
+     * The design lock (STYLESEED.md), over the files expo owns. Colours come
+     * from the STYLESEED tokens through NativeWind classes such as
+     * `bg-background`, so a Tailwind palette class and a colour literal are
+     * both errors. The shared rows are react's copies, so the rule skips them.
+     */
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: sharedExpoRows(),
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...['Literal', 'TemplateElement'].flatMap((node) => {
+          const value = node === 'Literal' ? 'value' : 'value.raw'
+          return [
+            {
+              selector: `${node}[${value}=${PALETTE_CLASS}]`,
+              message: PALETTE_MESSAGE,
+            },
+            {
+              selector: `${node}[${value}=${COLOUR_LITERAL}]`,
+              message: COLOUR_MESSAGE,
+            },
+          ]
+        }),
+      ],
     },
   },
   {

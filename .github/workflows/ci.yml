@@ -89,6 +89,12 @@ jobs:
       - run: pnpm sync:check
         env:
           REACT_BOILERPLATE_DIR: ${{ github.workspace }}/react-boilerplate
+      # STYLESEED.md against the table generated from react's globals.css. The
+      # unit shards have no react checkout, so there the test checks only
+      # tailwind.config.ts against STYLESEED.md.
+      - run: pnpm test tests/unit/styleseed.test.ts
+        env:
+          REACT_BOILERPLATE_DIR: ${{ github.workspace }}/react-boilerplate
 
   # The unit suite in four shards. A shard sees part of the suite, so each
   # runs with an empty coverage threshold and uploads its coverage-final.json;

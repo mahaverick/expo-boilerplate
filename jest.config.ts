@@ -11,6 +11,7 @@ process.env.EXPO_PUBLIC_API_URL ??= 'https://api.example.test'
 const config: Config = {
   preset: 'jest-expo',
   moduleNameMapper: {
+    '\\.css$': '<rootDir>/tests/support/stylesheet.ts',
     '^@/tests/(.*)$': '<rootDir>/tests/$1',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
