@@ -3,7 +3,7 @@
  * writes its own copy; shared files never read `window.location`.
  */
 import { openURL } from 'expo-linking'
-import { router } from 'expo-router'
+import { router, type Href } from 'expo-router'
 
 /**
  * Goes to `url`, as the web's full-page load does. A path (`/login`, the
@@ -14,7 +14,8 @@ import { router } from 'expo-router'
  */
 export function assignLocation(url: string): void {
   if (url.startsWith('/')) {
-    router.replace(url)
+    // The port takes any app path shared code passes, so typed routes cannot list it.
+    router.replace(url as Href)
     return
   }
   openURL(url).catch(() => {})

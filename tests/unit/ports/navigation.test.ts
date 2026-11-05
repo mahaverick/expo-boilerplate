@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals'
 import * as Linking from 'expo-linking'
-import { router } from 'expo-router'
+import { router, type Href } from 'expo-router'
 import { assignLocation } from '@/ports/navigation'
 import { afterEach, describe, expect, it } from '@/tests/support/runner'
 
@@ -16,7 +16,8 @@ describe('assignLocation', () => {
     const replace = jest.spyOn(router, 'replace')
     const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true)
     assignLocation('/login')
-    expect(replace).toHaveBeenCalledWith('/login')
+    // /login is no typed route here; the port passes on whatever path shared code sends.
+    expect(replace).toHaveBeenCalledWith('/login' as Href)
     expect(openURL).not.toHaveBeenCalled()
   })
 

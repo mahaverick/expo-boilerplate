@@ -22,7 +22,7 @@
   "scripts": {
     "start": "expo start --dev-client",
     "check": "vp check && eslint . --max-warnings 0",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "expo customize tsconfig.json && tsc --noEmit",
     "test": "jest --testNamePattern=\"^(?!user-facing copy finds the copy it guards$)\"",
     "test:coverage": "jest --coverage --testNamePattern=\"^(?!user-facing copy finds the copy it guards$)\"",
     "lint:docs": "node scripts/lint-docs.mjs",
