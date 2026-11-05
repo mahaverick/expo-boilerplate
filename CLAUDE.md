@@ -63,10 +63,17 @@ answered on expo's side:
   `URL`. `crypto` type-checks through `@types/node`, which the tests need, so
   `tsc` does not prove Hermes has it: `src/polyfills.ts` installs it.
 - **`src/polyfills.ts` loads first.** `index.ts`, the package entry, imports it
-  before `expo-router/entry`. The `@formatjs/intl-relativetimeformat` paths end
-  in `.js`, the only subpaths its `exports` map lists. `vite.config.ts` allows
-  `require()` in that one file, so the `Intl.RelativeTimeFormat` polyfill loads
-  only where the engine lacks it.
+  before `expo-router/entry`. It loads random values, then `URL`, then the
+  `Intl` polyfills in formatjs's dependency order: `getCanonicalLocales`,
+  `Locale`, `PluralRules` (with `en` data), then `RelativeTimeFormat` (with
+  `en` data), which calls the first and third. Each loads only where its
+  `should-polyfill` check says the engine lacks it. The formatjs paths end in
+  `.js`, the only subpaths their `exports` maps list. `vite.config.ts` allows
+  `require()` in that one file. `tests/unit/polyfills.test.ts` holds the order.
+- **`assignLocation` takes a path or a URL**, as react's contract says. A path
+  such as `/login`, the default the shared `useLogout` passes, goes through
+  `router.replace`; `Linking.openURL` rejects a path with no scheme. An
+  absolute URL goes through `openURL`, and a refusal is caught.
 - **knip reads the manifest.** `knip.ts` enters every expo row, and the runner
   port, whose names are the manifest's `testPorts` row. A shared file or export
   this app does not reach yet is react's code, not dead code here.
@@ -86,7 +93,7 @@ answered on expo's side:
 
 - **Coverage thresholds sit below react's.** React's are statements 88,
   branches 82, functions 86 and lines 89. The 29 shared tests react gives expo
-  cover statements 43.88%, branches 46.19%, functions 31.34% and lines 42.61%
+  cover statements 43.78%, branches 46.00%, functions 31.47% and lines 42.51%
   of the tree, so `jest.config.ts` holds 43, 46, 31 and 42. React should mark
   more of its tests for expo; raise each threshold as the shared tests grow.
 - **One copy-style case is skipped by name.** `test` and `test:coverage` pass

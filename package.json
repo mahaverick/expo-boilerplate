@@ -33,6 +33,9 @@
     "push": "bash scripts/push.sh"
   },
   "dependencies": {
+    "@formatjs/intl-getcanonicallocales": "^3.3.0",
+    "@formatjs/intl-locale": "^5.4.2",
+    "@formatjs/intl-pluralrules": "^7.0.2",
     "@formatjs/intl-relativetimeformat": "^13.0.1",
     "@tanstack/react-form": "^1.33.5",
     "@tanstack/react-query": "^5.103.2",
