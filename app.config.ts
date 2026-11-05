@@ -13,9 +13,20 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   userInterfaceStyle: 'automatic',
   ios: {
     supportsTablet: false,
+    infoPlist: {
+      // Plain HTTP reaches only local hosts, such as a simulator's localhost API.
+      NSAppTransportSecurity: { NSAllowsArbitraryLoads: false, NSAllowsLocalNetworking: true },
+    },
   },
   android: {
     predictiveBackGestureEnabled: true,
+    // The template's optional permissions; nothing in the app uses them. INTERNET stays.
+    blockedPermissions: [
+      'android.permission.SYSTEM_ALERT_WINDOW',
+      'android.permission.VIBRATE',
+      'android.permission.READ_EXTERNAL_STORAGE',
+      'android.permission.WRITE_EXTERNAL_STORAGE',
+    ],
   },
   plugins: ['expo-router'],
   experiments: {
