@@ -27,6 +27,13 @@ const PALETTE_MESSAGE =
 /** A colour literal: a hex colour, or a CSS colour function such as `rgb(` or `oklch(`. */
 const COLOUR_LITERAL =
   '/^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$|(^|[^a-zA-Z-])(rgba?|hsla?|hwb|lab|lch|oklab|oklch)\\(/'
+/**
+ * A Tailwind arbitrary-value colour, such as `bg-[#ff0000]`,
+ * `text-[color:#fff]`, `bg-[oklch(0.5_0.1_20)]` or `[color:rgb(0_0_0)]`,
+ * anywhere in a string. Tailwind generates these whatever the palette holds.
+ */
+const ARBITRARY_COLOUR =
+  '/(^|[\\s:])(-?[a-z0-9-]+-)?\\[([a-z-]+:)?(#|(rgba?|hsla?|hwb|lab|lch|oklab|oklch)\\()/'
 const COLOUR_MESSAGE =
   'Use a STYLESEED token class (bg-background, text-foreground), not a colour literal. The tokens are in STYLESEED.md.'
 
@@ -115,6 +122,10 @@ module.exports = tseslint.config(
             },
             {
               selector: `${node}[${value}=${COLOUR_LITERAL}]`,
+              message: COLOUR_MESSAGE,
+            },
+            {
+              selector: `${node}[${value}=${ARBITRARY_COLOUR}]`,
               message: COLOUR_MESSAGE,
             },
           ]

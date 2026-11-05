@@ -58,10 +58,11 @@ and the config agree byte for byte:
 - **The stored theme:** `src/states/theme.store.ts` keeps `light`, `dark` or
   `system` in MMKV under the key `theme`. `src/app/_layout.tsx` passes it to
   NativeWind's `colorScheme.set` and hides the splash screen once NativeWind
-  reports that scheme.
+  reports that scheme, or after 2 seconds when no report arrives.
 - **Lint:** in the files expo owns under `src/`, ESLint rejects a Tailwind
-  palette class such as `bg-red-500` and a colour literal such as `'#fff'` or
-  `'rgb(0 0 0)'`. The shared rows from `shared-core.json` are react's copies,
+  palette class such as `bg-red-500`, an arbitrary-value colour such as
+  `bg-[#ff0000]` or `text-[color:#fff]`, and a colour literal such as `'#fff'`
+  or `'rgb(0 0 0)'`. `tests/unit/lint/design-lock.test.ts` holds the rule. The shared rows from `shared-core.json` are react's copies,
   so the rule skips them.
 
 ## Contrast
