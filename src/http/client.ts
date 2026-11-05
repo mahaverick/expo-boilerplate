@@ -52,14 +52,29 @@ function addClientHeaders(
 }
 
 /**
- * Installs the shared interceptor chain (interceptors.ts) on `client` with this
- * app's ports, then the client headers.
+ * Keeps the bearer token on the API: removes `Authorization` from a request
+ * to any other origin or path. The shared token interceptor sets it on every
+ * request, without asking `isApiRequest`.
+ */
+function dropForeignAuthorization(
+  client: AxiosInstance,
+  config: InternalAxiosRequestConfig
+): InternalAxiosRequestConfig {
+  if (!isApiRequest(client, config)) config.headers.delete('Authorization')
+  return config
+}
+
+/**
+ * Installs the token guard, then the shared interceptor chain (interceptors.ts)
+ * on `client` with this app's ports, then the client headers.
  *
  * Import cycle (client → session): each port is a function that reads
  * session.ts's export only when a request runs, never while the modules are
  * still loading.
  */
 function installInterceptors(client: AxiosInstance): void {
+  // Axios runs request interceptors in reverse order of registration, so the guard, registered first, runs after the shared token interceptor.
+  client.interceptors.request.use((config) => dropForeignAuthorization(client, config))
   installSharedInterceptors(client, {
     isApiRequest: (config) => isApiRequest(client, config),
     ensureSession: () => ensureSession(),

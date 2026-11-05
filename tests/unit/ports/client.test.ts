@@ -1,7 +1,8 @@
 import { jest } from '@jest/globals'
 import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
 import { apiClient } from '@/http/client'
-import { describe, expect, it } from '@/tests/support/runner'
+import { useAuthStore } from '@/states/auth.store'
+import { afterEach, describe, expect, it } from '@/tests/support/runner'
 
 jest.mock('expo-device', () => ({ modelName: 'Pixel 9' }))
 
@@ -25,6 +26,10 @@ function recordingAdapter(): { adapter: AxiosAdapter; sent: InternalAxiosRequest
   }
   return { adapter, sent }
 }
+
+afterEach(() => {
+  useAuthStore.getState().logout()
+})
 
 describe('apiClient', () => {
   it('names the native client, the device and the trace on an API request', async () => {
@@ -51,5 +56,14 @@ describe('apiClient', () => {
     expect(config?.headers.has('X-Device-Name')).toBe(false)
     expect(config?.headers.has('X-Client')).toBe(false)
     expect(config?.headers.has('traceparent')).toBe(false)
+  })
+
+  it('sends the bearer token to the API and to no other origin', async () => {
+    useAuthStore.getState().setToken('token-1')
+    const { adapter, sent } = recordingAdapter()
+    await apiClient.get('https://other.example.test/x', { adapter })
+    await apiClient.get('/profile', { adapter })
+    expect(sent[0]?.headers.has('Authorization')).toBe(false)
+    expect(sent[1]?.headers.get('Authorization')).toBe('Bearer token-1')
   })
 })
