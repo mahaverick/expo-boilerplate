@@ -81,13 +81,10 @@ side:
 `pnpm push` runs it, then `git push --no-verify`, so the gate runs before the
 SSH connection opens.
 
-1. `pnpm check`: `vp check` (Oxfmt, then Oxlint with type-aware rules), then
-   `eslint . --max-warnings 0` for the rules Oxlint lacks.
-2. `pnpm typecheck`: `expo customize tsconfig.json`, then `tsc --noEmit`. The
-   first writes the typed routes (`.expo/types/router.d.ts` and
-   `expo-env.d.ts`) without starting Metro, so the gate and CI check
-   `router` calls against the real routes. Without it, `tsc` sees
-   `Href = string` until a developer's first `pnpm start`.
+1. `pnpm check`: `pnpm typegen`, then `vp check` (Oxfmt, then Oxlint with
+   type-aware rules), then `eslint . --max-warnings 0` for the rules Oxlint
+   lacks.
+2. `pnpm typecheck`: `pnpm typegen`, then `tsc --noEmit`.
 3. `pnpm lint:docs`: history phrasing and broken links in markdown and in the
    `#` comments of config and shell files.
 4. `pnpm sync:check`: `shared-core.json` and every expo row in it are
@@ -99,6 +96,13 @@ SSH connection opens.
 7. `pnpm test:coverage`: Jest with the coverage thresholds. `pnpm test` runs
    the same tests with no thresholds.
 8. `pnpm export`: a Hermes bundle for iOS and one for Android.
+
+`pnpm typegen` runs `expo customize tsconfig.json`, which writes the typed
+routes (`.expo/types/router.d.ts` and `expo-env.d.ts`) without starting Metro,
+and fails if `router.d.ts` is missing. Both type-aware steps need it. Without
+the file, `Href` is `string`: `tsc` misses route mistakes, and Oxlint reports
+the `Href` casts as unnecessary. A fresh clone or CI has no `.expo/`, so
+`check` and `typecheck` each run it first.
 
 **Jest runs the tests, not `vp test`.** `vp test` is Vitest. `react-native`
 ships Flow-typed source and needs mocks for its native modules, and `jest-expo`

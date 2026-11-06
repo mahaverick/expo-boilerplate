@@ -116,8 +116,9 @@ dev client, installs it and starts Metro. Later runs start Metro alone with
 | Script               | What it does                                                                                                                                              |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm start`         | `expo start --dev-client`: Metro for the installed dev client                                                                                             |
-| `pnpm check`         | The static gate: `vp check` (Oxfmt, then Oxlint with type-aware rules), then ESLint at zero warnings                                                      |
-| `pnpm typecheck`     | `expo customize tsconfig.json`, which writes the typed routes, then `tsc --noEmit`                                                                        |
+| `pnpm check`         | The static gate: `pnpm typegen`, `vp check` (Oxfmt, then Oxlint with type-aware rules), then ESLint at zero warnings                                      |
+| `pnpm typecheck`     | `pnpm typegen`, then `tsc --noEmit`                                                                                                                       |
+| `pnpm typegen`       | `expo customize tsconfig.json`, which writes the typed routes; fails if `.expo/types/router.d.ts` is missing                                              |
 | `pnpm test`          | Jest through `jest-expo`, with no coverage thresholds                                                                                                     |
 | `pnpm test:coverage` | Jest with coverage; fails below the thresholds in `jest.config.ts`                                                                                        |
 | `pnpm lint:docs`     | History phrasing and broken links in markdown and config comments. CI runs it                                                                             |

@@ -21,8 +21,9 @@
   },
   "scripts": {
     "start": "expo start --dev-client",
-    "check": "vp check && eslint . --max-warnings 0",
-    "typecheck": "expo customize tsconfig.json && tsc --noEmit",
+    "check": "pnpm typegen && vp check && eslint . --max-warnings 0",
+    "typecheck": "pnpm typegen && tsc --noEmit",
+    "typegen": "expo customize tsconfig.json && test -f .expo/types/router.d.ts",
     "test": "jest --testNamePattern=\"^(?!user-facing copy finds the copy it guards$)\"",
     "test:coverage": "jest --coverage --testNamePattern=\"^(?!user-facing copy finds the copy it guards$)\"",
     "lint:docs": "node scripts/lint-docs.mjs",
