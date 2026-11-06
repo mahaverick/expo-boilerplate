@@ -471,11 +471,29 @@ it’s you" flow. The files are listed in
   resend wait and the baseline survive. It returns when the overlay ends.
 - **Android back reaches the dialog through the `Modal`'s `onRequestClose`.**
   A `BackHandler` does not fire under a `Modal`. Back cancels from the start
-  and the resume-failed views. While the dialog waits on an emailed link or
-  resumes, only Cancel leaves, so a stray press does not drop the action.
+  and the resume-failed views, as react's dialog dismisses. While the dialog
+  waits on an emailed link or resumes, only Cancel leaves, so a stray press
+  does not drop the action. The rule that blocking screens ignore back
+  protects a wait in progress; on the start and resume-failed views nothing
+  is in progress, and trapping the person there helps no one.
 - **The dialog shows its own messages inline.** A toast draws under a native
   `Modal`, so the person would never see it. A failed link request or resend
   renders as an inline notice in the dialog.
+- **The dialog listens for a confirmation on the start view too.** A person
+  who cancels and retries can open the first email's live link while the new
+  dialog is on its start view. A signal whose token is not newer returns the
+  dialog to the view it came from.
+- **A failed verify reaches the dialog, not the screen.** `/auth/confirm`
+  opens beneath the `Modal`, so its failure states are out of sight. While a
+  dialog is open, the screen sends its copy for a 400, a 401 or another
+  failure through `broadcastStepUpLinkFailed` and goes back. The dialog shows
+  it inline on its current view and keeps Resend. That channel is expo's own,
+  beside `broadcastAuthMessage`, whose signature is react's port. Without a
+  dialog the screen shows the failure itself.
+- **A sign-out closes the dialog.** The provider sits in the root layout, so
+  it stays mounted across a sign-out. It closes an open dialog when the auth
+  store signs out, and every waiter rejects with its original refusal;
+  otherwise the dialog would sit over the sign-in screen.
 - **`run` retries once, and only for a refusal that held the current
   token.** `useStepUp().run(action)` runs the action. On `REAUTH_REQUIRED`
   sent with an older token than the store holds, another confirmation has
@@ -576,8 +594,8 @@ Each item is a change for react or for a later plan, with the reason it waits.
   branches 82, functions 86 and lines 89. The shared tests alone (31 manifest
   rows, 29 of them test files) cover statements 43.78%, branches 46.00%,
   functions 31.47% and lines 42.51% of `src/`, because they exercise only part
-  of the 75 shared files. The full suite measures statements 78.37%, branches
-  76.50%, functions 70.30% and lines 78.18% on 7 November 2026.
+  of the 75 shared files. The full suite measures statements 78.60%, branches
+  76.62%, functions 70.61% and lines 78.34% on 7 November 2026.
   `jest.config.ts` and `ci.yml` hold 78, 76, 70 and 78. React should mark more
   of its tests for expo; then expo raises each threshold toward react's.
 - **One copy-style case is skipped by name.** `test` and `test:coverage` pass
@@ -607,10 +625,11 @@ Each item is a change for react or for a later plan, with the reason it waits.
   (checked 6 November 2026). The webauthn port stays a stub. Security shows no
   passkey section, and step-up offers only the emailed link. A later plan runs
   the spike.
-- **A dialog on its start view does not hear a confirmation.** It subscribes to
-  `step_up_confirmed` only on the email view. A link opened before the person
-  selects Email me a link is a rare path; the subscription belongs on the start
-  view too.
+- **`run`'s plain retry can fail without a dialog.** A refusal sent with an
+  older token than the store holds retries at once, with no dialog, because
+  another confirmation has landed. If that retry is refused too, the action
+  reports the refusal and no dialog opens. Expo mirrors react's provider
+  here; react changes it first, then expo copies the change.
 - **A late foreground refresh can overwrite the confirmed token.** A refresh
   that starts after `refreshSettled()` resolved can still replace the new token
   with one that has an older `auth_time`. At worst the retried action is refused
