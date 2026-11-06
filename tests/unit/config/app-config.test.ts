@@ -18,13 +18,17 @@ function configFor(host: string | undefined): ExpoConfig {
 }
 
 const saved = process.env.APP_LINK_HOST
+const savedStoreId = process.env.IOS_APP_STORE_ID
 
 beforeEach(() => {
   delete process.env.APP_LINK_HOST
+  delete process.env.IOS_APP_STORE_ID
 })
 afterEach(() => {
   if (saved === undefined) delete process.env.APP_LINK_HOST
   else process.env.APP_LINK_HOST = saved
+  if (savedStoreId === undefined) delete process.env.IOS_APP_STORE_ID
+  else process.env.IOS_APP_STORE_ID = savedStoreId
 })
 
 describe('app.config', () => {
@@ -55,7 +59,10 @@ describe('app.config', () => {
         action: 'VIEW',
         autoVerify: true,
         // Only the paths with a screen: a verified link to any other path would loop back into the app.
-        data: [{ scheme: 'https', host: 'app.example.com', pathPrefix: '/auth/link' }],
+        data: [
+          { scheme: 'https', host: 'app.example.com', pathPrefix: '/auth/link' },
+          { scheme: 'https', host: 'app.example.com', pathPrefix: '/tenants/' },
+        ],
         category: ['BROWSABLE', 'DEFAULT'],
       },
     ])
@@ -77,4 +84,31 @@ describe('app.config', () => {
       expect(() => configFor(host)).toThrow(/APP_LINK_HOST/)
     }
   )
+})
+
+describe('app.config iosAppStoreId', () => {
+  it('puts IOS_APP_STORE_ID in extra', () => {
+    process.env.IOS_APP_STORE_ID = '1234567890'
+    expect(configFor(undefined).extra?.iosAppStoreId).toBe('1234567890')
+  })
+
+  it('leaves it out when unset or empty', () => {
+    for (const id of [undefined, '']) {
+      if (id === undefined) delete process.env.IOS_APP_STORE_ID
+      else process.env.IOS_APP_STORE_ID = id
+      expect(configFor(undefined).extra?.iosAppStoreId).toBeUndefined()
+    }
+  })
+
+  it('keeps webUrl beside it', () => {
+    process.env.IOS_APP_STORE_ID = '42'
+    const extra = configFor('app.example.com').extra
+    expect(extra?.iosAppStoreId).toBe('42')
+    expect(extra?.webUrl).toBe('https://app.example.com')
+  })
+
+  it.each(['id123', '12 3', '12.3', '-1'])('rejects %s as a store ID', (id) => {
+    process.env.IOS_APP_STORE_ID = id
+    expect(() => configFor(undefined)).toThrow(/IOS_APP_STORE_ID/)
+  })
 })

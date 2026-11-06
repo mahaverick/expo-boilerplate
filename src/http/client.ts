@@ -9,6 +9,7 @@ import { API_PREFIX } from '@/constants/routes'
 import { installBodyToken } from '@/http/body-token'
 import { createApiClient } from '@/http/create-api-client'
 import { installInterceptors as installSharedInterceptors } from '@/http/interceptors'
+import { installMaintenanceInterceptor } from '@/http/maintenance'
 import { broadcastLogout, ensureSession, redirectToLogin } from '@/http/session'
 import { markSessionChange, refreshTokenStore } from '@/http/token-store'
 import { queryClient } from '@/lib/query-client'
@@ -70,7 +71,7 @@ function dropForeignAuthorization(
 
 /**
  * Installs the token guard, then the shared interceptor chain (interceptors.ts)
- * on `client` with this app's ports, then the client headers.
+ * on `client` with this app's ports, then the client headers, the body token and the maintenance reader.
  *
  * Import cycle (client → session): each port is a function that reads
  * session.ts's export only when a request runs, never while the modules are
@@ -99,6 +100,8 @@ function installInterceptors(client: AxiosInstance): void {
   client.interceptors.request.use((config) => addClientHeaders(client, config))
   // Axios runs request interceptors in reverse order of registration and response interceptors in registration order. Registered after the shared chain, the body token is added on every attempt, a 401 replay included, and the capture stores the token before the mutation's promise resolves.
   installBodyToken(client, (config) => isApiRequest(client, config))
+  // Response interceptors run in registration order, so the maintenance reader, registered last, sees what the 401 handling and the body token pass on, a replay's answer included.
+  installMaintenanceInterceptor(client)
 }
 
 /**

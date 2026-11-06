@@ -1,8 +1,8 @@
 import { jest } from '@jest/globals'
-import { act, screen, waitFor } from '@testing-library/react-native'
+import { act, screen } from '@testing-library/react-native'
 import { useEffect, useState } from 'react'
+import Home from '@/app/(app)/(tabs)/index'
 import AppLayout from '@/app/(app)/_layout'
-import Home from '@/app/(app)/index'
 import Link from '@/app/auth/link'
 import { resetSessionForTests } from '@/http/session'
 import { resetSessionLifecycleForTests, restoreSession } from '@/http/session-lifecycle'
@@ -32,7 +32,10 @@ jest.mock('expo-router', () => {
       }, [href])
       return null
     },
-    Stack: () => null,
+    Stack: Object.assign(() => null, { Screen: () => null }),
+    usePathname: () => '/',
+    useGlobalSearchParams: () => ({}),
+    useSegments: () => [],
   }
 })
 jest.mock('@/lib/storage', () => ({ storage: { getString: () => '1', set: () => undefined } }))
@@ -97,7 +100,10 @@ describe('signing in from a mailed link', () => {
       }
       return {
         status: 200,
-        data: { success: true, data: { items: [], page: { hasNext: false, nextCursor: null } } },
+        data: {
+          success: true,
+          data: { items: [{ tenant: { id: 't' } }], page: { hasNext: false, nextCursor: null } },
+        },
       }
     })
     // Signed out, with the launch restore settled (no stored token).
@@ -105,10 +111,9 @@ describe('signing in from a mailed link', () => {
       await restoreSession()
     })
     await renderScreen(<Harness />)
-    expect(await screen.findByRole('header', { name: 'Home' })).toBeTruthy()
-    await waitFor(() => {
-      expect(screen.getByText('Signed in as ada@example.com')).toBeTruthy()
-    })
+    expect(
+      await screen.findByRole('header', { name: 'Welcome back, ada@example.com' })
+    ).toBeTruthy()
     expect(mockRedirects).toEqual([])
   })
 })

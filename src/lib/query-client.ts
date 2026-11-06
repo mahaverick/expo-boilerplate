@@ -9,7 +9,10 @@ import { isPasskeySetupRequired } from '@/types/passkey.types'
 /**
  * The app's query client, with react's defaults: results stay fresh 30
  * seconds, and a failed query is retried once, except a refusal that asks for
- * a passkey, which a retry cannot change.
+ * a passkey, which a retry cannot change. Queries pause while the device is
+ * offline; mutations never do. A paused write hangs on a spinner and can fire
+ * later from another screen, so an offline write fails at once and its form
+ * shows the inline error.
  */
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,5 +20,6 @@ export const queryClient = new QueryClient({
       staleTime: 30_000,
       retry: (failureCount, error) => failureCount < 1 && !isPasskeySetupRequired(error),
     },
+    mutations: { networkMode: 'always' },
   },
 })

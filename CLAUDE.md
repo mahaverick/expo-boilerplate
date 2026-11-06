@@ -276,12 +276,13 @@ candidate, and each has a reason. The files are listed in
   throw is `NoRefreshTokenError`, and the shared core signs out. The
   alternative is a session that dies 10 seconds later. After a sign-in, the
   sign-in fails and the new token is revoked.
-- **The Android intent filter claims only the paths with a screen.** In plan
-  3b that is `/auth/link` (`ANDROID_APP_LINK_PATH_PREFIXES` in
-  `app.config.ts`). A verified link to a path with no screen loops back into
-  the app and lands on Page not found. Each later plan adds its paths with
-  its screens. iOS's paths come from react's apple-app-site-association file
-  (`docker/15-app-links.sh`), which this app does not control.
+- **The Android intent filter claims only the paths with a screen.** Those are
+  `/auth/link` and `/tenants/` (`ANDROID_APP_LINK_PATH_PREFIXES` in
+  `app.config.ts`), the second for a workspace's overview. A verified link to
+  a path with no screen loops back into the app and lands on Page not found.
+  Each later plan adds its paths with its screens. iOS's paths come from
+  react's apple-app-site-association file (`docker/15-app-links.sh`), which
+  this app does not control.
 - **"Open the website" uses `expo-web-browser`, not `Linking.openURL`.** The
   system's link handler hands a verified app link back to the app.
 - **`+native-intent.tsx` strips the query and fragment from every non-https
@@ -298,6 +299,149 @@ candidate, and each has a reason. The files are listed in
   knip's config loader walks up to the parent `tsconfig.json`, which resolves
   its `extends` from the parent's `node_modules`. Without them knip fails to
   load the config.
+
+## Workspaces and the API
+
+The rules below cover the screens and the API behaviour that plan 3c1 added.
+The files are listed in [ARCHITECTURE.md](ARCHITECTURE.md#workspaces-and-the-shell).
+
+- **TanStack Query learns focus and connectivity from the device.**
+  `installQueryManagers()` in `src/lib/query-managers.ts` ties
+  `focusManager` to `AppState` and `onlineManager` to NetInfo. Without it,
+  React Native never reports focus, so queries never refetch when the app
+  returns, and a query keeps retrying offline. An unknown NetInfo state
+  counts as online, so a slow first report does not pause every query.
+- **One interceptor reads maintenance from every API answer.**
+  `installMaintenanceInterceptor` in `src/http/maintenance.ts` reads the
+  `Maintenance-Mode` header on successes and failures and the body of a 503,
+  and it never changes the outcome. A 503 body names the mode even when no
+  header does. When `full` ends, `recoverFromMaintenance()` checks
+  the session with `ensureSession` and then refetches every query.
+- **`minimumAppVersion` is parsed in expo, from the shared query's data.**
+  The shared `ClientSettings` type and its guard do not list the field, but
+  the body carries it. `src/lib/minimum-version.ts` reads it with Zod, and
+  editing the shared file is not allowed. `useUpdateRequired` overrides the
+  query's 1-hour `staleTime` with 5 minutes and refetches every 5 minutes
+  (`refetchInterval`) while the app is in the foreground. That matches the
+  server's `max-age=300`, so a raised minimum reaches a running app within 5
+  minutes.
+  A missing or unreadable version never blocks the app.
+- **The blocking screens stack in a fixed order.** The update screen covers
+  the maintenance screen, and the maintenance screen covers the app
+  (`UpdateGate`, then `MaintenanceGate`, in `src/app/_layout.tsx`). The
+  passkey screen is a route that the `(app)` guard redirects to, so both
+  overlays cover it too. All three register a `BackHandler` that
+  returns `true`, which stops Android's back button. Only the passkey route
+  sets `gestureEnabled: false`, because the update and maintenance screens are
+  overlays, not stack screens.
+  In `full` the `(app)` guard and the sign-in screens redirect nowhere, so a
+  person keeps their place until the mode ends. The toaster renders under
+  the overlays, so a toast never shows over a blocking screen.
+- **`safePath` is expo's own check** (`src/lib/safe-path.ts`). React's
+  `safe-redirect.ts` and `landing.ts` read `window.location`, and neither is
+  an expo row. A redirect arrives from a link or a route parameter, so an
+  unchecked one is an open redirect. The rules are react's: at most 2048
+  characters, one leading `/`, no backslash, control character or `//`, and no
+  token page (`TOKEN_PATHS`), checked after decoding and folding case.
+  `safePath` returns the path the URL parser resolved, because the check ran
+  on that string and the app must navigate to what it checked.
+  The `(app)` guard drops dynamic path segments and `token` from the
+  `redirect` it builds.
+- **The remembered workspace lives in MMKV under `last-tenant:{userId}`.**
+  `src/states/current-tenant.store.ts` keys it by person, so a second person on
+  the device never reads the first one's choice. Sign-out leaves the key, and
+  the same person returns to their workspace. Only an eligible workspace is
+  remembered: never the platform workspace, never a suspended one.
+  `useCurrentTenant` falls back to the first eligible workspace.
+- **Screens that route to a workspace pass the route's web address as
+  `requested`.** The store is only the fallback.
+- **One component draws a workspace's overview, in two places.**
+  `WorkspaceOverview` serves the Workspace tab, in place, and the
+  `/tenants/[slug]` route, for deep links and the list. The tab never
+  navigates out: leaving `(tabs)` drops the tab bar and leaves Back with
+  nowhere sensible to go. Choosing a workspace in the tab's switcher
+  remembers it, and the tab re-renders. The route remembers its slug, so
+  returning to the tab shows it.
+- **Tabs have no navigator header; the stack screens above them show an
+  empty-titled header with Back.** A navigator title plus `Screen`'s title
+  gives two header-role elements, which the accessibility harness rejects, so
+  `Screen` draws the one title everywhere. Welcome, `/tenants` and
+  `/tenants/{slug}` need Back to reach the tabs, so their header has an empty
+  title and the back arrow alone (`headerBackButtonDisplayMode: 'minimal'`),
+  which keeps the group name `(tabs)` off the iOS back label. They pass
+  `topInset={false}`, since the header takes the inset. The switcher is the
+  top row of the Workspace screens, not a header control.
+- **The `(app)` stack is anchored on `(tabs)`.** `unstable_settings` sets
+  `anchor: '(tabs)'` (SDK 58's name for `initialRouteName`, which it
+  deprecates). Without it a cold deep link, or a replace into the group, leaves
+  the route alone in the stack, with no tab bar and no way back. A replace from
+  outside the group, such as the link screen's landing, passes
+  `{ withAnchor: true }`, because the anchor applies on a replace only then.
+  Welcome leaves with `router.dismissTo`, since a replace to a tab stacks a
+  second `(tabs)`, and the Workspace tab pushes `/welcome`, since a replace
+  from a tab removes `(tabs)`.
+- **A new workspace opens on the Workspace tab.** Welcome remembers the new
+  workspace's web address, then dismisses to `/workspace`. Landing on
+  `/tenants/{slug}` would leave the person outside the tabs.
+- **A sign-out of the person's own carries no `redirect`.** `useSignOut` sets
+  the mark in `src/states/own-sign-out.store.ts` before the auth store signs
+  out, and the `(app)` guard then sends the person to plain `/login`. The guard
+  can redirect before `useSignOut` navigates, and the next person on the
+  device would land on the previous person's path. `/login` clears the mark
+  once it shows, the link screen clears it when a sign-in starts, and the
+  guard clears it once a session is signed in. An
+  expired session never sets it, so its redirect survives.
+- **Toasts sit above the tab bar.** The toaster renders at the root, so it
+  would cover the tab bar, and error toasts stay until dismissed. Each tab
+  screen publishes `useBottomTabBarHeight()` while focused
+  (`TabBarHeight`, the tabs layout's `screenLayout`), and the toaster adds it
+  to its bottom offset. The height clears when no tab screen is focused.
+- **Mutations never pause offline; queries do.** The query client sets
+  `mutations: { networkMode: 'always' }`, and the link screen's workspace read
+  passes `networkMode: 'always'`. A paused mutation hangs on a spinner and can
+  fire later from another screen, and the forms' inline errors are the
+  designed offline answer for a write. The cost: an offline write fails at
+  once instead of waiting.
+- **The blocking overlays take the top inset themselves.** The update and
+  maintenance screens cover the top banners, so they pass `coversBanners` to
+  `Screen`. Without it the banner-skip rule leaves the overlay's title under
+  the status bar.
+- **Welcome shows the load error when its first list read fails.** It never
+  shows the form on a failed read: an invited account whose read failed would
+  create a duplicate workspace. The cost is one more Try again for a person
+  with no workspaces.
+- **Home, Welcome and `landingFor` count only eligible workspaces**
+  (`isEligibleTenant`: never the platform workspace, never a suspended one).
+  An account whose workspaces are all suspended would otherwise land Home,
+  see no empty state, and have no way to create one. The Workspace tab goes
+  to `/welcome` only while a person is signed in, so a forced sign-out under
+  maintenance `full` never navigates.
+- **Deeper `/tenants/{slug}/…` paths redirect to the overview.**
+  `src/app/(app)/tenants/[slug]/[...rest].tsx` exists because the Android
+  intent filter claims the whole `/tenants/` prefix, and a link to a screen
+  this version lacks would otherwise land on Page not found.
+- **The top safe-area inset has one owner.** `Screen` pads it, unless a
+  navigator header takes it (`topInset={false}`) or a top banner does
+  (`useTopBanner()`); an overlay over the banners takes it whatever they show
+  (`coversBanners`). A tab bar takes the bottom inset, so tab screens pass
+  `bottomInset={false}`. `TopBanners` holds the offline and read-only banners
+  in one container so two banners pad the inset once.
+- **Confirmations use `Alert`**, the platform dialog, with a Cancel button and
+  a destructive confirm. No custom dialog component exists. Non-blocking
+  results use `@/lib/toast`; an error that blocks a form renders inline.
+- **The trial explainer records "seen" when it shows.**
+  `trial-explainer:{userId}:{tenantId}` in MMKV holds `1` once the alert
+  has been raised. It waits while the update or maintenance screen covers the
+  app, so a person does not lose it to an overlay. It reads the record
+  during render, and the effect checks the record again before it shows.
+- **The store link comes from two build-time values.** `IOS_APP_STORE_ID`
+  (digits only) gives `itms-apps://apps.apple.com/app/id{id}`, and Android uses
+  `market://details?id={package}`. With no iOS ID the iOS update screen has no
+  button. A value that is not all digits fails the build.
+- **Retired password paths redirect with a notice.** `/forgot-password`,
+  `/register`, `/reset-password` and `/verify-email` go to
+  `/login?notice=sign-in-link` and keep no other query, so nothing a retired
+  link carried reaches the next screen.
 
 ## Copy
 
@@ -353,11 +497,10 @@ Each item is a change for react or for a later plan, with the reason it waits.
   branches 82, functions 86 and lines 89. The shared tests alone (31 manifest
   rows, 29 of them test files) cover statements 43.78%, branches 46.00%,
   functions 31.47% and lines 42.51% of `src/`, because they exercise only part
-  of the 75 shared files. The full suite measures statements 60.16%, branches
-  58.94%, functions 46.71% and lines 59.13% on 6 November 2026.
-  `jest.config.ts` and `ci.yml` hold 58, 57, 44 and 57. React
-  should mark more of its tests for expo; then expo raises each threshold
-  toward react's.
+  of the 75 shared files. The full suite measures statements 73.49%, branches
+  73.32%, functions 64.30% and lines 72.74% on 6 November 2026.
+  `jest.config.ts` and `ci.yml` hold 73, 73, 63 and 72. React should mark more
+  of its tests for expo; then expo raises each threshold toward react's.
 - **One copy-style case is skipped by name.** `test` and `test:coverage` pass
   `--testNamePattern` with a negative lookahead that skips only "finds the copy
   it guards" in `tests/unit/copy-style.test.ts`. That case expects more than
@@ -387,17 +530,29 @@ Each item is a change for react or for a later plan, with the reason it waits.
 - **Step-up and `/auth/confirm` wait for the first step-up write.** Nothing in
   the app calls a route behind `requireRecentAuth`. The body-token interceptor
   already lists both step-up verify routes, so that plan does not touch it.
-- **`/welcome` waits for plan 3c.** A new account lands on Home, which says
-  "You have no workspaces yet." React sends it to `/welcome` to create its
-  first workspace.
-- **The link's `redirect` is ignored.** Plan 3c reads it through a safe-path
-  check, since an unchecked redirect is an open redirect.
+- **`minimumAppVersion` is untyped in the shared core.** React's
+  `ClientSettings` and `isClientSettings` omit the field, so expo parses it
+  itself. A react PR types it; once expo copies that, replace
+  `src/lib/minimum-version.ts`'s schema with the shared type.
+- **Notifications and Settings are placeholder tabs.** The Notifications tab
+  says the feature is not in this version. The Settings tab lists its two
+  groups as text and holds Sign out. Plans 3c4 and 3c2 fill them.
+- **The onboarding steps that point at Settings or Members show no link.**
+  Plans 3c2 and 3c3 add those screens and the links with them.
+- **The iOS App Store ID is unset.** Plan 3e sets `IOS_APP_STORE_ID` for each
+  build profile; until then the iOS update screen has no store button.
+- **Every "Mark done" button has the same accessible label.** The web app
+  reads "Mark done: {title}". `Button` takes no `accessibilityLabel` yet; add
+  the prop, then label each button with its step.
+- **Jest prints "A worker process has failed to exit gracefully."** It showed
+  in plans 3b and 3c1 and on 6 November 2026. Run `pnpm test --detectOpenHandles`
+  to find the handle; `tests/setup.ts` already unrefs TanStack Query's timers.
 - **Two items from react PR #183 wait for the account-deletion plan.**
   `/delete-account` can create an account, and passkey-required mode blocks
   deletion. That plan owns the screen.
 - **Plans are not tracked.** `docs/superpowers/plans/` is git-ignored, and the
   specs under `docs/superpowers/specs/` are tracked. A plan lives on the
   machine of whoever wrote it.
-- **The Hermes polyfills, the splash screen and the React Compiler are
-  unchecked on a device.** [SECURITY.md](SECURITY.md#known-gaps) and the
-  README checklist carry them.
+- **The Hermes polyfills, the splash screen, the React Compiler and the
+  workspace screens are unchecked on a device.**
+  [SECURITY.md](SECURITY.md#known-gaps) and the README checklist carry them.

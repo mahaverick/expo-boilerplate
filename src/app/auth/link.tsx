@@ -1,4 +1,5 @@
-import { router, useLocalSearchParams } from 'expo-router'
+import { useQueryClient } from '@tanstack/react-query'
+import { router, useLocalSearchParams, type Href } from 'expo-router'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { Text } from 'react-native'
 import { SignInLinkScreen } from '@/components/auth/sign-in-link-screen'
@@ -9,8 +10,11 @@ import { useSignOut } from '@/hooks/use-sign-out'
 import { SignInNotKeptError } from '@/http/body-token'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import { statusFrom } from '@/lib/api-error'
+import { landingFor } from '@/lib/safe-path'
 import { useVerifySignInLink } from '@/queries/auth.queries'
+import { tenantsQueryOptions } from '@/queries/tenant.queries'
 import { useAuthStore } from '@/states/auth.store'
+import { useOwnSignOutStore } from '@/states/own-sign-out.store'
 
 /** What the screen says when a verify failed for a reason that may pass. */
 const SIGN_IN_FAILED = 'We couldn’t sign you in. Check your connection and try again.'
@@ -34,21 +38,27 @@ function paramText(value: string | string[] | undefined): string | undefined {
 /**
  * Where a mailed sign-in link opens: `/auth/link?token=…&email=…`.
  *
- * The screen reads `token` and `email` once, then clears them from the route.
+ * The screen reads `token`, `email` and `redirect` once, then clears `token` and `email` from the route (`redirect` stays).
  * It waits for the session restore, then decides from who was signed in at
  * that moment: the same address goes Home without posting, another address
  * asks first, and no one posts the token once. A link with no token or no
  * address is the dead-link state and is never posted. A 400 is a dead link.
  * Any other failure leaves the link usable, so it offers Try again. A second
  * press while a post is in flight posts nothing, since the link is single-use.
- * Every landing replaces the route, so Back never returns to the token.
+ * After a verify it lands with `landingFor`: `/welcome` for a new account, else
+ * a safe redirect, else `/welcome` for an account with no workspace, else Home.
+ * Every landing replaces the route, so Back never returns to the token, and
+ * carries the `(app)` anchor, so the tabs sit beneath a landing such as
+ * `/tenants/{slug}`.
  */
 export default function Link() {
-  const params = useLocalSearchParams<{ token?: string; email?: string }>()
+  const params = useLocalSearchParams<{ token?: string; email?: string; redirect?: string }>()
   const [link] = useState(() => ({
     token: paramText(params.token),
     email: paramText(params.email),
+    requested: paramText(params.redirect),
   }))
+  const queryClient = useQueryClient()
   const status = useSessionStatus()
   const verify = useVerifySignInLink()
   const { signOut, isPending: isSigningOut } = useSignOut()
@@ -64,17 +74,24 @@ export default function Link() {
   /** Set while a post is in flight, and after a success, so a second press in the same frame posts nothing. */
   const posting = useRef(false)
 
-  /** Posts the token, once at a time. The outcome decides what shows next. */
+  /** Posts the token, once at a time. The outcome decides what shows next. A sign-in starting ends any sign-out of the person's own. */
   const post = () => {
     if (posting.current) return
     posting.current = true
+    useOwnSignOutStore.setState({ isOwn: false })
     setMode('verifying')
     verify.mutate(
       { token: link.token ?? '', email: link.email },
       {
-        onSuccess: () => {
+        onSuccess: (session) => {
           setFailure(null)
-          router.replace('/')
+          void landingFor(session, link.requested, () =>
+            // Offline the read fails at once and the landing falls back to Home, never waits.
+            queryClient.fetchQuery({ ...tenantsQueryOptions(), networkMode: 'always' })
+          ).then((path) => {
+            // Any safe path, which typed routes cannot list; the anchor puts the tabs beneath it.
+            router.replace(path as Href, { withAnchor: true })
+          })
         },
         onError: (error) => {
           // Try again may post the link again.

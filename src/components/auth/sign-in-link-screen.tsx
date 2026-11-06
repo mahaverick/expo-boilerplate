@@ -17,6 +17,7 @@ interface SignInLinkScreenProps {
   submitLabel: string
   defaultEmail?: string
   notice?: string
+  redirect?: string | undefined
 }
 
 /**
@@ -44,6 +45,7 @@ function firstMessage(errors: unknown[]): string | undefined {
  * @param props.submitLabel - The send button's label.
  * @param props.defaultEmail - The address the form starts with.
  * @param props.notice - A line of text above the form.
+ * @param props.redirect - A safe path the link lands on, sent with the request.
  * @returns The screen.
  */
 export function SignInLinkScreen({
@@ -51,6 +53,7 @@ export function SignInLinkScreen({
   submitLabel,
   defaultEmail = '',
   notice,
+  redirect,
 }: SignInLinkScreenProps) {
   const request = useRequestSignInLink()
   const [sentTo, setSentTo] = useState<string | null>(null)
@@ -62,7 +65,7 @@ export function SignInLinkScreen({
       const { email } = signInLinkRequestSchema.parse(value)
       setFailed(false)
       try {
-        await request.mutateAsync({ email })
+        await request.mutateAsync(redirect ? { email, redirect } : { email })
         setSentTo(email)
       } catch {
         setFailed(true)
