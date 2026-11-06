@@ -1,7 +1,10 @@
 import { jest } from '@jest/globals'
-import { fireEvent, screen, waitFor } from '@testing-library/react-native'
+import { QueryClient } from '@tanstack/react-query'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import { router } from 'expo-router'
+import { Text } from 'react-native'
 import Tenants from '@/app/(app)/tenants/index'
+import { useTenants } from '@/queries/tenant.queries'
 import { useToastQueueStore } from '@/states/toast-queue.store'
 import { renderScreen, restoreApi, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
@@ -32,6 +35,31 @@ afterEach(() => {
 })
 
 describe('Workspaces list', () => {
+  it('keeps the loaded list when a background read fails', async () => {
+    let fail = false
+    serve(() => (fail ? 'network-error' : page([row('acme', 'Acme')])))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    /** Shows the list read's status, rendered in the same pass as the screen. */
+    function Status() {
+      return <Text>{`read:${useTenants().status}`}</Text>
+    }
+    await renderScreen(
+      <>
+        <Tenants />
+        <Status />
+      </>,
+      client
+    )
+    expect(await screen.findByText('Acme')).toBeTruthy()
+    fail = true
+    await act(async () => {
+      await client.refetchQueries()
+    })
+    expect(await screen.findByText('read:error')).toBeTruthy()
+    expect(screen.getByText('Acme')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+  })
+
   it('lists each membership, tags a suspended one and hides the platform workspace', async () => {
     serve(() =>
       page([

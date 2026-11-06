@@ -61,7 +61,8 @@ function WorkspaceRow({ entry }: { entry: TenantWithRole }) {
 /**
  * The caller's workspaces and the form to create another. A failed load shows
  * the error with Try again and never the empty state, since the two read alike
- * and the empty state invites a duplicate.
+ * and the empty state invites a duplicate. A failed background read keeps the
+ * loaded list.
  * @returns The screen.
  */
 export default function Workspaces() {
@@ -78,7 +79,7 @@ export default function Workspaces() {
 
   const entries = tenants.data?.filter((entry) => !entry.isPlatform)
   let list
-  if (tenants.isError) {
+  if (tenants.data === undefined && tenants.isError) {
     list = (
       <LoadError
         message={TENANTS_ERROR}
