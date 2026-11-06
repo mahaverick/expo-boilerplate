@@ -2,7 +2,7 @@ import { View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { OfflineBanner } from '@/components/shared/offline-banner'
 import { ReadOnlyBanner } from '@/components/shared/read-only-banner'
-import { useIsOnline } from '@/hooks/use-is-online'
+import { useTopBanner } from '@/hooks/use-top-banner'
 import { useMaintenanceMode } from '@/http/maintenance'
 import { useMaintenanceModeStore } from '@/states/maintenance-mode.store'
 
@@ -13,12 +13,11 @@ import { useMaintenanceModeStore } from '@/states/maintenance-mode.store'
  * @returns The container, or nothing.
  */
 export function TopBanners() {
-  const isOnline = useIsOnline()
-  const mode = useMaintenanceMode()
+  const bannerShows = useTopBanner()
   const message = useMaintenanceModeStore((state) => state.message)
   const insets = useSafeAreaInsets()
-  const isReadOnly = mode === 'read_only'
-  if (isOnline && !isReadOnly) return null
+  const isReadOnly = useMaintenanceMode() === 'read_only'
+  if (!bannerShows) return null
   return (
     <View
       className="bg-muted"

@@ -195,7 +195,7 @@ date, the device and the OS version beside each.
       background changes with it.
 - [ ] **A stored dark theme shows no light frame.** Set the preference to
       `dark` through `useThemeStore.getState().setPreference('dark')` from a
-      temporary call in `src/app/(app)/index.tsx`, force-quit, and reopen with the
+      temporary call in `src/app/(app)/(tabs)/index.tsx`, force-quit, and reopen with the
       phone in light mode. Remove the call afterwards. The splash screen hides
       within 2 seconds, and a slow device may show one light frame first.
 - [ ] **The polyfills work.** In the dev client's console, `new
@@ -212,7 +212,7 @@ date, the device and the OS version beside each.
       (`src/lib/billing-format.ts`).
 - [ ] **One request carries `traceparent`.** This proves
       `crypto.getRandomValues`. Send one request through `apiClient` from a
-      temporary call in `src/app/(app)/index.tsx`, with the API running and
+      temporary call in `src/app/(app)/(tabs)/index.tsx`, with the API running and
       `EXPO_PUBLIC_API_URL` set. Read the request's headers in the API's log or in
       React Native DevTools. `traceparent` is present, and so are `X-Client:
   native` and `X-Device-Name`. Remove the call afterwards.

@@ -1,8 +1,8 @@
 import { jest } from '@jest/globals'
-import { act, screen, waitFor } from '@testing-library/react-native'
+import { act, screen } from '@testing-library/react-native'
 import { useEffect, useState } from 'react'
+import Home from '@/app/(app)/(tabs)/index'
 import AppLayout from '@/app/(app)/_layout'
-import Home from '@/app/(app)/index'
 import Link from '@/app/auth/link'
 import { resetSessionForTests } from '@/http/session'
 import { resetSessionLifecycleForTests, restoreSession } from '@/http/session-lifecycle'
@@ -111,10 +111,9 @@ describe('signing in from a mailed link', () => {
       await restoreSession()
     })
     await renderScreen(<Harness />)
-    expect(await screen.findByRole('header', { name: 'Home' })).toBeTruthy()
-    await waitFor(() => {
-      expect(screen.getByText('Signed in as ada@example.com')).toBeTruthy()
-    })
+    expect(
+      await screen.findByRole('header', { name: 'Welcome back, ada@example.com' })
+    ).toBeTruthy()
     expect(mockRedirects).toEqual([])
   })
 })

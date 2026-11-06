@@ -1,7 +1,10 @@
 import { jest } from '@jest/globals'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Pressable, Text, TextInput } from 'react-native'
-import Home from '@/app/(app)/index'
+import Home from '@/app/(app)/(tabs)/index'
+import Notifications from '@/app/(app)/(tabs)/notifications'
+import Settings from '@/app/(app)/(tabs)/settings'
+import Workspace from '@/app/(app)/(tabs)/workspace'
 import Tenants from '@/app/(app)/tenants/index'
 import Welcome from '@/app/(app)/welcome'
 import NotFound from '@/app/+not-found'
@@ -20,6 +23,18 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({}),
   Stack: { Screen: () => null },
 }))
+/** The in-memory stand-in for MMKV. */
+const mockStorage = new Map<string, string>()
+jest.mock('@/lib/storage', () => ({
+  storage: {
+    getString: (key: string) => mockStorage.get(key),
+    set: (key: string, value: string) => {
+      mockStorage.set(key, value)
+    },
+    remove: (key: string) => mockStorage.delete(key),
+  },
+}))
+
 jest.mock('@/http/session-lifecycle', () => ({ useSessionStatus: () => 'signed-out' }))
 
 /** The query client the screens below share. */
@@ -34,6 +49,9 @@ const SCREENS: Array<[string, () => React.JSX.Element]> = [
   ['Login', () => <Login />],
   ['Link (dead link)', () => <Link />],
   ['Home', () => <Home />],
+  ['Workspace tab', () => <Workspace />],
+  ['Notifications', () => <Notifications />],
+  ['Settings', () => <Settings />],
   ['Welcome', () => <Welcome />],
   ['Workspaces', () => <Tenants />],
   ['Passkey required', () => <PasskeyRequired />],
