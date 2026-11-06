@@ -173,3 +173,23 @@ export const pendingRevokeStore: PendingRevokeStore = {
     })
   },
 }
+
+/** How many times the device's session has changed hands. */
+let sessionChanges = 0
+
+/**
+ * Marks a change of whose session the device holds: a sign-out, or a
+ * sign-in that stores a new token. A refresh that read the store before the
+ * mark cannot keep its token (`src/http/session.ts`).
+ */
+export function markSessionChange(): void {
+  sessionChanges += 1
+}
+
+/**
+ * How many session changes have been marked so far.
+ * @returns The count, which only grows.
+ */
+export function sessionChangeCount(): number {
+  return sessionChanges
+}

@@ -247,6 +247,39 @@ describe('refresh token capture', () => {
   })
 })
 
+describe('a sign-in during a refresh', () => {
+  it.each(['/auth/refresh', '/profile'])(
+    'keeps the captured token when the refresh answers later (%s held)',
+    async (held) => {
+      await refreshTokenStore.write('old')
+      useAuthStore.getState().login('access', { id: 'u1' } as User)
+      let release: (() => void) | undefined
+      /** Answers each route; the held one waits for `release`. */
+      const adapter: AxiosAdapter = async (config) => {
+        const url = config.url ?? ''
+        if (url === held) await new Promise<void>((resolve) => (release = resolve))
+        const data =
+          url === '/auth/refresh'
+            ? { success: true, data: { accessToken: 'refreshed', refreshToken: 'rotated' } }
+            : url === '/profile'
+              ? { success: true, data: { id: 'u1' } }
+              : url === '/auth/link/verify'
+                ? structuredClone(signedIn.data)
+                : { success: true, data: {} }
+        return { data, status: 200, statusText: '', headers: {}, config }
+      }
+      apiClient.defaults.adapter = adapter
+      const refresh = ensureSession().catch((error: unknown) => error)
+      for (let i = 0; i < 50 && !release; i += 1) await Promise.resolve()
+      expect(release).toBeDefined()
+      await apiClient.post('/auth/link/verify', { token: 't' })
+      release?.()
+      await expect(refresh).resolves.toBeInstanceOf(Error)
+      await expect(refreshTokenStore.read()).resolves.toBe('new')
+    }
+  )
+})
+
 describe('refresh', () => {
   it('leaves the refresh request body to the core and writes the token once', async () => {
     await refreshTokenStore.write('old')

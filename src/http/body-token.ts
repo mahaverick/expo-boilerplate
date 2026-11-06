@@ -5,7 +5,7 @@
  */
 import type { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import { revokeToken } from '@/http/revoke'
-import { refreshTokenStore } from '@/http/token-store'
+import { markSessionChange, refreshTokenStore } from '@/http/token-store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 import { isPasskeySetupRequired } from '@/types/passkey.types'
 
@@ -93,7 +93,8 @@ async function addToken(config: InternalAxiosRequestConfig): Promise<InternalAxi
 /**
  * Stores the refresh token a sign-in answer holds and removes it, and its
  * expiry, from the response. When the write fails, ends the server session
- * (best effort) and rejects.
+ * (best effort) and rejects. It marks a session change, so a refresh in
+ * flight keeps nothing.
  * @param response - The response.
  */
 async function keepToken(response: AxiosResponse): Promise<AxiosResponse> {
@@ -101,11 +102,15 @@ async function keepToken(response: AxiosResponse): Promise<AxiosResponse> {
   const data = (response.data as { data?: Record<string, unknown> } | undefined)?.data
   const token = data?.refreshToken
   if (data === undefined || typeof token !== 'string') return response
+  // Before and after the write: a refresh in flight must not replace this token with the old session's.
+  markSessionChange()
   try {
     await refreshTokenStore.write(token)
   } catch {
     void revokeToken(token)
     throw new SignInNotKeptError()
+  } finally {
+    markSessionChange()
   }
   delete data.refreshToken
   delete data.refreshTokenExpiresAt

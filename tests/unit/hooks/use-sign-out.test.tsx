@@ -1,11 +1,13 @@
 import { jest } from '@jest/globals'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, renderHook } from '@testing-library/react-native'
+import { act, renderHook, waitFor } from '@testing-library/react-native'
 import { AxiosError, type AxiosAdapter } from 'axios'
 import { router } from 'expo-router'
 import type { ReactNode } from 'react'
 import { useSignOut } from '@/hooks/use-sign-out'
+import { isAuthVerdict } from '@/http/auth-verdict'
 import { apiClient } from '@/http/client'
+import { ensureSession, resetSessionForTests } from '@/http/session'
 import { pendingRevokeStore, refreshTokenStore } from '@/http/token-store'
 import { useAuthStore } from '@/states/auth.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
@@ -155,5 +157,76 @@ describe('useSignOut', () => {
       await first
     })
     expect(result.current.isPending).toBe(false)
+  })
+})
+
+describe('useSignOut during a refresh', () => {
+  /** Releases the held answer, when a case holds one. */
+  let release: (() => void) | undefined
+
+  /**
+   * Serves the refresh, the profile and the logout. Holds the route `held`
+   * until `release()`, and logs each logout's token.
+   * @param held - The route whose answer waits.
+   */
+  function serveHolding(held: '/auth/refresh' | '/profile'): void {
+    /** Answers each route; the held one waits. */
+    const adapter: AxiosAdapter = async (config) => {
+      const url = config.url ?? ''
+      if (url === held) await new Promise<void>((resolve) => (release = resolve))
+      if (url === '/auth/logout') {
+        log.push(
+          `logout:${(JSON.parse(config.data as string) as { refreshToken: string }).refreshToken}`
+        )
+      }
+      const data =
+        url === '/auth/refresh'
+          ? { accessToken: 'refreshed', refreshToken: 'rotated' }
+          : url === '/profile'
+            ? { id: 'user-1' }
+            : {}
+      return { data: { success: true, data }, status: 200, statusText: '', headers: {}, config }
+    }
+    apiClient.defaults.adapter = adapter
+  }
+
+  beforeEach(() => {
+    resetSessionForTests()
+    release = undefined
+  })
+
+  it.each(['/auth/refresh', '/profile'] as const)(
+    'stays signed out when the refresh answers after the sign-out (%s held)',
+    async (held) => {
+      serveHolding(held)
+      const { result } = await renderHook(() => useSignOut(), { wrapper })
+      const refresh = ensureSession().catch((error: unknown) => error)
+      await waitFor(() => {
+        expect(release).toBeDefined()
+      })
+      await act(() => result.current.signOut())
+      release?.()
+      const outcome = await refresh
+      expect(outcome).toBeInstanceOf(Error)
+      expect(isAuthVerdict(outcome)).toBe(false)
+      expect(useAuthStore.getState().isAuthenticated).toBe(false)
+      await expect(refreshTokenStore.read()).resolves.toBeNull()
+    }
+  )
+
+  it('revokes the rotated token a stale refresh could not keep', async () => {
+    serveHolding('/auth/refresh')
+    const { result } = await renderHook(() => useSignOut(), { wrapper })
+    const refresh = ensureSession().catch(() => {})
+    await waitFor(() => {
+      expect(release).toBeDefined()
+    })
+    await act(() => result.current.signOut())
+    release?.()
+    await refresh
+    await waitFor(() => {
+      expect(log).toContain('logout:rotated')
+    })
+    await expect(refreshTokenStore.read()).resolves.toBeNull()
   })
 })

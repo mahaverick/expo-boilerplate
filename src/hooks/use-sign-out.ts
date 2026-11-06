@@ -7,7 +7,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { useCallback, useRef, useState } from 'react'
 import { retryPendingRevoke, revokeToken } from '@/http/revoke'
-import { pendingRevokeStore, refreshTokenStore } from '@/http/token-store'
+import { markSessionChange, pendingRevokeStore, refreshTokenStore } from '@/http/token-store'
 import { useAuthStore } from '@/states/auth.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 
@@ -36,6 +36,8 @@ export function useSignOut(): SignOut {
       if (inFlight.current) return inFlight.current
       /** Runs the seven steps in order. */
       const run = async (): Promise<void> => {
+        // A refresh in flight must not write its token back or sign the person in again.
+        markSessionChange()
         let token: string | null = null
         let saved = true
         try {
@@ -46,6 +48,8 @@ export function useSignOut(): SignOut {
         }
         // The device must end signed out, whatever the keychain does.
         await refreshTokenStore.clear().catch(() => {})
+        // Again after the clear: a refresh that read the token during the steps above.
+        markSessionChange()
         queryClient.clear()
         useAuthStore.getState().logout()
         usePasskeySetupStore.getState().setRequired(false)
