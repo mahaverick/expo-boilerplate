@@ -1,15 +1,13 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config'
 import packageJson from './package.json'
 
-/** The paths the web app's association files claim, from react's `docker/15-app-links.sh`. `/tenants/*` is the prefix `/tenants/`. */
-const APP_LINK_PATH_PREFIXES = [
-  '/auth/link',
-  '/auth/confirm',
-  '/invitations/accept',
-  '/invitations/confirm',
-  '/settings/account/security',
-  '/tenants/',
-]
+/**
+ * The paths the Android intent filter claims: only those this app has a
+ * screen for. A verified app link to any other path opens the app on Page not
+ * found, so each later plan adds its paths with its screens. iOS claims the
+ * paths in react's apple-app-site-association file (`docker/15-app-links.sh`).
+ */
+const ANDROID_APP_LINK_PATH_PREFIXES = ['/auth/link']
 
 /** A bare hostname: dot-separated labels, no scheme, port or path. */
 const HOSTNAME = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i
@@ -59,7 +57,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           {
             action: 'VIEW',
             autoVerify: true,
-            data: APP_LINK_PATH_PREFIXES.map((pathPrefix) => ({
+            data: ANDROID_APP_LINK_PATH_PREFIXES.map((pathPrefix) => ({
               scheme: 'https',
               host,
               pathPrefix,
@@ -76,7 +74,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         'android.permission.WRITE_EXTERNAL_STORAGE',
       ],
     },
-    plugins: ['expo-router', './plugins/with-backup-rules'],
+    plugins: ['expo-router', 'expo-web-browser', './plugins/with-backup-rules'],
     ...(host && { extra: { webUrl: `https://${host}` } }),
     experiments: {
       typedRoutes: true,

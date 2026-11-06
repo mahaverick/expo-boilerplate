@@ -39,6 +39,11 @@ describe('app.config', () => {
     expect(config.plugins).toContain('./plugins/with-backup-rules')
   })
 
+  it('registers the expo-web-browser plugin', () => {
+    const config = configFor(undefined)
+    expect(config.plugins).toContain('expo-web-browser')
+  })
+
   it('wires app links to APP_LINK_HOST', () => {
     const config = configFor('app.example.com')
     expect(config.ios?.associatedDomains).toEqual([
@@ -49,14 +54,8 @@ describe('app.config', () => {
       {
         action: 'VIEW',
         autoVerify: true,
-        data: [
-          '/auth/link',
-          '/auth/confirm',
-          '/invitations/accept',
-          '/invitations/confirm',
-          '/settings/account/security',
-          '/tenants/',
-        ].map((pathPrefix) => ({ scheme: 'https', host: 'app.example.com', pathPrefix })),
+        // Only the paths with a screen: a verified link to any other path would loop back into the app.
+        data: [{ scheme: 'https', host: 'app.example.com', pathPrefix: '/auth/link' }],
         category: ['BROWSABLE', 'DEFAULT'],
       },
     ])

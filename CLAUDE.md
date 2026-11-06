@@ -250,6 +250,14 @@ candidate, and each has a reason. The files are listed in
   throw is `NoRefreshTokenError`, and the shared core signs out. The
   alternative is a session that dies 10 seconds later. After a sign-in, the
   sign-in fails and the new token is revoked.
+- **The Android intent filter claims only the paths with a screen.** In plan
+  3b that is `/auth/link` (`ANDROID_APP_LINK_PATH_PREFIXES` in
+  `app.config.ts`). A verified link to a path with no screen loops back into
+  the app and lands on Page not found. Each later plan adds its paths with
+  its screens. iOS's paths come from react's apple-app-site-association file
+  (`docker/15-app-links.sh`), which this app does not control.
+- **"Open the website" uses `expo-web-browser`, not `Linking.openURL`.** The
+  system's link handler hands a verified app link back to the app.
 - **`+native-intent.tsx` strips the query and fragment from every non-https
   link.** Any app can claim a custom scheme and read its query, and a token
   travels in the query. A token path under the scheme becomes `/`. An https

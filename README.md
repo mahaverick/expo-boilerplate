@@ -127,8 +127,13 @@ token uses it up, so a second open shows the dead-link state.
   It is not `EXPO_PUBLIC_*`, so the bundle does not carry it. `app.config.ts`
   uses it for the iOS associated domains (`applinks:` and `webcredentials:`),
   the Android intent filter with `autoVerify`, and `extra.webUrl`
-  (`https://<host>`), which the passkey screen opens. A value that is not a
-  bare hostname fails the build.
+  (`https://<host>`), which the passkey screen opens in an in-app browser
+  (`expo-web-browser`). A value that is not a bare hostname fails the build.
+- **Android claims only `/auth/link`.** It is the one path with a screen. A
+  verified link to any other path would open the app on Page not found, so
+  each later plan adds its paths with its screens. iOS claims the paths in
+  the web app's association file, so a link to a path with no screen there
+  opens the app too, until that plan ships.
 - **Unset, the app has no app links.** The custom scheme
   (`expo-boilerplate://`) still opens the app, but `src/app/+native-intent.tsx`
   drops its query and fragment, so a token never arrives that way. The

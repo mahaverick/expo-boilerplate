@@ -2,6 +2,7 @@ import { jest } from '@jest/globals'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import Constants from 'expo-constants'
 import { router } from 'expo-router'
+import * as WebBrowser from 'expo-web-browser'
 import { BackHandler, Linking } from 'react-native'
 import PasskeyRequired from '@/app/passkey-required'
 import { refreshTokenStore } from '@/http/token-store'
@@ -15,6 +16,8 @@ jest.mock('expo-router', () => ({
   router: { replace: jest.fn() },
   Stack: { Screen: () => null },
 }))
+
+jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn(() => Promise.resolve()) }))
 
 jest.mock('expo-constants', () => ({ __esModule: true, default: { expoConfig: { extra: {} } } }))
 
@@ -55,17 +58,23 @@ describe('PasskeyRequired', () => {
     expect(screen.getByTestId('screen').type).toBe('RCTScrollView')
   })
 
-  it('Open the website opens the security settings page', async () => {
+  it('Open the website opens the security settings page in the in-app browser', async () => {
     setWebUrl('https://app.example.com')
-    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined)
+    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined)
     await renderScreen(<PasskeyRequired />)
     await fireEvent.press(screen.getByRole('button', { name: 'Open the website' }))
-    expect(open).toHaveBeenCalledWith('https://app.example.com/settings/account/security')
+    expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+      'https://app.example.com/settings/account/security'
+    )
+    // The system's link handler would hand a verified app link back to this app.
+    expect(openURL).not.toHaveBeenCalled()
   })
 
   it('survives a refusal to open the website', async () => {
     setWebUrl('https://app.example.com')
-    const open = jest.spyOn(Linking, 'openURL').mockRejectedValue(new Error('no handler'))
+    const open = jest
+      .mocked(WebBrowser.openBrowserAsync)
+      .mockRejectedValueOnce(new Error('no browser'))
     await renderScreen(<PasskeyRequired />)
     await fireEvent.press(screen.getByRole('button', { name: 'Open the website' }))
     await waitFor(() => {
