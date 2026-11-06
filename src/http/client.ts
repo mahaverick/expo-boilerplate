@@ -11,7 +11,9 @@ import { createApiClient } from '@/http/create-api-client'
 import { installInterceptors as installSharedInterceptors } from '@/http/interceptors'
 import { broadcastLogout, ensureSession, redirectToLogin } from '@/http/session'
 import { markSessionChange, refreshTokenStore } from '@/http/token-store'
+import { queryClient } from '@/lib/query-client'
 import { useAuthStore } from '@/states/auth.store'
+import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 
 export { unwrap } from '@/http/create-api-client'
 
@@ -85,6 +87,8 @@ function installInterceptors(client: AxiosInstance): void {
       useAuthStore.getState().logout()
       // A non-expiry 401 is a verdict the shared core never sees, so it cannot clear the store.
       void refreshTokenStore.clear()
+      queryClient.clear()
+      usePasskeySetupStore.getState().setRequired(false)
       broadcastLogout()
       redirectToLogin()
     },

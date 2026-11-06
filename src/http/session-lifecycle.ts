@@ -11,6 +11,7 @@ import { ensureSession } from '@/http/session'
 import { refreshTokenStore } from '@/http/token-store'
 import { storage } from '@/lib/storage'
 import { useAuthStore } from '@/states/auth.store'
+import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 
 /** Whether the launch restore is running, and who the person is after it. */
 export type SessionStatus = 'restoring' | 'signed-in' | 'signed-out'
@@ -80,8 +81,8 @@ export function useSessionStatus(): SessionStatus {
 
 /**
  * Refreshes the session each time the app returns to the foreground, after
- * the launch restore has settled. With no stored token the core rejects at
- * once; every rejection is swallowed.
+ * the launch restore has settled, and clears the passkey-setup flag. With no
+ * stored token the core rejects at once; every rejection is swallowed.
  * @returns A function that removes the listener.
  */
 export function installForegroundRefresh(): () => void {
@@ -90,6 +91,8 @@ export function installForegroundRefresh(): () => void {
     const wasAway = previous === 'background' || previous === 'inactive'
     previous = next
     if (next !== 'active' || !wasAway) return
+    // The person may have added a passkey on the website; the next refused request sets the flag again.
+    if (usePasskeySetupStore.getState().required) usePasskeySetupStore.getState().setRequired(false)
     void restoreSession()
       .then(() => ensureSession())
       .catch(() => {})

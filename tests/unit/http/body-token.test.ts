@@ -206,6 +206,13 @@ describe('refresh token capture', () => {
     }
   )
 
+  it('clears the passkey flag, since the new session is judged afresh', async () => {
+    usePasskeySetupStore.getState().setRequired(true)
+    serve(() => structuredClone(signedIn))
+    await apiClient.post('/auth/link/verify', {})
+    expect(usePasskeySetupStore.getState().required).toBe(false)
+  })
+
   it('stores the token before the request promise resolves', async () => {
     serve(() => structuredClone(signedIn))
     let seen: string | null = null
@@ -278,6 +285,43 @@ describe('a sign-in during a refresh', () => {
       await expect(refreshTokenStore.read()).resolves.toBe('new')
     }
   )
+})
+
+describe('a verdict on the old token after a sign-in', () => {
+  it('keeps the new token and the passkey flag the new session set', async () => {
+    await refreshTokenStore.write('old')
+    useAuthStore.getState().login('access', { id: 'u1' } as User)
+    let release: (() => void) | undefined
+    /** Holds the refresh, then refuses it; the sign-in succeeds. */
+    const adapter: AxiosAdapter = async (config) => {
+      if (config.url === '/auth/refresh') {
+        await new Promise<void>((resolve) => (release = resolve))
+        throw new AxiosError('no', 'ERR_BAD_REQUEST', config, null, {
+          data: { success: false, code: 'INVALID_REFRESH_TOKEN', message: 'no' },
+          status: 401,
+          statusText: '',
+          headers: {},
+          config,
+        })
+      }
+      return {
+        data: structuredClone(signedIn.data),
+        status: 200,
+        statusText: '',
+        headers: {},
+        config,
+      }
+    }
+    apiClient.defaults.adapter = adapter
+    const refresh = ensureSession().catch((error: unknown) => error)
+    for (let i = 0; i < 50 && !release; i += 1) await Promise.resolve()
+    await apiClient.post('/auth/link/verify', { token: 't' })
+    usePasskeySetupStore.getState().setRequired(true)
+    release?.()
+    await refresh
+    await expect(refreshTokenStore.read()).resolves.toBe('new')
+    expect(usePasskeySetupStore.getState().required).toBe(true)
+  })
 })
 
 describe('refresh', () => {

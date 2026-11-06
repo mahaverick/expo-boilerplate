@@ -94,7 +94,7 @@ async function addToken(config: InternalAxiosRequestConfig): Promise<InternalAxi
  * Stores the refresh token a sign-in answer holds and removes it, and its
  * expiry, from the response. When the write fails, ends the server session
  * (best effort) and rejects. It marks a session change, so a refresh in
- * flight keeps nothing.
+ * flight keeps nothing, and clears the passkey-setup flag.
  * @param response - The response.
  */
 async function keepToken(response: AxiosResponse): Promise<AxiosResponse> {
@@ -114,6 +114,8 @@ async function keepToken(response: AxiosResponse): Promise<AxiosResponse> {
   }
   delete data.refreshToken
   delete data.refreshTokenExpiresAt
+  // The new session is judged afresh; its first refused request sets the flag again.
+  usePasskeySetupStore.getState().setRequired(false)
   return response
 }
 

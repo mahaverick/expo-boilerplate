@@ -15,7 +15,9 @@ import { apiClient } from '@/http/client'
 import { createRefreshCore, type RefreshCore, type RefreshTokenStore } from '@/http/refresh-core'
 import { revokeToken } from '@/http/revoke'
 import { refreshTokenStore, sessionChangeCount } from '@/http/token-store'
+import { queryClient } from '@/lib/query-client'
 import { useAuthStore } from '@/states/auth.store'
+import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 
 /** The messages other than `logout` that react's tabs send each other. */
 type AuthMessageType = 'signed_in' | 'step_up_confirmed'
@@ -65,6 +67,18 @@ const guardedStore: RefreshTokenStore = {
 }
 
 /**
+ * Empties what the signed-out person left behind: the query cache and the
+ * passkey-setup flag. Skipped when a sign-out or sign-in came after the
+ * refresh read the store, since the cache and flag are then the new
+ * session's.
+ */
+function forgetSignedOutSession(): void {
+  if (changedSince(readAt)) return
+  queryClient.clear()
+  usePasskeySetupStore.getState().setRequired(false)
+}
+
+/**
  * Undoes a refresh that a session change overtook after its write: the
  * core's `login()` stands only while no sign-out or sign-in followed.
  * @param accessToken - The token the refresh returned.
@@ -90,6 +104,8 @@ export function ensureSession(): Promise<string> {
     client: apiClient,
     transport: 'body',
     tokenStore: guardedStore,
+    onSignedOut: forgetSignedOutSession,
+    onIdentityChanged: forgetSignedOutSession,
   })
   const source = core.ensureSession()
   if (checked?.source !== source) {

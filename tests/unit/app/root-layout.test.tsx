@@ -9,6 +9,7 @@ import {
   useSessionStatus,
 } from '@/http/session-lifecycle'
 import type { SessionStatus } from '@/http/session-lifecycle'
+import { queryClient } from '@/lib/query-client'
 import { useThemeStore } from '@/states/theme.store'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
@@ -27,7 +28,20 @@ jest.mock('@/http/session-lifecycle', () => ({
   installForegroundRefresh: jest.fn(() => jest.fn()),
   useSessionStatus: jest.fn(() => 'signed-out'),
 }))
-jest.mock('expo-router', () => ({ Stack: () => null }))
+jest.mock('expo-router', () => {
+  const { useQueryClient } =
+    jest.requireActual<typeof import('@tanstack/react-query')>('@tanstack/react-query')
+  return {
+    /** Records the query client the screens would read. */
+    Stack: function Stack() {
+      mockSeenClients.push(useQueryClient())
+      return null
+    },
+  }
+})
+
+/** The query clients the mocked `Stack` saw, one per render. */
+const mockSeenClients: unknown[] = []
 
 /** NativeWind's own `set`, which in tests reports the scheme at once. */
 const apply = colorScheme.set.bind(colorScheme)
@@ -168,6 +182,13 @@ describe('RootLayout', () => {
       jest.advanceTimersByTime(1)
     })
     expect(hide).toHaveBeenCalledTimes(1)
+  })
+
+  it('provides the app query client to every screen', async () => {
+    mockSeenClients.length = 0
+    await render(<RootLayout />)
+    expect(mockSeenClients.length).toBeGreaterThan(0)
+    expect(mockSeenClients.every((client) => client === queryClient)).toBe(true)
   })
 
   it('installs the foreground refresh and removes it on unmount', async () => {

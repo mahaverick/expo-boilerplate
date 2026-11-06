@@ -1,20 +1,31 @@
 import Constants from 'expo-constants'
-import { Stack } from 'expo-router'
+import { router, Stack } from 'expo-router'
 import { useEffect } from 'react'
 import { BackHandler, Linking, Text } from 'react-native'
 import { Button } from '@/components/ui/button'
 import { Screen } from '@/components/ui/screen'
 import { useSignOut } from '@/hooks/use-sign-out'
+import { useAuthStore } from '@/states/auth.store'
+import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 
 /**
  * The blocking screen for an account the API refuses until it has a passkey.
  * The app cannot add one yet, so it points to the website and offers Sign out.
  * It ignores the back gesture and the Android back button. "Open the website"
- * shows only when the build knows the web address.
+ * shows only when the build knows the web address. When the flag clears while
+ * the person is signed in, the screen goes Home, where the next refused request
+ * sends it back.
  */
 export default function PasskeyRequired() {
   const { signOut, isPending } = useSignOut()
   const webUrl = Constants.expoConfig?.extra?.webUrl as string | undefined
+
+  const required = usePasskeySetupStore((state) => state.required)
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+
+  useEffect(() => {
+    if (!required && isAuthenticated) router.replace('/')
+  }, [required, isAuthenticated])
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => true)

@@ -13,7 +13,9 @@ import {
   switchIdentity,
 } from '@/http/session'
 import { refreshTokenStore } from '@/http/token-store'
+import { queryClient } from '@/lib/query-client'
 import { useAuthStore } from '@/states/auth.store'
+import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 import { deleteItemAsync, getItemAsync, resetSecureStore } from '@/tests/mocks/expo-secure-store'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 import type { User } from '@/types/api.types'
@@ -35,6 +37,8 @@ beforeEach(() => {
 
 afterEach(() => {
   useAuthStore.getState().logout()
+  usePasskeySetupStore.getState().setRequired(false)
+  queryClient.clear()
 })
 
 describe('session', () => {
@@ -104,6 +108,50 @@ describe('session', () => {
     await expect(ensureSession()).rejects.toBeInstanceOf(NoRefreshTokenError)
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
     await expect(refreshTokenStore.read()).resolves.toBeNull()
+  })
+
+  it('a verdict for a signed-in person clears the passkey flag and the query cache', async () => {
+    await refreshTokenStore.write('old')
+    useAuthStore.getState().login('access', userWith('user-1'))
+    usePasskeySetupStore.getState().setRequired(true)
+    queryClient.setQueryData(['profile'], 'cached')
+    apiClient.defaults.adapter = (config) =>
+      Promise.reject(
+        new AxiosError('no', 'ERR_BAD_REQUEST', config, null, {
+          data: { success: false, code: 'INVALID_REFRESH_TOKEN', message: 'no' },
+          status: 401,
+          statusText: '',
+          headers: {},
+          config,
+        })
+      )
+    await ensureSession().catch(() => {})
+    expect(usePasskeySetupStore.getState().required).toBe(false)
+    expect(queryClient.getQueryData(['profile'])).toBeUndefined()
+  })
+
+  it('a refresh that returns another user clears the passkey flag and the query cache', async () => {
+    await refreshTokenStore.write('old')
+    useAuthStore.getState().login('access', userWith('user-1'))
+    usePasskeySetupStore.getState().setRequired(true)
+    queryClient.setQueryData(['profile'], 'cached')
+    apiClient.defaults.adapter = (config) => {
+      const data =
+        config.url === '/auth/refresh'
+          ? { accessToken: 'access-2', refreshToken: 'new' }
+          : { id: 'user-2' }
+      return Promise.resolve({
+        data: { success: true, data },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      })
+    }
+    await ensureSession().catch(() => {})
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    expect(usePasskeySetupStore.getState().required).toBe(false)
+    expect(queryClient.getQueryData(['profile'])).toBeUndefined()
   })
 
   it('rejects with NoRefreshTokenError when nothing is stored', async () => {

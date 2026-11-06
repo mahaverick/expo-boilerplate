@@ -13,6 +13,7 @@ import {
 } from '@/http/session-lifecycle'
 import { pendingRevokeStore, refreshTokenStore } from '@/http/token-store'
 import { useAuthStore } from '@/states/auth.store'
+import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 import { resetSecureStore } from '@/tests/mocks/expo-secure-store'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 import type { User } from '@/types/api.types'
@@ -238,6 +239,19 @@ describe('installForegroundRefresh', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(true)
     off()
     expect(remove).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears the passkey flag on a return to the foreground, so the next request decides again', async () => {
+    mockStorage.set('installed', '1')
+    serve({ refresh: 'ok' })
+    await restoreSession()
+    usePasskeySetupStore.getState().setRequired(true)
+    const { emit } = captureListener()
+    installForegroundRefresh()
+    emit('background')
+    expect(usePasskeySetupStore.getState().required).toBe(true)
+    emit('active')
+    expect(usePasskeySetupStore.getState().required).toBe(false)
   })
 
   it('does not refresh on a change that is not a return to active', async () => {

@@ -1,4 +1,5 @@
 import '../../global.css'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { Stack } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { colorScheme, useColorScheme } from 'nativewind'
@@ -8,6 +9,7 @@ import {
   restoreSession,
   useSessionStatus,
 } from '@/http/session-lifecycle'
+import { queryClient } from '@/lib/query-client'
 import { resolvedScheme, useThemeStore } from '@/states/theme.store'
 
 /**
@@ -39,9 +41,9 @@ function hideSplash(splash: SplashState): void {
 }
 
 /**
- * The root layout: one stack, with no header on any screen. Each screen draws
- * its own title. It applies the stored theme to NativeWind, restores the
- * session, and hides the splash screen once NativeWind reports that scheme and
+ * The root layout: one stack, with no header on any screen, inside the app's
+ * query client. Each screen draws its own title. It applies the stored theme
+ * to NativeWind, restores the session, and hides the splash screen once NativeWind reports that scheme and
  * the restore settles, so a stored dark theme never shows a light frame. It
  * hides after `SPLASH_FALLBACK_MS` whatever is still pending.
  */
@@ -76,5 +78,9 @@ export default function RootLayout() {
     if (isThemeReported && status !== 'restoring') hideSplash(splash.current)
   }, [preference, applied, status])
 
-  return <Stack screenOptions={{ headerShown: false }} />
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Stack screenOptions={{ headerShown: false }} />
+    </QueryClientProvider>
+  )
 }

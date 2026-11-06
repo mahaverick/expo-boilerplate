@@ -8,7 +8,8 @@ interface PasskeySetupState {
 
 /**
  * Set when any request fails with `PASSKEY_SETUP_REQUIRED`. The blocking
- * screen reads it; sign-out resets it.
+ * screen reads it. Every sign-out, every sign-in and every return to the
+ * foreground resets it.
  */
 export const usePasskeySetupStore = create<PasskeySetupState>()((set) => ({
   required: false,

@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals'
-import { fireEvent, screen, waitFor } from '@testing-library/react-native'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import Constants from 'expo-constants'
 import { router } from 'expo-router'
 import { BackHandler, Linking } from 'react-native'
@@ -90,6 +90,16 @@ describe('PasskeyRequired', () => {
     })
     expect(router.replace).toHaveBeenCalledWith('/login')
     expect(await refreshTokenStore.read()).toBeNull()
+  })
+
+  it('goes Home when the flag clears while signed in', async () => {
+    setWebUrl(undefined)
+    await renderScreen(<PasskeyRequired />)
+    expect(router.replace).not.toHaveBeenCalled()
+    await act(() => {
+      usePasskeySetupStore.getState().setRequired(false)
+    })
+    expect(router.replace).toHaveBeenCalledWith('/')
   })
 
   it('ignores the Android back button', async () => {
