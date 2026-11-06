@@ -321,8 +321,10 @@ The files are listed in [ARCHITECTURE.md](ARCHITECTURE.md#workspaces-and-the-she
   The shared `ClientSettings` type and its guard do not list the field, but
   the body carries it. `src/lib/minimum-version.ts` reads it with Zod, and
   editing the shared file is not allowed. `useUpdateRequired` overrides the
-  query's 1-hour `staleTime` with 5 minutes, which matches the server's
-  `max-age=300`, so a raised minimum reaches a running app within 5 minutes.
+  query's 1-hour `staleTime` with 5 minutes and refetches every 5 minutes
+  (`refetchInterval`) while the app is in the foreground. That matches the
+  server's `max-age=300`, so a raised minimum reaches a running app within 5
+  minutes.
   A missing or unreadable version never blocks the app.
 - **The blocking screens stack in a fixed order.** The update screen covers
   the maintenance screen, and the maintenance screen covers the app
@@ -355,18 +357,72 @@ The files are listed in [ARCHITECTURE.md](ARCHITECTURE.md#workspaces-and-the-she
   `requested`.** The store is only the fallback.
 - **One component draws a workspace's overview, in two places.**
   `WorkspaceOverview` serves the Workspace tab, in place, and the
-  `/tenants/[slug]` route, for deep links, the list and Welcome. The tab never
+  `/tenants/[slug]` route, for deep links and the list. The tab never
   navigates out: leaving `(tabs)` drops the tab bar and leaves Back with
   nowhere sensible to go. Choosing a workspace in the tab's switcher
   remembers it, and the tab re-renders. The route remembers its slug, so
   returning to the tab shows it.
-- **Tabs have no navigator header, and `Screen` draws the one title.** A
-  navigator header plus `Screen`'s title gives two header-role elements, which
-  the accessibility harness rejects. The switcher is the top row of the
-  Workspace screens, not a header control.
+- **Tabs have no navigator header; the stack screens above them show an
+  empty-titled header with Back.** A navigator title plus `Screen`'s title
+  gives two header-role elements, which the accessibility harness rejects, so
+  `Screen` draws the one title everywhere. Welcome, `/tenants` and
+  `/tenants/{slug}` need Back to reach the tabs, so their header has an empty
+  title and the back arrow alone (`headerBackButtonDisplayMode: 'minimal'`),
+  which keeps the group name `(tabs)` off the iOS back label. They pass
+  `topInset={false}`, since the header takes the inset. The switcher is the
+  top row of the Workspace screens, not a header control.
+- **The `(app)` stack is anchored on `(tabs)`.** `unstable_settings` sets
+  `anchor: '(tabs)'` (SDK 58's name for `initialRouteName`, which it
+  deprecates). Without it a cold deep link, or a replace into the group, leaves
+  the route alone in the stack, with no tab bar and no way back. A replace from
+  outside the group, such as the link screen's landing, passes
+  `{ withAnchor: true }`, because the anchor applies on a replace only then.
+  Welcome leaves with `router.dismissTo`, since a replace to a tab stacks a
+  second `(tabs)`, and the Workspace tab pushes `/welcome`, since a replace
+  from a tab removes `(tabs)`.
+- **A new workspace opens on the Workspace tab.** Welcome remembers the new
+  workspace's web address, then dismisses to `/workspace`. Landing on
+  `/tenants/{slug}` would leave the person outside the tabs.
+- **A sign-out of the person's own carries no `redirect`.** `useSignOut` sets
+  the mark in `src/states/own-sign-out.store.ts` before the auth store signs
+  out, and the `(app)` guard then sends the person to plain `/login`. The guard
+  can redirect before `useSignOut` navigates, and the next person on the
+  device would land on the previous person's path. `/login` clears the mark
+  once it shows, and the guard clears it once a session is signed in. An
+  expired session never sets it, so its redirect survives.
+- **Toasts sit above the tab bar.** The toaster renders at the root, so it
+  would cover the tab bar, and error toasts stay until dismissed. Each tab
+  screen publishes `useBottomTabBarHeight()` while focused
+  (`TabBarHeight`, the tabs layout's `screenLayout`), and the toaster adds it
+  to its bottom offset. The height clears when no tab screen is focused.
+- **Mutations never pause offline; queries do.** The query client sets
+  `mutations: { networkMode: 'always' }`, and the link screen's workspace read
+  passes `networkMode: 'always'`. A paused mutation hangs on a spinner and can
+  fire later from another screen, and the forms' inline errors are the
+  designed offline answer for a write. The cost: an offline write fails at
+  once instead of waiting.
+- **The blocking overlays take the top inset themselves.** The update and
+  maintenance screens cover the top banners, so they pass `coversBanners` to
+  `Screen`. Without it the banner-skip rule leaves the overlay's title under
+  the status bar.
+- **Welcome shows the load error when its first list read fails.** It never
+  shows the form on a failed read: an invited account whose read failed would
+  create a duplicate workspace. The cost is one more Try again for a person
+  with no workspaces.
+- **Home, Welcome and `landingFor` count only eligible workspaces**
+  (`isEligibleTenant`: never the platform workspace, never a suspended one).
+  An account whose workspaces are all suspended would otherwise land Home,
+  see no empty state, and have no way to create one. The Workspace tab goes
+  to `/welcome` only while a person is signed in, so a forced sign-out under
+  maintenance `full` never navigates.
+- **Deeper `/tenants/{slug}/…` paths redirect to the overview.**
+  `src/app/(app)/tenants/[slug]/[...rest].tsx` exists because the Android
+  intent filter claims the whole `/tenants/` prefix, and a link to a screen
+  this version lacks would otherwise land on Page not found.
 - **The top safe-area inset has one owner.** `Screen` pads it, unless a
   navigator header takes it (`topInset={false}`) or a top banner does
-  (`useTopBanner()`). A tab bar takes the bottom inset, so tab screens pass
+  (`useTopBanner()`); an overlay over the banners takes it whatever they show
+  (`coversBanners`). A tab bar takes the bottom inset, so tab screens pass
   `bottomInset={false}`. `TopBanners` holds the offline and read-only banners
   in one container so two banners pad the inset once.
 - **Confirmations use `Alert`**, the platform dialog, with a Cancel button and
@@ -440,8 +496,8 @@ Each item is a change for react or for a later plan, with the reason it waits.
   branches 82, functions 86 and lines 89. The shared tests alone (31 manifest
   rows, 29 of them test files) cover statements 43.78%, branches 46.00%,
   functions 31.47% and lines 42.51% of `src/`, because they exercise only part
-  of the 75 shared files. The full suite measures statements 73.02%, branches
-  73.01%, functions 63.70% and lines 72.33% on 6 November 2026.
+  of the 75 shared files. The full suite measures statements 73.49%, branches
+  73.32%, functions 64.30% and lines 72.74% on 6 November 2026.
   `jest.config.ts` and `ci.yml` hold 73, 73, 63 and 72. React should mark more
   of its tests for expo; then expo raises each threshold toward react's.
 - **One copy-style case is skipped by name.** `test` and `test:coverage` pass

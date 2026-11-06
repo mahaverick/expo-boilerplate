@@ -295,6 +295,18 @@ date, the device and the OS version beside each.
       with `APP_LINK_HOST` set. Open `https://<host>/tenants/<slug>` from the
       mail app while signed in: the workspace's overview opens in the app, not
       the browser. While signed out, sign in and land on it.
+- [ ] **Back from a workspace returns to the tabs.** Open
+      `https://<host>/tenants/<slug>` cold, and open the workspaces list from
+      the switcher. On each of `/tenants/{slug}` and `/tenants`, swipe back on
+      iOS and press Back on Android: the tab bar shows. The header shows a
+      Back arrow and no title, and never the text "(tabs)".
+- [ ] **A new workspace opens on the Workspace tab.** With a new account,
+      create a workspace on Welcome. The Workspace tab opens on it, with the
+      tab bar.
+- [ ] **Offline sign-in shows its error.** Signed out, turn on airplane mode
+      and request a sign-in link. The screen shows "We couldn’t send the
+      link. Check your connection and try again." at once, with no spinner
+      left running.
 - [ ] **The back gesture does nothing on the passkey screen.** With an account
       in passkey-required mode, swipe back on iOS and press Back on Android.
       The screen stays.

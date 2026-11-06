@@ -39,7 +39,7 @@ src/
   ports/            navigation.ts, runtime.ts, webauthn.ts
   queries/          shared TanStack Query hooks
   schemas/          shared Zod schemas
-  states/           auth, maintenance-mode (ports), theme, toast-queue and current-tenant (expo's own)
+  states/           auth, maintenance-mode (ports), theme, toast-queue, current-tenant, own-sign-out and tab-bar (expo's own)
   types/            shared types
 ```
 
@@ -223,17 +223,19 @@ src/app/
   passkey-required.tsx         the blocking screen for an account that must add a passkey
   +native-intent.tsx, +not-found.tsx
   (app)/                       the session guard
-    _layout.tsx                restore, sign-in redirect, passkey redirect
-    welcome.tsx                create a first workspace
+    _layout.tsx                restore, sign-in redirect, passkey redirect; anchored on (tabs),
+                               so the tabs sit beneath every screen above them
+    welcome.tsx                create a first workspace (header with Back)
     (tabs)/
-      _layout.tsx              four tabs, no navigator header
+      _layout.tsx              four tabs, no navigator header; publishes the tab bar height
       index.tsx                Home
       workspace.tsx            the current workspace's overview, in place
       notifications.tsx        placeholder
       settings.tsx             placeholder groups and Sign out
     tenants/
-      index.tsx                all workspaces, and Create
-      [slug]/index.tsx         one workspace's overview
+      index.tsx                all workspaces, and Create (header with Back)
+      [slug]/index.tsx         one workspace's overview (header with Back)
+      [slug]/[...rest].tsx     any deeper path: redirects to the overview
 ```
 
 ### The modules
@@ -253,10 +255,23 @@ src/app/
   `MaintenanceGate`, then the stack. The update screen covers the maintenance
   screen, which covers the app. The toaster sits inside the maintenance gate,
   so both overlays cover it.
+- **The toaster's offset.** The toaster renders at the root, 8 points above
+  the bottom inset. While a tab screen is focused, `TabBarHeight`
+  (`src/components/shared/tab-bar-height.tsx`, the tabs layout's
+  `screenLayout`) publishes the tab bar's height to
+  `src/states/tab-bar.store.ts`, and the toaster sits 8 points above the bar
+  instead. The height clears when no tab screen is focused.
+- **The (app) stack.** `unstable_settings.anchor` is `(tabs)`, so a cold deep
+  link, a sign-in landing (`router.replace` with `withAnchor`) and Welcome all
+  leave the tabs beneath the screen. The stack screens above the tabs show a
+  navigator header with an empty title and a Back button; the tabs show none.
+- **A sign-out of the person's own.** `src/states/own-sign-out.store.ts` holds
+  the mark that `useSignOut` sets, which keeps `redirect` off the guard's
+  `/login`.
 - **Redirects.** `src/lib/safe-path.ts` holds `safePath`, which checks a
   redirect, and `landingFor`, which picks where a sign-in lands: `/welcome` for
-  a new account, a safe redirect, `/welcome` for an account with no workspace,
-  else Home.
+  a new account, a safe redirect, `/welcome` for an account with no eligible
+  workspace, else Home.
 - **The current workspace.** `src/states/current-tenant.store.ts` remembers a
   person's last workspace in MMKV, and `src/hooks/use-current-tenant.ts`
   resolves it against the list of workspaces the API returns.
@@ -267,7 +282,8 @@ src/app/
   explainer (`trial-explainer.ts`) and the create form.
 - **The frame.** `Screen` draws the one header-role title and owns the top
   safe-area inset, unless a navigator header or a top banner takes it
-  (`useTopBanner`).
+  (`useTopBanner`). The update and maintenance screens cover the banners, so
+  they pass `coversBanners` and take the inset whatever the banners show.
 
 ## The theme and the splash screen
 
