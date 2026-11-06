@@ -51,7 +51,8 @@ export function useSignOut(): SignOut {
         usePasskeySetupStore.getState().setRequired(false)
         // `/login` is not a typed route yet, and the port takes any app path.
         if (options?.navigate !== false) router.replace('/login' as Href)
-        await retryPendingRevoke()
+        // The direct revoke must not depend on the retry: a keychain that refused the save may refuse the read.
+        await retryPendingRevoke().catch(() => {})
         if (token && !saved) await revokeToken(token)
       }
       setIsPending(true)

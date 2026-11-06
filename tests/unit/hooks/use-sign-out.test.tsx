@@ -9,7 +9,7 @@ import { apiClient } from '@/http/client'
 import { pendingRevokeStore, refreshTokenStore } from '@/http/token-store'
 import { useAuthStore } from '@/states/auth.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
-import { resetSecureStore, setItemAsync } from '@/tests/mocks/expo-secure-store'
+import { getItemAsync, resetSecureStore, setItemAsync } from '@/tests/mocks/expo-secure-store'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
 jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }))
@@ -29,7 +29,7 @@ let queryClient: QueryClient
 function answerWith(status: number | undefined): void {
   /** Logs the request, then answers or rejects as `status` says. */
   const adapter: AxiosAdapter = async (config) => {
-    log.push(`logout(stored=${await refreshTokenStore.read()})`)
+    log.push(`logout(stored=${await refreshTokenStore.read().catch(() => 'unreadable')})`)
     if (status === undefined) throw new AxiosError('offline', 'ERR_NETWORK', config)
     return { data: {}, status, statusText: '', headers: {}, config }
   }
@@ -98,6 +98,18 @@ describe('useSignOut', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
     expect(router.replace).toHaveBeenCalledWith('/login' as Href)
     expect(log).toContain('logout(stored=null)')
+  })
+
+  it('posts the logout when the keychain refuses both the save and the later reads', async () => {
+    answerWith(200)
+    setItemAsync.mockRejectedValue(new Error('keychain locked'))
+    const { result } = await renderHook(() => useSignOut(), { wrapper })
+    // The token is read once; every read after that fails.
+    getItemAsync.mockImplementationOnce(() => Promise.resolve('tok'))
+    getItemAsync.mockRejectedValue(new Error('keychain locked'))
+    await act(() => result.current.signOut())
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    expect(log.some((entry) => entry.startsWith('logout('))).toBe(true)
   })
 
   it('signs out without a request when no token is stored', async () => {
