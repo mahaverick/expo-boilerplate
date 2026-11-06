@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals'
+import { onlineManager } from '@tanstack/react-query'
 import { fireEvent, screen, waitFor } from '@testing-library/react-native'
 import { BackHandler, Linking, Text } from 'react-native'
 import { UpdateGate, UpdateScreen } from '@/components/shared/update-screen'
@@ -13,6 +14,18 @@ afterEach(() => {
 })
 
 describe('UpdateScreen', () => {
+  it('takes the top inset while the device is offline, since it covers the banners', async () => {
+    onlineManager.setOnline(false)
+    try {
+      await renderScreen(<UpdateScreen url={null} />)
+      expect(screen.getByTestId('screen').props.contentContainerStyle).toMatchObject({
+        paddingTop: 47,
+      })
+    } finally {
+      onlineManager.setOnline(true)
+    }
+  })
+
   it('shows the title and the body', async () => {
     await renderScreen(<UpdateScreen url={null} />)
     expect(screen.getByRole('header', { name: 'Update the app' })).toBeTruthy()

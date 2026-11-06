@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals'
+import { onlineManager } from '@tanstack/react-query'
 import { screen, waitFor } from '@testing-library/react-native'
 import { BackHandler, Text } from 'react-native'
 import { MaintenanceGate, MaintenanceScreen } from '@/components/shared/maintenance-screen'
@@ -26,6 +27,18 @@ afterEach(() => {
 })
 
 describe('MaintenanceScreen', () => {
+  it('takes the top inset while the device is offline, since it covers the banners', async () => {
+    onlineManager.setOnline(false)
+    try {
+      await renderScreen(<MaintenanceScreen message={null} since={null} />)
+      expect(screen.getByTestId('screen').props.contentContainerStyle).toMatchObject({
+        paddingTop: 47,
+      })
+    } finally {
+      onlineManager.setOnline(true)
+    }
+  })
+
   it('shows the title, the start, the message and the refresh note', async () => {
     await renderScreen(<MaintenanceScreen message="Back at noon." since={SINCE} />)
     expect(screen.getByRole('header', { name: 'Maintenance in progress' })).toBeTruthy()

@@ -11,6 +11,8 @@ interface ScreenProps {
   topInset?: boolean
   /** False above a tab bar that takes the bottom inset. Defaults to true. */
   bottomInset?: boolean
+  /** True on an overlay drawn over the top banners, which then take no inset below it. Defaults to false. */
+  coversBanners?: boolean
 }
 
 /**
@@ -18,19 +20,27 @@ interface ScreenProps {
  * screen's one header. The frame scrolls, so no control is out of reach at
  * large text sizes, and taps work while the keyboard is up. Exactly one thing
  * takes the top inset: this frame, unless a navigator header (`topInset` false)
- * or a top banner takes it.
+ * or a top banner takes it. An overlay that covers the banners
+ * (`coversBanners`) takes it whatever the banners show.
  * @param props - The title, the content and the insets this frame takes.
  * @param props.title - The header text.
  * @param props.children - The content below the header.
  * @param props.topInset - False when a navigator header takes the top inset.
  * @param props.bottomInset - False when a tab bar takes the bottom inset.
+ * @param props.coversBanners - True on an overlay drawn over the top banners.
  * @returns The screen.
  */
-export function Screen({ title, children, topInset = true, bottomInset = true }: ScreenProps) {
+export function Screen({
+  title,
+  children,
+  topInset = true,
+  bottomInset = true,
+  coversBanners = false,
+}: ScreenProps) {
   const insets = useSafeAreaInsets()
   const bannerShows = useTopBanner()
   const padding = {
-    paddingTop: topInset && !bannerShows ? insets.top : 0,
+    paddingTop: topInset && (coversBanners || !bannerShows) ? insets.top : 0,
     paddingBottom: bottomInset ? insets.bottom : 0,
     paddingLeft: insets.left,
     paddingRight: insets.right,

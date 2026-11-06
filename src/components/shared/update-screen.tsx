@@ -6,6 +6,7 @@ import { storeUrl, useUpdateRequired } from '@/lib/minimum-version'
 
 /**
  * The screen that asks for an update. It ignores the Android back button.
+ * It covers the top banners, so it takes the top inset itself.
  * With a store URL it offers a button that opens the store; a store that
  * cannot open leaves the screen as it is.
  * @param props - The store link.
@@ -20,7 +21,7 @@ export function UpdateScreen({ url }: { url: string | null }) {
     }
   }, [])
   return (
-    <Screen title="Update the app">
+    <Screen title="Update the app" coversBanners>
       <Text className="text-base text-foreground">
         This version of the app is no longer supported. Update it to keep going.
       </Text>

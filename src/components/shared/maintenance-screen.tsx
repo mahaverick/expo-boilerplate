@@ -13,7 +13,8 @@ export const DEFAULT_MAINTENANCE_MESSAGE = 'We’re carrying out scheduled maint
 /**
  * The screen that covers the app while maintenance is `full`. The owner's
  * message is text, never markup. It ignores the Android back button, and
- * nothing here navigates: the stack underneath keeps its place.
+ * nothing here navigates: the stack underneath keeps its place. It covers
+ * the top banners, so it takes the top inset itself.
  * @param props - What the API said about the period.
  * @param props.message - The owner's message, or `null`.
  * @param props.since - When the period began (ISO 8601), or `null`.
@@ -34,7 +35,7 @@ export function MaintenanceScreen({
     }
   }, [])
   return (
-    <Screen title="Maintenance in progress">
+    <Screen title="Maintenance in progress" coversBanners>
       {started && (
         <Text className="text-base text-muted-foreground">Maintenance started {started}.</Text>
       )}
