@@ -84,7 +84,8 @@ export default function Link() {
         onSuccess: (session) => {
           setFailure(null)
           void landingFor(session, link.requested, () =>
-            queryClient.fetchQuery(tenantsQueryOptions())
+            // Offline the read fails at once and the landing falls back to Home, never waits.
+            queryClient.fetchQuery({ ...tenantsQueryOptions(), networkMode: 'always' })
           ).then((path) => {
             // Any safe path, which typed routes cannot list; the anchor puts the tabs beneath it.
             router.replace(path as Href, { withAnchor: true })

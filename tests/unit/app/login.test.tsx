@@ -1,8 +1,10 @@
 import { jest } from '@jest/globals'
+import { onlineManager } from '@tanstack/react-query'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import { router, useLocalSearchParams } from 'expo-router'
 import Login from '@/app/login'
 import { useSessionStatus } from '@/http/session-lifecycle'
+import { queryClient } from '@/lib/query-client'
 import { useMaintenanceModeStore } from '@/states/maintenance-mode.store'
 import { useOwnSignOutStore } from '@/states/own-sign-out.store'
 import { bodyOf, renderScreen, restoreApi, serve } from '@/tests/support/api'
@@ -75,6 +77,21 @@ describe('Login', () => {
     await fireEvent.press(await screen.findByRole('button', { name: 'Use a different email' }))
     expect(await screen.findByRole('header', { name: 'Sign in' })).toBeTruthy()
     expect(screen.getByLabelText('Email').props.value).toBe('')
+  })
+
+  it('offline, the request fails at once and shows the inline error', async () => {
+    onlineManager.setOnline(false)
+    try {
+      serve(() => 'network-error')
+      await renderScreen(<Login />, queryClient)
+      await submit('ada@example.com')
+      expect(
+        await screen.findByText('We couldn’t send the link. Check your connection and try again.')
+      ).toBeTruthy()
+    } finally {
+      onlineManager.setOnline(true)
+      queryClient.clear()
+    }
   })
 
   it('a request failure shows an inline error, and keeps the address', async () => {

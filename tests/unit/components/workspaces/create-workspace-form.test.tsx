@@ -1,6 +1,8 @@
 import { jest } from '@jest/globals'
+import { onlineManager } from '@tanstack/react-query'
 import { fireEvent, screen, waitFor } from '@testing-library/react-native'
 import { CreateWorkspaceForm } from '@/components/workspaces/create-workspace-form'
+import { queryClient } from '@/lib/query-client'
 import { renderScreen, restoreApi, serve, bodyOf } from '@/tests/support/api'
 import { afterEach, describe, expect, it } from '@/tests/support/runner'
 
@@ -179,6 +181,24 @@ describe('CreateWorkspaceForm', () => {
     await fill('Acme', 'acme')
     await fireEvent.press(screen.getByRole('button', { name: 'Create workspace' }))
     expect(await screen.findByText('Slow down.')).toBeTruthy()
+  })
+
+  it('offline, the create fails at once and shows the inline error', async () => {
+    onlineManager.setOnline(false)
+    try {
+      serve(() => 'network-error')
+      await renderScreen(<CreateWorkspaceForm onCreated={() => {}} />, queryClient)
+      await fill('Acme', 'acme')
+      await fireEvent.press(screen.getByRole('button', { name: 'Create workspace' }))
+      expect(
+        await screen.findByText(
+          'We couldn’t reach the server. Check your connection, then try again.'
+        )
+      ).toBeTruthy()
+    } finally {
+      onlineManager.setOnline(true)
+      queryClient.clear()
+    }
   })
 
   it('shows a connection prompt on a network failure', async () => {

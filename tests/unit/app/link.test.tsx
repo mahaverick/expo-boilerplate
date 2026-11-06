@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals'
-import { QueryClient } from '@tanstack/react-query'
+import { onlineManager, QueryClient } from '@tanstack/react-query'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import type { InternalAxiosRequestConfig } from 'axios'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -8,6 +8,7 @@ import Link from '@/app/auth/link'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import type { SessionStatus } from '@/http/session-lifecycle'
 import { refreshTokenStore } from '@/http/token-store'
+import { queryClient } from '@/lib/query-client'
 import { useAuthStore } from '@/states/auth.store'
 import { resetSecureStore, setItemAsync } from '@/tests/mocks/expo-secure-store'
 import { bodyOf, renderScreen, restoreApi, screenTree, serve } from '@/tests/support/api'
@@ -148,6 +149,20 @@ describe('Link', () => {
       expect(router.replace).toHaveBeenCalledWith('/', { withAnchor: true })
     })
     expect(sent).toHaveLength(1)
+  })
+
+  it('offline, the verify and the workspace read still run, and the landing does not hang', async () => {
+    onlineManager.setOnline(false)
+    try {
+      serveLink(() => verified())
+      await renderScreen(<Link />, queryClient)
+      await waitFor(() => {
+        expect(router.replace).toHaveBeenCalledWith('/', { withAnchor: true })
+      })
+    } finally {
+      onlineManager.setOnline(true)
+      queryClient.clear()
+    }
   })
 
   it('posts once under StrictMode', async () => {
