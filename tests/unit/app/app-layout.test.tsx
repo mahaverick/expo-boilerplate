@@ -13,6 +13,9 @@ jest.mock('expo-router', () => {
     Stack: () => <Text>stack</Text>,
   }
 })
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}))
 jest.mock('@/http/session-lifecycle', () => ({ useSessionStatus: jest.fn(() => 'signed-in') }))
 
 /**
@@ -38,10 +41,12 @@ describe('(app) layout', () => {
     expect(screen.getByText('redirect:/login')).toBeTruthy()
   })
 
-  it('renders nothing while restoring', async () => {
+  it('shows Signing you in, with a spinner, while restoring', async () => {
     setStatus('restoring')
     await render(<AppLayout />)
-    expect(screen.toJSON()).toBeNull()
+    expect(screen.getByRole('header', { name: 'Signing you in' })).toBeTruthy()
+    const spinner = screen.getByTestId('session-spinner', { includeHiddenElements: true })
+    expect(spinner.parent?.props.className ?? spinner.props.className).toContain('text-foreground')
   })
 
   it('shows passkey-required when the flag is set', async () => {

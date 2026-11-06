@@ -1,14 +1,14 @@
 /**
  * @file Decides, at launch and on every return to the foreground, whether the
  * person is signed in. A reinstalled iPhone keeps the previous install's
- * Keychain items, so the first launch of an install revokes and drops any
- * token it finds.
+ * Keychain items, so the first launch of an install drops any token it finds
+ * and queues its revoke.
  */
 import { AppState } from 'react-native'
 import { create } from 'zustand'
 import { retryPendingRevoke, revokeToken } from '@/http/revoke'
 import { ensureSession } from '@/http/session'
-import { refreshTokenStore } from '@/http/token-store'
+import { pendingRevokeStore, refreshTokenStore } from '@/http/token-store'
 import { storage } from '@/lib/storage'
 import { useAuthStore } from '@/states/auth.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
@@ -30,36 +30,47 @@ const useRestoreStore = create<RestoreState>()(() => ({ isSettled: false }))
 let restoring: Promise<void> | null = null
 
 /**
- * Revokes and clears a token left by a previous install, then writes the
- * install marker. A failure leaves the marker unwritten, so the next launch
- * checks again.
+ * Moves a token left by a previous install to `pending_revoke`, clears it,
+ * then writes the install marker. Only local steps: the revoke itself runs
+ * with the other pending revokes, and never holds the launch. When the token
+ * cannot join the list, it is still cleared and its revoke posts directly.
+ * A failed read leaves the marker unwritten, so the next launch checks again.
  */
 async function checkReinstall(): Promise<void> {
   if (storage.getString(INSTALLED_KEY) !== undefined) return
   const token = await refreshTokenStore.read()
   if (token) {
-    await revokeToken(token)
+    const saved = await pendingRevokeStore.add(token).then(
+      () => true,
+      () => false
+    )
+    // Cleared either way: the next step must not restore the previous owner's session.
     await refreshTokenStore.clear()
+    if (!saved) void revokeToken(token)
   }
   storage.set(INSTALLED_KEY, '1')
 }
 
-/** Runs the three restore steps in order. A failure of any step never rejects. */
+/**
+ * Runs the restore: the reinstall check, then the refresh. The pending
+ * revokes start between the two and are not awaited; the list keeps each
+ * token until its revoke settles. A failure of any step never rejects.
+ */
 async function runRestore(): Promise<void> {
   try {
     await checkReinstall()
   } catch {
     // The marker stays unwritten; the next launch checks again.
   }
-  await retryPendingRevoke().catch(() => {})
+  void retryPendingRevoke().catch(() => {})
   // A verdict signs the store out inside the core; any other failure leaves the token for the next foreground.
   await ensureSession().catch(() => {})
   useRestoreStore.setState({ isSettled: true })
 }
 
 /**
- * Restores the session once per process: the reinstall check, the pending
- * revokes, then the refresh. Never rejects.
+ * Restores the session once per process: the reinstall check, then the
+ * refresh, with the pending revokes running beside it. Never rejects.
  * @returns The same promise on every call.
  */
 export function restoreSession(): Promise<void> {

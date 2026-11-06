@@ -14,7 +14,7 @@ import {
 import { pendingRevokeStore, refreshTokenStore } from '@/http/token-store'
 import { useAuthStore } from '@/states/auth.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
-import { resetSecureStore } from '@/tests/mocks/expo-secure-store'
+import { resetSecureStore, setItemAsync } from '@/tests/mocks/expo-secure-store'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 import type { User } from '@/types/api.types'
 
@@ -105,37 +105,66 @@ afterEach(() => {
 })
 
 describe('restoreSession', () => {
-  it('runs the reinstall check, then the pending revoke, then ensureSession', async () => {
+  it("clears a previous install's token before ensureSession, and never waits for a revoke", async () => {
     await refreshTokenStore.write('previous-owner')
     await pendingRevokeStore.add('earlier')
-    serve({ refresh: 'ok' })
-    const calls = jest.spyOn(session, 'ensureSession')
-    calls.mockImplementation(() => {
+    serve({ refresh: 'ok', holdLogout: true })
+    let atRefresh: { stored: string | null; pending: string[] } | undefined
+    jest.spyOn(session, 'ensureSession').mockImplementation(async () => {
+      atRefresh = {
+        stored: await refreshTokenStore.read(),
+        pending: await pendingRevokeStore.list(),
+      }
       log.push('ensureSession')
-      return Promise.reject(new Error('stop'))
+      throw new Error('stop')
     })
+    // Resolves while the first logout is still held.
     await restoreSession()
-    // The reinstall revoke, then the retry of the earlier pending token, then ensureSession.
-    expect(log).toEqual(['logout:previous-owner', 'logout:earlier', 'ensureSession'])
+    expect(atRefresh).toEqual({ stored: null, pending: ['earlier', 'previous-owner'] })
     expect(mockStorage.get('installed')).toBe('1')
+    expect(log).toContain('ensureSession')
+    await waitFor(() => {
+      expect(log.filter((entry) => entry.startsWith('logout:'))).toEqual(['logout:earlier'])
+    })
+    releaseLogout?.()
+    await waitFor(() => {
+      expect(log).toContain('logout:previous-owner')
+    })
   })
 
-  it('with no installed marker, it revokes any stored token, clears it, then writes the marker', async () => {
+  it('with no installed marker, it moves a stored token to pending_revoke, clears it, then writes the marker', async () => {
     await refreshTokenStore.write('previous-owner')
     serve({ refresh: 'ok', holdLogout: true })
-    const done = restoreSession()
+    await restoreSession()
+    expect(mockStorage.get('installed')).toBe('1')
+    await expect(refreshTokenStore.read()).resolves.toBeNull()
+    await expect(pendingRevokeStore.list()).resolves.toEqual(['previous-owner'])
+    // The old token was cleared before the refresh, so the refresh found no token.
+    expect(log).not.toContain('/auth/refresh')
     await waitFor(() => {
       expect(log).toEqual(['logout:previous-owner'])
     })
-    // The delayed logout holds the restore: no refresh and no marker yet.
-    expect(log).toEqual(['logout:previous-owner'])
-    expect(mockStorage.get('installed')).toBeUndefined()
     releaseLogout?.()
-    await done
-    expect(mockStorage.get('installed')).toBe('1')
-    // The old token was cleared before the refresh, so the refresh found no token.
-    expect(log).toEqual(['logout:previous-owner'])
+    await waitFor(async () => {
+      await expect(pendingRevokeStore.list()).resolves.toEqual([])
+    })
+  })
+
+  it("still clears a previous install's token when pending_revoke cannot be saved, and revokes it directly", async () => {
+    await refreshTokenStore.write('previous-owner')
+    serve({ refresh: 'ok' })
+    const realSet = setItemAsync.getMockImplementation()
+    setItemAsync.mockImplementation((key, value, options) =>
+      key === 'pending_revoke'
+        ? Promise.reject(new Error('locked'))
+        : (realSet?.(key, value, options) ?? Promise.resolve())
+    )
+    await restoreSession()
     await expect(refreshTokenStore.read()).resolves.toBeNull()
+    expect(log).not.toContain('/auth/refresh')
+    await waitFor(() => {
+      expect(log).toContain('logout:previous-owner')
+    })
   })
 
   it('with the marker present, it leaves a stored token alone', async () => {
