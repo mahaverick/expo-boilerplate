@@ -12,6 +12,7 @@ const config: Config = {
   preset: 'jest-expo',
   moduleNameMapper: {
     '\\.css$': '<rootDir>/tests/support/stylesheet.ts',
+    '^expo-secure-store$': '<rootDir>/tests/mocks/expo-secure-store.ts',
     '^@/tests/(.*)$': '<rootDir>/tests/$1',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
