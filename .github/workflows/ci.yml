@@ -132,8 +132,8 @@ jobs:
   # The required `test` check. Jest's --shard writes partial coverage, so this
   # job downloads the four coverage-final.json files, merges them with
   # `nyc merge`, and enforces the thresholds with `nyc check-coverage`. The
-  # numbers below are jest.config.ts's coverageThreshold (statements 43,
-  # branches 46, functions 31, lines 42); change both together. Run locally
+  # numbers below are jest.config.ts's coverageThreshold (statements 58,
+  # branches 57, functions 44, lines 57); change both together. Run locally
   # on four shards, this method gave the same 43.78% statements and 42.51%
   # lines as one full run.
   test:
@@ -179,4 +179,4 @@ jobs:
           mkdir merge
           for shard in shards/coverage-*; do cp "$shard/coverage-final.json" "merge/$(basename "$shard").json"; done
           pnpm dlx nyc@18.0.0 merge merge .nyc_output/merged.json
-          pnpm dlx nyc@18.0.0 check-coverage --statements 43 --branches 46 --functions 31 --lines 42
+          pnpm dlx nyc@18.0.0 check-coverage --statements 58 --branches 57 --functions 44 --lines 57

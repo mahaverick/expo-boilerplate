@@ -39,11 +39,11 @@ function hideSplash(splash: SplashState): void {
 }
 
 /**
- * The root layout: one stack, with no header on the placeholder screen. It
- * applies the stored theme to NativeWind, restores the session, and hides the
- * splash screen once NativeWind reports that scheme and the restore settles,
- * so a stored dark theme never shows a light frame. It hides after
- * `SPLASH_FALLBACK_MS` whatever is still pending.
+ * The root layout: one stack, with no header on any screen. Each screen draws
+ * its own title. It applies the stored theme to NativeWind, restores the
+ * session, and hides the splash screen once NativeWind reports that scheme and
+ * the restore settles, so a stored dark theme never shows a light frame. It
+ * hides after `SPLASH_FALLBACK_MS` whatever is still pending.
  */
 export default function RootLayout() {
   const preference = useThemeStore((state) => state.preference)

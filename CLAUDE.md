@@ -63,9 +63,8 @@ side:
 - **knip reads the manifest.** `knip.ts` enters every expo row, and the runner
   port, whose names are the manifest's `testPorts` row. A shared file or export
   this app does not reach yet is react's code, not dead code here.
-- **`src/components/ui/` holds only `.gitkeep`.** `copy-style.test.ts` scans
-  it as the runner port's second root, and the scan fails on a missing
-  directory.
+- **`src/components/ui/` is the runner port's second root.**
+  `copy-style.test.ts` scans it, and the scan fails on a missing directory.
 - **`tests/setup.ts` unrefs TanStack Query's timers.** A shared test that
   leaves a `QueryClient` behind keeps its 5-minute garbage-collection timer,
   which held a Jest worker open after the run. `timeoutManager` gets a
@@ -214,14 +213,57 @@ Each tool below was checked on 6 November 2026 against Expo SDK 58
 - **Lint bans palette classes, arbitrary-value colours and colour literals**
   in the files expo owns under `src/` (`tests/unit/lint/design-lock.test.ts`).
 - **The splash screen hides once.** `src/app/_layout.tsx` hides it when
-  NativeWind reports the stored scheme, or after 2 seconds
-  (`SPLASH_FALLBACK_MS`), whichever comes first. NativeWind drops the native
+  NativeWind reports the stored scheme and the session restore has settled, or
+  after 2 seconds (`SPLASH_FALLBACK_MS`), whichever comes first. NativeWind drops the native
   appearance event while the app is not active, so without the bound a lost
   event would hold the splash screen until a force-quit. The cost: on a slow
   device, the fallback can show one light frame before a stored dark theme
   paints. That is the chosen trade against hanging on the splash screen.
 - **No device has run the splash or the theme.** The tests model NativeWind's
   event.
+
+## Sessions
+
+The session code is expo's own. Each rule below looks like a tidy-up
+candidate, and each has a reason. The files are listed in
+[ARCHITECTURE.md](ARCHITECTURE.md#sessions).
+
+- **The shared `useLogout` is not used.** It posts `/auth/logout` first and
+  sends no token, so a request that never answers leaves the person signed in,
+  and the API never learns which session ended. `src/hooks/use-sign-out.ts`
+  signs the device out first, then revokes.
+- **The body-token lists are exact, and `/auth/refresh` is in neither.**
+  `INJECT` in `src/http/body-token.ts` names the routes whose POST body gets
+  the stored token, and `CAPTURE` names the routes whose answer holds a new
+  one. The shared refresh core posts the token to `/auth/refresh` and keeps the
+  rotated one itself. Listing the route would send the token twice, and keep
+  it twice.
+- **`_bodyToken` marks a request the interceptor filled in.** Axios
+  serializes a body to a string before it sends, and a replay after a refresh
+  carries that string. The flag lets the interceptor parse the body and read
+  the store again, because the refresh has rotated the token and the old one
+  would end the session.
+- **`pending_revoke` is a list capped at 5.** A single slot would drop an
+  earlier token that the API has not revoked when a second sign-out happens
+  offline. A sixth token drops the oldest.
+- **A token-store write that fails 3 times is a verdict.** After a refresh, the
+  throw is `NoRefreshTokenError`, and the shared core signs out. The
+  alternative is a session that dies 10 seconds later. After a sign-in, the
+  sign-in fails and the new token is revoked.
+- **`+native-intent.tsx` strips the query and fragment from every non-https
+  link.** Any app can claim a custom scheme and read its query, and a token
+  travels in the query. A token path under the scheme becomes `/`. An https
+  link passes through, since the operating system verifies it.
+- **Touch targets are `TOUCH_TARGET` (`min-h-12`, 48 points) on both
+  platforms.** Apple asks for 44 and Android for 48, so one value serves both.
+  A control that sets its own height loses the guarantee.
+- **`Screen` always scrolls.** At 200% font size a fixed layout pushes a
+  control off the screen, and `keyboardShouldPersistTaps` keeps taps working
+  while the keyboard is up.
+- **A nested worktree needs the main checkout's `node_modules` installed.**
+  knip's config loader walks up to the parent `tsconfig.json`, which resolves
+  its `extends` from the parent's `node_modules`. Without them knip fails to
+  load the config.
 
 ## Copy
 
@@ -275,8 +317,9 @@ Each item is a change for react or for a later plan, with the reason it waits.
   branches 82, functions 86 and lines 89. The shared tests alone (31 manifest
   rows, 29 of them test files) cover statements 43.78%, branches 46.00%,
   functions 31.47% and lines 42.51% of `src/`, because they exercise only part
-  of the 75 shared files. The full suite measures 45.40%, 46.82%, 33.27% and
-  44.18% on 6 November 2026. `jest.config.ts` holds 43, 46, 31 and 42. React
+  of the 75 shared files. The full suite measures statements 58.03%, branches
+  57.24%, functions 44.70% and lines 57.05% on 6 November 2026.
+  `jest.config.ts` and `ci.yml` hold 58, 57, 44 and 57. React
   should mark more of its tests for expo; then expo raises each threshold
   toward react's.
 - **One copy-style case is skipped by name.** `test` and `test:coverage` pass
@@ -301,9 +344,21 @@ Each item is a change for react or for a later plan, with the reason it waits.
   another origin would carry the bearer token. Expo's guard in
   `src/http/client.ts` removes it. A react PR guards the interceptor in
   `src/http/interceptors.ts`; once expo copies it, remove the guard.
-- **`/login` is no route in expo.** The shared `useLogout` passes it to
-  `assignLocation`, which lands on Expo Router's unmatched-route screen. Plan
-  3b adds the sign-in screen at `/login`.
+- **Passkeys wait for a device.** The library spike needs a dev client on a
+  device, and the machine that wrote plan 3b has no simulator or emulator
+  (checked 6 November 2026). The webauthn port stays a stub. The plan that
+  writes account security runs the spike.
+- **Step-up and `/auth/confirm` wait for the first step-up write.** Nothing in
+  the app calls a route behind `requireRecentAuth`. The body-token interceptor
+  already lists both step-up verify routes, so that plan does not touch it.
+- **`/welcome` waits for plan 3c.** A new account lands on Home, which says
+  "You have no workspaces yet." React sends it to `/welcome` to create its
+  first workspace.
+- **The link's `redirect` is ignored.** Plan 3c reads it through a safe-path
+  check, since an unchecked redirect is an open redirect.
+- **Two items from react PR #183 wait for the account-deletion plan.**
+  `/delete-account` can create an account, and passkey-required mode blocks
+  deletion. That plan owns the screen.
 - **Plans are not tracked.** `docs/superpowers/plans/` is git-ignored, and the
   specs under `docs/superpowers/specs/` are tracked. A plan lives on the
   machine of whoever wrote it.
