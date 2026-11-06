@@ -48,7 +48,6 @@ export const ACCOUNT_SECTIONS: ReadonlyArray<AccountSection> = [
     key: 'notifications',
     title: 'Notifications',
     description: 'How each kind of notification reaches you.',
-    // Typed routes list this screen once its file exists.
-    href: '/settings/account/notifications' as Href,
+    href: '/settings/account/notifications',
   },
 ]

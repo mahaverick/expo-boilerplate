@@ -5,6 +5,7 @@ import Home from '@/app/(app)/(tabs)/index'
 import Notifications from '@/app/(app)/(tabs)/notifications'
 import Settings from '@/app/(app)/(tabs)/settings'
 import Workspace from '@/app/(app)/(tabs)/workspace'
+import NotificationPreferences from '@/app/(app)/settings/account/notifications'
 import Profile from '@/app/(app)/settings/account/profile'
 import Overview from '@/app/(app)/tenants/[slug]/index'
 import Tenants from '@/app/(app)/tenants/index'
@@ -20,6 +21,7 @@ import { UpdateScreen } from '@/components/shared/update-screen'
 import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
 import { billingKeys } from '@/queries/billing.queries'
 import { clientSettingsKeys } from '@/queries/client-settings.queries'
+import { notificationKeys, type NotificationPreference } from '@/queries/notification.queries'
 import { tenantKeys, tenantsQueryOptions, type TenantWithRole } from '@/queries/tenant.queries'
 import { A11Y_SCREENS, assertAccessible, renderWithProviders } from '@/tests/support/a11y'
 import { describe, expect, it } from '@/tests/support/runner'
@@ -154,6 +156,49 @@ for (const [name, workspaceClient, workspaceScreen] of WORKSPACE_SCREENS) {
     name,
     element: (
       <QueryClientProvider client={workspaceClient}>{workspaceScreen()}</QueryClientProvider>
+    ),
+  })
+}
+
+/**
+ * A client holding the notification preferences query in a given state.
+ * @param state - What the query holds: rows, or an error with no data.
+ * @returns The seeded client.
+ */
+function preferencesClient(state: NotificationPreference[] | 'error'): QueryClient {
+  const seed = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  if (state === 'error') {
+    seed
+      .getQueryCache()
+      .build(seed, { queryKey: notificationKeys.preferences })
+      .setState({ status: 'error', error: new Error('offline'), fetchStatus: 'idle' })
+  } else {
+    seed.setQueryData(notificationKeys.preferences, state)
+  }
+  return seed
+}
+
+/** The notification preferences screen with data, empty and failed. */
+const PREFERENCE_SCREENS: Array<[string, QueryClient]> = [
+  [
+    'Notification preferences',
+    preferencesClient([
+      { notificationType: 'billing_payment_failed', emailEnabled: true, inAppEnabled: true },
+      { notificationType: 'workspace_full', emailEnabled: false, inAppEnabled: false },
+    ]),
+  ],
+  ['Notification preferences (empty)', preferencesClient([])],
+  ['Notification preferences (load failed)', preferencesClient('error')],
+]
+for (const [name, preferencesQueryClient] of PREFERENCE_SCREENS) {
+  A11Y_SCREENS.push({
+    name,
+    element: (
+      <QueryClientProvider client={preferencesQueryClient}>
+        <NotificationPreferences />
+      </QueryClientProvider>
     ),
   })
 }
