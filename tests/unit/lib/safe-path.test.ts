@@ -96,8 +96,23 @@ describe('safePath', () => {
 describe('landingFor', () => {
   /** Reads no workspaces. */
   const empty = () => Promise.resolve([])
+  /**
+   * One membership row.
+   * @param over - The workspace's state and whether it is the platform one.
+   */
+  const row = (over: { lifecycleState?: string; isPlatform?: boolean } = {}) => ({
+    tenant: {
+      id: 't',
+      name: 'Acme',
+      slug: 'acme',
+      lifecycleState: over.lifecycleState ?? 'active',
+    },
+    role: 'owner' as const,
+    joinedAt: '2026-01-01',
+    isPlatform: over.isPlatform ?? false,
+  })
   /** Reads one workspace. */
-  const some = () => Promise.resolve([{ id: 't' }])
+  const some = () => Promise.resolve([row()] as never[])
   /** Fails the read. */
   const fails = () => Promise.reject(new Error('offline'))
 
@@ -133,6 +148,15 @@ describe('landingFor', () => {
     await expect(landingFor({ isNewUser: false, redirect: null }, '//x', empty)).resolves.toBe(
       '/welcome'
     )
+  })
+
+  it('sends an account whose workspaces are all suspended or the platform one to /welcome', async () => {
+    /** Reads a suspended workspace and the platform one. */
+    const ineligible = () =>
+      Promise.resolve([row({ lifecycleState: 'suspended' }), row({ isPlatform: true })] as never[])
+    await expect(
+      landingFor({ isNewUser: false, redirect: null }, undefined, ineligible)
+    ).resolves.toBe('/welcome')
   })
 
   it('sends an account with a workspace Home', async () => {

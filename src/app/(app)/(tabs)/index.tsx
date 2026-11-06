@@ -4,7 +4,7 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { LoadError } from '@/components/shared/load-error'
 import { Button } from '@/components/ui/button'
 import { Screen } from '@/components/ui/screen'
-import { useTenants } from '@/queries/tenant.queries'
+import { isEligibleTenant, useTenants } from '@/queries/tenant.queries'
 import { useAuthStore } from '@/states/auth.store'
 
 /** What a failed list says: a claim about the request, not the account. */
@@ -13,8 +13,9 @@ const TENANTS_ERROR =
 
 /**
  * Home: a greeting and a line for derived projects to replace. It never
- * redirects. The empty state shows only when the list read succeeded and is
- * empty; a pending read shows a spinner and a failed one shows the error.
+ * redirects. The empty state shows only when the list read succeeded and holds
+ * no eligible workspace (suspended ones and the platform one do not count, as
+ * in Welcome); a pending read shows a spinner and a failed one shows the error.
  * @returns The screen.
  */
 export default function Home() {
@@ -33,7 +34,7 @@ export default function Home() {
     )
   } else if (tenants.data === undefined) {
     body = <ActivityIndicator accessibilityLabel="Loading your workspaces" />
-  } else if (tenants.data.length === 0) {
+  } else if (!tenants.data.some(isEligibleTenant)) {
     body = (
       <EmptyState
         title="Create your workspace"

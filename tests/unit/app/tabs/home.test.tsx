@@ -71,6 +71,17 @@ describe('Home', () => {
     ).toBeNull()
   })
 
+  it('counts only eligible workspaces: an all-suspended list shows the empty state', async () => {
+    serve(() =>
+      page([
+        { tenant: { id: 't1', lifecycleState: 'suspended' }, role: 'owner', isPlatform: false },
+        { tenant: { id: 't2' }, role: 'owner', isPlatform: true },
+      ])
+    )
+    await renderScreen(<Home />)
+    expect(await screen.findByText('You don’t belong to a workspace yet.')).toBeTruthy()
+  })
+
   it('shows a spinner, not the empty state, while the list loads', async () => {
     serve(() => new Promise(() => {}))
     await renderScreen(<Home />)

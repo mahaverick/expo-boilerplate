@@ -97,6 +97,16 @@ describe('Workspace tab', () => {
     })
   })
 
+  it('goes nowhere while no one is signed in, as after a forced sign-out in full maintenance', async () => {
+    useAuthStore.getState().logout()
+    serve(() => page([]))
+    await renderScreen(<Workspace />)
+    await waitFor(() => {
+      expect(screen.getByLabelText('Loading your workspaces')).toBeTruthy()
+    })
+    expect(router.push).not.toHaveBeenCalled()
+  })
+
   it('shows the error with Try again on a failed list, and goes nowhere', async () => {
     const sent = serve(() => 'network-error')
     await renderScreen(<Workspace />)

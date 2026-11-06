@@ -1,4 +1,5 @@
 import { TOKEN_PATHS } from '@/lib/app-links'
+import { isEligibleTenant, type TenantWithRole } from '@/queries/tenant.queries'
 
 /** The longest redirect path the API accepts, so a longer one would answer 400 and block signing in. */
 export const MAX_REDIRECT_LENGTH = 2048
@@ -60,8 +61,10 @@ export function safePath(raw: unknown): string | null {
 /**
  * Where a person lands once signed in. A new account goes to `/welcome`. Else
  * the verify answer's redirect wins, then the one the link's own URL carried,
- * each only if `safePath` accepts it. Else an account with no workspace goes to
- * `/welcome`. Anything else, including a failed read of the list, goes Home.
+ * each only if `safePath` accepts it. Else an account with no eligible
+ * workspace (none, or only suspended ones and the platform one) goes to
+ * `/welcome`, as Home and Welcome count them. Anything else, including a failed
+ * read of the list, goes Home.
  * @param link - What the verify answered.
  * @param link.isNewUser - True when the click created the account.
  * @param link.redirect - The redirect the server stored with the link.
@@ -72,13 +75,13 @@ export function safePath(raw: unknown): string | null {
 export async function landingFor(
   link: { isNewUser: boolean; redirect: string | null },
   requested: string | undefined,
-  tenants: () => Promise<unknown[]>
+  tenants: () => Promise<TenantWithRole[]>
 ): Promise<string> {
   if (link.isNewUser) return '/welcome'
   const path = safePath(link.redirect) ?? safePath(requested)
   if (path) return path
   try {
-    return (await tenants()).length === 0 ? '/welcome' : '/'
+    return (await tenants()).some(isEligibleTenant) ? '/' : '/welcome'
   } catch {
     return '/'
   }
