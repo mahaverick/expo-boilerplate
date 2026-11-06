@@ -335,6 +335,46 @@ describe('StepUpDialog', () => {
     await waitFor(() => expect(screen.queryByText('Confirm it’s you')).toBeNull())
   })
 
+  it('a confirmation on the start view resumes and retries the action once', async () => {
+    const sent = serveAll(linkSent())
+    const outcomes = await openDialog()
+    await act(() => {
+      useAuthStore.getState().setToken(tokenWith(OLD_AUTH_TIME + 60, 'b'))
+    })
+    await signal()
+    await waitFor(() => expect(outcomes).toEqual([{ value: 'done' }]))
+    expect(sent.filter((config) => config.url === ACTION_PATH)).toHaveLength(2)
+    expect(sent.some((config) => config.url === LINK_PATH)).toBe(false)
+    await waitFor(() => expect(screen.queryByText('Confirm it’s you')).toBeNull())
+  })
+
+  it('a stray signal on the start view returns to the start view', async () => {
+    const sent = serveAll(linkSent(), refreshed(OLD_AUTH_TIME))
+    const outcomes = await openDialog()
+    await signal()
+    await waitFor(() =>
+      expect(sent.filter((config) => config.url === '/auth/refresh')).toHaveLength(1)
+    )
+    expect(await screen.findByRole('button', { name: 'Email me a link' })).toBeTruthy()
+    expect(outcomes).toEqual([])
+  })
+
+  it('a sign-out closes the dialog and rejects every waiter with its original refusal', async () => {
+    serveAll(linkSent())
+    const outcomes = await openDialog()
+    await fireEvent.press(screen.getByRole('button', { name: 'Act' }))
+    await sendLink()
+    await act(() => {
+      useAuthStore.getState().logout()
+    })
+    await waitFor(() => expect(outcomes).toHaveLength(2))
+    for (const outcome of outcomes) {
+      const error = 'error' in outcome ? outcome.error : null
+      expect(error).toMatchObject({ response: { status: 401, data: { code: 'REAUTH_REQUIRED' } } })
+    }
+    await waitFor(() => expect(screen.queryByText('Confirm it’s you')).toBeNull())
+  })
+
   it('hides while maintenance covers the app, and keeps its place', async () => {
     serveAll(linkSent())
     await openDialog()

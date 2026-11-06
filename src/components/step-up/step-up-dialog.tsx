@@ -68,6 +68,8 @@ export function StepUpDialog({ onConfirmed, onDismissed }: StepUpDialogProps) {
   const linkLeft = useSecondsLeft(view === 'email' ? linkExpiresAt : null)
   const mounted = useRef(true)
   const resuming = useRef(false)
+  /** The waiting view a resume started from, and returns to on a stray signal. */
+  const waitView = useRef<'start' | 'email'>('start')
 
   useEffect(() => {
     mounted.current = true
@@ -123,20 +125,22 @@ export function StepUpDialog({ onConfirmed, onDismissed }: StepUpDialogProps) {
   /**
    * Confirmed on this phone: retries when the stored token's `auth_time` is
    * newer than the baseline. Otherwise it refreshes once and checks the new
-   * token; still not newer, a stray signal, and the wait goes on. A refresh
+   * token; still not newer, a stray signal, and the wait goes on in the view
+   * it left (start or email). A refresh
    * verdict has signed the person out, so the dialog closes and the guard
    * leaves for the sign-in screen.
    */
   const resume = async () => {
     if (resuming.current) return
     resuming.current = true
+    if (view === 'start' || view === 'email') waitView.current = view
     setView('resuming')
     try {
       if (!isNewConfirmation(baseline, authTimeOf(useAuthStore.getState().accessToken))) {
         const token = await ensureSession()
         if (!mounted.current) return
         if (!isNewConfirmation(baseline, authTimeOf(token))) {
-          setView('email')
+          setView(waitView.current)
           return
         }
       }
@@ -156,10 +160,12 @@ export function StepUpDialog({ onConfirmed, onDismissed }: StepUpDialogProps) {
   const onConfirmedHere = useEffectEvent(() => {
     void resume()
   })
+  /** A link opened after a cancel and a retry can confirm while the new dialog is still on the start view. */
+  const isWaiting = view === 'start' || view === 'email'
   useEffect(() => {
-    if (view !== 'email') return
+    if (!isWaiting) return
     return subscribeAuthMessage('step_up_confirmed', onConfirmedHere)
-  }, [view])
+  }, [isWaiting])
 
   const cancel = <Button variant="ghost" label="Cancel" onPress={onDismissed} />
 

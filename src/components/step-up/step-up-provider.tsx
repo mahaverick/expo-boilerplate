@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { StepUpDialog } from '@/components/step-up/step-up-dialog'
 import { StepUpContext, StepUpWaitingContext, type StepUp } from '@/hooks/use-step-up'
 import { isReauthRequired, markRefusedAfterConfirm, sentWithCurrentToken } from '@/lib/step-up'
+import { useAuthStore } from '@/states/auth.store'
 
 /** An action refused for a stale sign-in: `resolve` retries it after a confirmation, `reject` surfaces its refusal after a cancel. */
 interface Waiter {
@@ -15,7 +16,9 @@ interface Waiter {
  * refused actions never stack two dialogs, and one confirmation retries both.
  * `useStepUpWaiting()` reads true for as long as the dialog is open. The root
  * layout mounts it once, around the stack, so a route such as
- * `/auth/confirm` never unmounts a waiting dialog.
+ * `/auth/confirm` never unmounts a waiting dialog. It stays mounted across a
+ * sign-out too, so a sign-out closes the dialog and rejects every waiter with
+ * its original refusal; the dialog would otherwise sit over the sign-in screen.
  * @param props - The app underneath.
  * @param props.children - The app.
  * @returns The app, with the dialog while a step-up waits.
@@ -33,6 +36,14 @@ export function StepUpProvider({ children }: { children: ReactNode }) {
       else waiter.reject()
     }
   }, [])
+
+  useEffect(
+    () =>
+      useAuthStore.subscribe((state) => {
+        if (!state.isAuthenticated && waiters.current.length > 0) finish(false)
+      }),
+    [finish]
+  )
 
   const confirm = useCallback(
     () =>
