@@ -4,11 +4,13 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import { router, Stack, Tabs } from 'expo-router'
 import { Text } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
+import TabsLayout from '@/app/(app)/(tabs)/_layout'
 import * as appLayout from '@/app/(app)/_layout'
 import TenantSubpath from '@/app/(app)/tenants/[slug]/[...rest]'
 import Welcome from '@/app/(app)/welcome'
 import { useAuthStore } from '@/states/auth.store'
 import { useCurrentTenantStore } from '@/states/current-tenant.store'
+import { useTabBarStore } from '@/states/tab-bar.store'
 import { METRICS } from '@/tests/support/a11y'
 import { restoreApi, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
@@ -113,6 +115,35 @@ describe('the (app) stack', () => {
     })
     expect(screen.getByText('overview')).toBeTruthy()
     expect(appStack(result.getRouterState() as never)).toEqual(['(tabs)', 'tenants/[slug]/index'])
+  })
+
+  it('publishes the tab bar height while a tab shows, and clears it under a stack screen', async () => {
+    useTabBarStore.setState({ height: 0, owner: null })
+    const result = await renderRouter(
+      routes({
+        '(app)/(tabs)/_layout': TabsLayout,
+        '(app)/(tabs)/notifications': stub('notifications'),
+        '(app)/(tabs)/settings': stub('settings'),
+      }),
+      { initialUrl: '/' }
+    )
+    expect(screen.getByText('home')).toBeTruthy()
+    await waitFor(() => {
+      expect(useTabBarStore.getState().height).toBeGreaterThan(0)
+    })
+    await act(() => {
+      router.push('/tenants/acme')
+    })
+    expect(result.getPathname()).toBe('/tenants/acme')
+    await waitFor(() => {
+      expect(useTabBarStore.getState().height).toBe(0)
+    })
+    await act(() => {
+      router.back()
+    })
+    await waitFor(() => {
+      expect(useTabBarStore.getState().height).toBeGreaterThan(0)
+    })
   })
 
   it('puts the tabs beneath /welcome', async () => {
