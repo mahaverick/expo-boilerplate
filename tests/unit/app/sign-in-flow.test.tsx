@@ -35,6 +35,7 @@ jest.mock('expo-router', () => {
     Stack: () => null,
     usePathname: () => '/',
     useGlobalSearchParams: () => ({}),
+    useSegments: () => [],
   }
 })
 jest.mock('@/lib/storage', () => ({ storage: { getString: () => '1', set: () => undefined } }))

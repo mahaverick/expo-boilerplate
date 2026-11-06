@@ -27,9 +27,10 @@ function hasUnsafeCharacter(value: string): boolean {
  * web app's: one leading `/`, at most `MAX_REDIRECT_LENGTH` characters, no
  * backslash or control character, and nothing that resolves off the app or to
  * a one-time-token page. The token check runs after decoding, collapsing
- * repeated slashes, dropping a trailing slash and folding case.
+ * repeated slashes, dropping a trailing slash and folding case. The string
+ * returned is the one that was checked, so dot segments are already resolved.
  * @param raw - The value to check.
- * @returns The original path and query with the fragment dropped, or `null` when it is unsafe.
+ * @returns The resolved path and query, as the URL parser writes them, with the fragment dropped, or `null` when it is unsafe.
  */
 export function safePath(raw: unknown): string | null {
   if (typeof raw !== 'string' || raw === '' || raw.length > MAX_REDIRECT_LENGTH) return null
@@ -47,13 +48,13 @@ export function safePath(raw: unknown): string | null {
   } catch {
     return null
   }
-  if (decoded.startsWith('//') || hasUnsafeCharacter(decoded)) return null
+  if (decoded.startsWith('//') || hasUnsafeCharacter(decoded) || /[?#]/.test(decoded)) return null
   const normalized = decoded
     .replace(/\/{2,}/g, '/')
     .replace(/\/$/, '')
     .toLowerCase()
   if ((TOKEN_PATHS as readonly string[]).includes(normalized)) return null
-  return raw.split('#', 1)[0] ?? null
+  return `${resolved.pathname}${resolved.search}`
 }
 
 /**

@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals'
 import { render, screen } from '@testing-library/react-native'
-import { useGlobalSearchParams, usePathname } from 'expo-router'
+import { useGlobalSearchParams, usePathname, useSegments } from 'expo-router'
 import AppLayout from '@/app/(app)/_layout'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import type { SessionStatus } from '@/http/session-lifecycle'
@@ -15,6 +15,7 @@ jest.mock('expo-router', () => {
     Stack: () => <Text>stack</Text>,
     usePathname: jest.fn(() => '/'),
     useGlobalSearchParams: jest.fn(() => ({})),
+    useSegments: jest.fn(() => []),
   }
 })
 jest.mock('react-native-safe-area-context', () => ({
@@ -43,9 +44,15 @@ afterEach(() => {
 /**
  * Sets the route the mocked hooks report.
  * @param path - The current path.
- * @param params - The current query parameters.
+ * @param params - The current global parameters.
+ * @param segments - The current route segments.
  */
-function openAt(path: string, params: Record<string, string | string[]> = {}): void {
+function openAt(
+  path: string,
+  params: Record<string, string | string[]> = {},
+  segments: string[] = []
+): void {
+  jest.mocked(useSegments).mockReturnValue(segments as never)
   jest.mocked(usePathname).mockReturnValue(path)
   jest.mocked(useGlobalSearchParams).mockReturnValue(params)
 }
@@ -53,10 +60,19 @@ function openAt(path: string, params: Record<string, string | string[]> = {}): v
 describe('(app) layout', () => {
   it('sends a signed-out person to /login with the path they asked for', async () => {
     setStatus('signed-out')
-    openAt('/tenants/acme', { tab: 'x' })
+    openAt('/tenants/acme', { slug: 'acme', tab: 'x' }, ['(app)', 'tenants', '[slug]'])
     await render(<AppLayout />)
     expect(
       screen.getByText(`redirect:/login?redirect=${encodeURIComponent('/tenants/acme?tab=x')}`)
+    ).toBeTruthy()
+  })
+
+  it('leaves a catch-all segment out of the redirect', async () => {
+    setStatus('signed-out')
+    openAt('/docs/a/b', { rest: ['a', 'b'], tab: 'x' }, ['(app)', 'docs', '[...rest]'])
+    await render(<AppLayout />)
+    expect(
+      screen.getByText(`redirect:/login?redirect=${encodeURIComponent('/docs/a/b?tab=x')}`)
     ).toBeTruthy()
   })
 
@@ -69,7 +85,11 @@ describe('(app) layout', () => {
 
   it('leaves a token parameter out of the redirect', async () => {
     setStatus('signed-out')
-    openAt('/tenants/acme', { token: 'secret', tab: ['x', 'y'] })
+    openAt('/tenants/acme', { slug: 'acme', token: 'secret', tab: ['x', 'y'] }, [
+      '(app)',
+      'tenants',
+      '[slug]',
+    ])
     await render(<AppLayout />)
     expect(
       screen.getByText(

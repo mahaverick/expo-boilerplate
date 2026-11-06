@@ -41,6 +41,39 @@ describe('safePath', () => {
     expect(safePath(raw)).toBeNull()
   })
 
+  it('rejects an absolute URL', () => {
+    expect(safePath('https://evil.example/x')).toBeNull()
+  })
+
+  it('rejects a protocol-relative //evil', () => {
+    expect(safePath('//evil')).toBeNull()
+  })
+
+  it('rejects a slash and backslash, /\\evil', () => {
+    expect(safePath('/\\evil')).toBeNull()
+  })
+
+  it('rejects an encoded double slash, /%2F%2Fevil', () => {
+    expect(safePath('/%2F%2Fevil')).toBeNull()
+  })
+
+  it('rejects the token path /auth/link?token=x', () => {
+    expect(safePath('/auth/link?token=x')).toBeNull()
+  })
+
+  it('rejects a path over 2048 characters', () => {
+    expect(safePath(`/${'a'.repeat(2048)}`)).toBeNull()
+  })
+
+  it('rejects an encoded query mark that hides a token path', () => {
+    expect(safePath('/auth/link%3Ftoken=x')).toBeNull()
+  })
+
+  it('returns the resolved path, so what is checked is what is navigated to', () => {
+    expect(safePath('/a/b/../c?x=1#top')).toBe('/a/c?x=1')
+    expect(safePath('/a b?x=1')).toBe('/a%20b?x=1')
+  })
+
   it.each([[undefined], [null], [42], [{}], [['/a']]])('rejects the non-string %p', (raw) => {
     expect(safePath(raw)).toBeNull()
   })

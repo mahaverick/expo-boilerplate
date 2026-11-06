@@ -1,4 +1,11 @@
-import { Redirect, Stack, useGlobalSearchParams, usePathname, type Href } from 'expo-router'
+import {
+  Redirect,
+  Stack,
+  useGlobalSearchParams,
+  usePathname,
+  useSegments,
+  type Href,
+} from 'expo-router'
 import { SigningInScreen } from '@/components/auth/signing-in-screen'
 import { useMaintenanceMode } from '@/http/maintenance'
 import { useSessionStatus } from '@/http/session-lifecycle'
@@ -10,16 +17,21 @@ import { usePasskeySetupStore } from '@/states/passkey-setup.store'
  * `redirect`. A `token` parameter never goes into it. The root, and any path
  * `safePath` refuses, carry none.
  * @param pathname - The current path.
- * @param params - The current query parameters.
+ * @param params - The current global parameters: the query and the dynamic path segments.
+ * @param segments - The current route segments, where `[name]` and `[...name]` name the dynamic ones.
  * @returns `/login`, with `?redirect=` when there is a path worth returning to.
  */
 function loginHref(
   pathname: string,
-  params: Record<string, string | string[] | undefined>
+  params: Record<string, string | string[] | undefined>,
+  segments: string[]
 ): string {
+  const dynamic = new Set(
+    segments.flatMap((segment) => /^\[(?:\.\.\.)?(.+)\]$/.exec(segment)?.[1] ?? [])
+  )
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
-    if (key === 'token' || value === undefined) continue
+    if (key === 'token' || dynamic.has(key) || value === undefined) continue
     for (const item of Array.isArray(value) ? value : [value]) query.append(key, item)
   }
   const text = query.toString()
@@ -39,12 +51,13 @@ export default function AppLayout() {
   const isFull = useMaintenanceMode() === 'full'
   const pathname = usePathname()
   const params = useGlobalSearchParams()
+  const segments: string[] = useSegments()
   const passkeyRequired = usePasskeySetupStore((state) => state.required)
   if (status === 'restoring') return <SigningInScreen />
   if (status === 'signed-out' && !isFull)
     return (
       // The redirect is any path the person asked for, which typed routes cannot list.
-      <Redirect href={loginHref(pathname, params) as Href} />
+      <Redirect href={loginHref(pathname, params, segments) as Href} />
     )
   if (passkeyRequired && !isFull) return <Redirect href="/passkey-required" />
   return <Stack screenOptions={{ headerShown: false }} />

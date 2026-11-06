@@ -37,7 +37,7 @@ function paramText(value: string | string[] | undefined): string | undefined {
 /**
  * Where a mailed sign-in link opens: `/auth/link?token=…&email=…`.
  *
- * The screen reads `token`, `email` and `redirect` once, then clears them from the route.
+ * The screen reads `token`, `email` and `redirect` once, then clears `token` and `email` from the route (`redirect` stays).
  * It waits for the session restore, then decides from who was signed in at
  * that moment: the same address goes Home without posting, another address
  * asks first, and no one posts the token once. A link with no token or no
