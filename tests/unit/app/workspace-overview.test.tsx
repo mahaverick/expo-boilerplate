@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react-native'
 import { router } from 'expo-router'
 import Overview from '@/app/(app)/tenants/[slug]/index'
 import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
+import { formatDate } from '@/lib/format'
 import { useAuthStore } from '@/states/auth.store'
 import { useCurrentTenantStore } from '@/states/current-tenant.store'
 import { renderScreen, restoreApi } from '@/tests/support/api'
@@ -75,7 +76,8 @@ describe('WorkspaceOverview', () => {
     }
     expect(screen.getByText('Anvils')).toBeTruthy()
     expect(screen.getAllByText('—')).toHaveLength(2)
-    expect(screen.getByText('5 January 2026')).toBeTruthy()
+    // The reader's own locale formats the date, so the expected text comes from the same formatter.
+    expect(screen.getByText(formatDate('2026-01-05T00:00:00.000Z', 'long') ?? '')).toBeTruthy()
   })
 
   it('shows the checklist under the header', async () => {
