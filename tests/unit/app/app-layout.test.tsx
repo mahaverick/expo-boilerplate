@@ -215,6 +215,7 @@ describe('(app) layout', () => {
       headerBackButtonDisplayMode: 'minimal',
     })
     expect(mockScreens['(tabs)']).toEqual({ headerShown: false })
+    expect(mockScreens['tenants/[slug]/[...rest]']).toEqual({ headerShown: false })
   })
 
   it('checks the session before the flag', async () => {

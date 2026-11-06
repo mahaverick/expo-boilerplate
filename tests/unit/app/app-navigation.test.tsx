@@ -5,6 +5,7 @@ import { router, Stack, Tabs } from 'expo-router'
 import { Text } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import * as appLayout from '@/app/(app)/_layout'
+import TenantSubpath from '@/app/(app)/tenants/[slug]/[...rest]'
 import Welcome from '@/app/(app)/welcome'
 import { useAuthStore } from '@/states/auth.store'
 import { useCurrentTenantStore } from '@/states/current-tenant.store'
@@ -100,6 +101,17 @@ describe('the (app) stack', () => {
       router.replace('/tenants/acme', { withAnchor: true })
     })
     expect(result.getPathname()).toBe('/tenants/acme')
+    expect(appStack(result.getRouterState() as never)).toEqual(['(tabs)', 'tenants/[slug]/index'])
+  })
+
+  it('sends a deeper /tenants/{slug} path to the overview, never Page not found', async () => {
+    const result = await renderRouter(routes({ '(app)/tenants/[slug]/[...rest]': TenantSubpath }), {
+      initialUrl: '/tenants/acme/members/42',
+    })
+    await waitFor(() => {
+      expect(result.getPathname()).toBe('/tenants/acme')
+    })
+    expect(screen.getByText('overview')).toBeTruthy()
     expect(appStack(result.getRouterState() as never)).toEqual(['(tabs)', 'tenants/[slug]/index'])
   })
 

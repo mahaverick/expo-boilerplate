@@ -94,6 +94,7 @@ export default function AppLayout() {
   return (
     <Stack screenOptions={STACK_SCREEN_OPTIONS}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="tenants/[slug]/[...rest]" options={{ headerShown: false }} />
     </Stack>
   )
 }
