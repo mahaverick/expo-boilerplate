@@ -66,21 +66,25 @@ function isPostTo(config: InternalAxiosRequestConfig, paths: Set<string>): boole
  * that already names `refreshToken` stays as it is; with no stored token the
  * body is untouched. A request this function filled in before is replayed
  * with a serialized body: the token is read again, since a refresh between
- * the attempts has rotated it.
+ * the attempts has rotated it. A store that cannot be read rejects the
+ * request before it leaves.
  * @param config - The request.
  */
 async function addToken(config: InternalAxiosRequestConfig): Promise<InternalAxiosRequestConfig> {
   if (!isPostTo(config, INJECT)) return config
-  const token = await refreshTokenStore.read()
-  if (token === null) return config
   if (config._bodyToken && typeof config.data === 'string') {
+    const token = await refreshTokenStore.read()
+    if (token === null) return config
     const sent = JSON.parse(config.data) as Record<string, unknown>
     config.data = { ...sent, refreshToken: token }
     return config
   }
   // Request transforms run after the interceptors, so on a first attempt `data` is still the caller's object.
   const current: unknown = config.data ?? {}
+  // Checked before the read: a revoke names its own token, and must leave even while the Keychain is locked.
   if (typeof current !== 'object' || current === null || 'refreshToken' in current) return config
+  const token = await refreshTokenStore.read()
+  if (token === null) return config
   config.data = { ...current, refreshToken: token }
   config._bodyToken = true
   return config

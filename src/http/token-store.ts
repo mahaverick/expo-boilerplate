@@ -16,19 +16,55 @@ const OPTIONS: SecureStore.SecureStoreOptions = {
 }
 
 /**
- * A store over one SecureStore key.
+ * The code expo-secure-store gives a value it cannot decrypt. Android's
+ * `DecryptException` takes it from its class name (`CodedException.inferCode`).
+ * The iOS Keychain decrypts its own items and has no such failure.
+ */
+const DECRYPT_FAILURE = 'ERR_DECRYPT'
+
+/** What `readItem` returns for a value that fails to decrypt. */
+const UNDECRYPTABLE = Symbol('undecryptable')
+
+/**
+ * Whether `error` is expo-secure-store's decrypt failure.
+ * @param error - What the read rejected with.
+ */
+function isDecryptFailure(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && 'code' in error && error.code === DECRYPT_FAILURE
+  )
+}
+
+/**
+ * Reads one key and deletes nothing.
+ * @param key - The SecureStore key.
+ * @returns The value, `null` when it is unset, or `UNDECRYPTABLE`.
+ * @throws A plain `Error`, never an auth verdict, on any other failure, such
+ * as a locked Keychain (`ERR_KEY_CHAIN`). The item may still be good.
+ */
+async function readItem(key: string): Promise<string | null | typeof UNDECRYPTABLE> {
+  try {
+    return await SecureStore.getItemAsync(key, OPTIONS)
+  } catch (error) {
+    if (isDecryptFailure(error)) return UNDECRYPTABLE
+    throw new Error(`SecureStore could not read ${key}.`, { cause: error })
+  }
+}
+
+/**
+ * A store over one SecureStore key. `read` drops a value that fails to
+ * decrypt and reads it as `null`; any other read failure rejects and keeps
+ * the item.
  * @param key - The SecureStore key.
  */
 function storeFor(key: string): RefreshTokenStore {
   return {
     async read() {
-      try {
-        return await SecureStore.getItemAsync(key, OPTIONS)
-      } catch {
-        // A value that fails to decrypt (a restored backup, a changed key) can never be read; drop it.
-        await SecureStore.deleteItemAsync(key, OPTIONS).catch(() => {})
-        return null
-      }
+      const value = await readItem(key)
+      if (value !== UNDECRYPTABLE) return value
+      // A value that fails to decrypt (a restored backup, a changed key) can never be read; drop it.
+      await SecureStore.deleteItemAsync(key, OPTIONS).catch(() => {})
+      return null
     },
     async write(token) {
       for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt += 1) {
@@ -55,9 +91,12 @@ const PENDING_REVOKE_LIMIT = 5
 
 /** The tokens whose logout has not reached the API. */
 export interface PendingRevokeStore {
-  /** Every pending token, oldest first. A value that cannot be read gives an empty list. */
+  /**
+   * Every pending token, oldest first. A value that fails to decrypt gives an
+   * empty list. Rejects when the store cannot be read, such as a locked Keychain.
+   */
   list(): Promise<string[]>
-  /** Adds a token, once. A sixth token drops the oldest. Rejects when the write fails. */
+  /** Adds a token, once. A sixth token drops the oldest. Rejects when the read or the write fails. */
   add(token: string): Promise<void>
   /** Removes one token and keeps the others. Never rejects. */
   remove(token: string): Promise<void>
@@ -65,6 +104,17 @@ export interface PendingRevokeStore {
 
 /** The raw store under `pending_revoke`; its value is a JSON array of tokens. */
 const pendingSlot = storeFor('pending_revoke')
+
+/**
+ * Reads the pending list and deletes nothing: a value that fails to decrypt
+ * reads as empty, and the next save replaces it.
+ * @returns The tokens.
+ * @throws A plain `Error` when the store cannot be read, such as a locked Keychain.
+ */
+async function readTokens(): Promise<string[]> {
+  const raw = await readItem('pending_revoke')
+  return raw === UNDECRYPTABLE ? [] : parseTokens(raw)
+}
 
 /** Runs after every earlier change, so two changes never overwrite each other. */
 let pendingQueue: Promise<unknown> = Promise.resolve()
@@ -105,20 +155,20 @@ async function saveTokens(tokens: string[]): Promise<void> {
 
 /** Holds the tokens whose logout has not reached the API, under `pending_revoke`. */
 export const pendingRevokeStore: PendingRevokeStore = {
-  async list() {
-    return parseTokens(await pendingSlot.read())
+  list() {
+    return readTokens()
   },
   add(token) {
     return serialized(async () => {
-      const tokens = parseTokens(await pendingSlot.read())
+      const tokens = await readTokens()
       if (tokens.includes(token)) return
       await saveTokens([...tokens, token].slice(-PENDING_REVOKE_LIMIT))
     })
   },
   remove(token) {
     return serialized(async () => {
-      const tokens = parseTokens(await pendingSlot.read())
-      if (!tokens.includes(token)) return
+      const tokens = await readTokens().catch(() => null)
+      if (tokens === null || !tokens.includes(token)) return
       await saveTokens(tokens.filter((item) => item !== token)).catch(() => {})
     })
   },

@@ -14,7 +14,7 @@ import {
 } from '@/http/session'
 import { refreshTokenStore } from '@/http/token-store'
 import { useAuthStore } from '@/states/auth.store'
-import { resetSecureStore } from '@/tests/mocks/expo-secure-store'
+import { deleteItemAsync, getItemAsync, resetSecureStore } from '@/tests/mocks/expo-secure-store'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 import type { User } from '@/types/api.types'
 
@@ -75,6 +75,34 @@ describe('session', () => {
       )
     const failure = await ensureSession().catch((error: unknown) => error)
     expect(isAuthVerdict(failure)).toBe(true)
+    await expect(refreshTokenStore.read()).resolves.toBeNull()
+  })
+
+  it('keeps the session when the Keychain is locked: no clear and no sign-out', async () => {
+    await refreshTokenStore.write('live')
+    useAuthStore.getState().login('access', userWith('user-1'))
+    const posts: string[] = []
+    apiClient.defaults.adapter = (config) => {
+      posts.push(config.url ?? '')
+      return Promise.reject(new Error('no request should leave'))
+    }
+    getItemAsync.mockRejectedValueOnce(
+      Object.assign(new Error('locked'), { code: 'ERR_KEY_CHAIN' })
+    )
+    const failure = await ensureSession().catch((error: unknown) => error)
+    expect(isAuthVerdict(failure)).toBe(false)
+    expect(posts).toEqual([])
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(deleteItemAsync).not.toHaveBeenCalled()
+    await expect(refreshTokenStore.read()).resolves.toBe('live')
+  })
+
+  it('reads a value that fails to decrypt as signed out', async () => {
+    await refreshTokenStore.write('garbled')
+    useAuthStore.getState().login('access', userWith('user-1'))
+    getItemAsync.mockRejectedValueOnce(Object.assign(new Error('bad'), { code: 'ERR_DECRYPT' }))
+    await expect(ensureSession()).rejects.toBeInstanceOf(NoRefreshTokenError)
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
     await expect(refreshTokenStore.read()).resolves.toBeNull()
   })
 

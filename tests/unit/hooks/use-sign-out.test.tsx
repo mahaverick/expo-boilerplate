@@ -92,7 +92,9 @@ describe('useSignOut', () => {
 
   it('still signs out and revokes when pending_revoke cannot be written', async () => {
     answerWith(200)
-    setItemAsync.mockRejectedValue(new Error('keychain locked'))
+    setItemAsync.mockRejectedValue(
+      Object.assign(new Error('keychain locked'), { code: 'ERR_KEY_CHAIN' })
+    )
     const { result } = await renderHook(() => useSignOut(), { wrapper })
     await act(() => result.current.signOut())
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
@@ -102,11 +104,15 @@ describe('useSignOut', () => {
 
   it('posts the logout when the keychain refuses both the save and the later reads', async () => {
     answerWith(200)
-    setItemAsync.mockRejectedValue(new Error('keychain locked'))
+    setItemAsync.mockRejectedValue(
+      Object.assign(new Error('keychain locked'), { code: 'ERR_KEY_CHAIN' })
+    )
     const { result } = await renderHook(() => useSignOut(), { wrapper })
     // The token is read once; every read after that fails.
     getItemAsync.mockImplementationOnce(() => Promise.resolve('tok'))
-    getItemAsync.mockRejectedValue(new Error('keychain locked'))
+    getItemAsync.mockRejectedValue(
+      Object.assign(new Error('keychain locked'), { code: 'ERR_KEY_CHAIN' })
+    )
     await act(() => result.current.signOut())
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
     expect(log.some((entry) => entry.startsWith('logout('))).toBe(true)

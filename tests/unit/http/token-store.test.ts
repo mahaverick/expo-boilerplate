@@ -1,4 +1,4 @@
-import { NoRefreshTokenError } from '@/http/auth-verdict'
+import { isAuthVerdict, NoRefreshTokenError } from '@/http/auth-verdict'
 import { pendingRevokeStore, refreshTokenStore, WRITE_ATTEMPTS } from '@/http/token-store'
 import {
   deleteItemAsync,
@@ -10,6 +10,14 @@ import {
 import { beforeEach, describe, expect, it } from '@/tests/support/runner'
 
 const OPTIONS = { keychainAccessible: WHEN_UNLOCKED_THIS_DEVICE_ONLY }
+
+/**
+ * An error shaped like expo-modules-core's `CodedError`.
+ * @param code - The native code, such as `ERR_DECRYPT`, or none.
+ */
+function codedError(code: string | undefined): Error {
+  return Object.assign(new Error('native failure'), code === undefined ? {} : { code })
+}
 
 beforeEach(() => {
   resetSecureStore()
@@ -26,10 +34,23 @@ describe('refreshTokenStore', () => {
   })
 
   it('reads a value that fails to decrypt as no token, and deletes it', async () => {
-    getItemAsync.mockRejectedValueOnce(new Error('decrypt'))
+    getItemAsync.mockRejectedValueOnce(codedError('ERR_DECRYPT'))
     await expect(refreshTokenStore.read()).resolves.toBeNull()
     expect(deleteItemAsync).toHaveBeenCalledWith('refresh_token', OPTIONS)
   })
+
+  it.each([['ERR_KEY_CHAIN'], ['ERR_UNEXPECTED'], [undefined]])(
+    'rethrows a read that fails with %s as a plain error, and keeps the item',
+    async (code) => {
+      await refreshTokenStore.write('live')
+      getItemAsync.mockRejectedValueOnce(codedError(code))
+      const failure = await refreshTokenStore.read().catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(Error)
+      expect(isAuthVerdict(failure)).toBe(false)
+      expect(deleteItemAsync).not.toHaveBeenCalled()
+      await expect(refreshTokenStore.read()).resolves.toBe('live')
+    }
+  )
 
   it('retries a failed write, then throws NoRefreshTokenError', async () => {
     setItemAsync.mockRejectedValue(new Error('locked'))
@@ -82,6 +103,30 @@ describe('pendingRevokeStore', () => {
   it.each(['not json', '{"a":1}', '[1,2]'])('reads %s as empty', async (raw) => {
     await setItemAsync('pending_revoke', raw)
     await expect(pendingRevokeStore.list()).resolves.toEqual([])
+  })
+
+  it('rejects list and add on a locked keychain, and deletes nothing', async () => {
+    await pendingRevokeStore.add('a')
+    getItemAsync.mockRejectedValue(codedError('ERR_KEY_CHAIN'))
+    await expect(pendingRevokeStore.list()).rejects.toBeInstanceOf(Error)
+    await expect(pendingRevokeStore.add('b')).rejects.toBeInstanceOf(Error)
+    await expect(pendingRevokeStore.remove('a')).resolves.toBeUndefined()
+    expect(deleteItemAsync).not.toHaveBeenCalled()
+    getItemAsync
+      .mockReset()
+      .mockImplementation((key) =>
+        key === 'pending_revoke' ? Promise.resolve('["a"]') : Promise.resolve(null)
+      )
+    await expect(pendingRevokeStore.list()).resolves.toEqual(['a'])
+  })
+
+  it('reads a list that fails to decrypt as empty without deleting it, and the next add replaces it', async () => {
+    getItemAsync.mockRejectedValueOnce(codedError('ERR_DECRYPT'))
+    await expect(pendingRevokeStore.list()).resolves.toEqual([])
+    getItemAsync.mockRejectedValueOnce(codedError('ERR_DECRYPT'))
+    await pendingRevokeStore.add('b')
+    expect(deleteItemAsync).not.toHaveBeenCalled()
+    await expect(pendingRevokeStore.list()).resolves.toEqual(['b'])
   })
 
   it('keeps both tokens when two adds run at once', async () => {

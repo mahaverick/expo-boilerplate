@@ -6,7 +6,7 @@ import { ensureSession, resetSessionForTests } from '@/http/session'
 import { pendingRevokeStore, refreshTokenStore } from '@/http/token-store'
 import { useAuthStore } from '@/states/auth.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
-import { resetSecureStore, setItemAsync } from '@/tests/mocks/expo-secure-store'
+import { getItemAsync, resetSecureStore, setItemAsync } from '@/tests/mocks/expo-secure-store'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 import type { User } from '@/types/api.types'
 
@@ -113,6 +113,23 @@ describe('request body token', () => {
     await apiClient.post('/auth/logout', { refreshToken: 'mine' }, { skipAuthRetry: true })
     expect(bodyOf(sent[0])).toEqual({ refreshToken: 'tok' })
     expect(bodyOf(sent[1])).toEqual({ refreshToken: 'mine' })
+  })
+
+  it('sends a body that names its own refreshToken without reading the store', async () => {
+    getItemAsync.mockRejectedValue(Object.assign(new Error('locked'), { code: 'ERR_KEY_CHAIN' }))
+    const sent = serve(() => ({ status: 200, data: { success: true, data: {} } }))
+    await apiClient.post('/auth/logout', { refreshToken: 'mine' }, { skipAuthRetry: true })
+    expect(bodyOf(sent[0])).toEqual({ refreshToken: 'mine' })
+    expect(getItemAsync).not.toHaveBeenCalled()
+  })
+
+  it('rejects, and sends nothing, when the store cannot be read for a body that needs the token', async () => {
+    getItemAsync.mockRejectedValue(Object.assign(new Error('locked'), { code: 'ERR_KEY_CHAIN' }))
+    const sent = serve(() => ({ status: 200, data: { success: true, data: {} } }))
+    await expect(
+      apiClient.post('/auth/logout', { x: 1 }, { skipAuthRetry: true })
+    ).rejects.toBeInstanceOf(Error)
+    expect(sent).toHaveLength(0)
   })
 
   it('sends no token key when none is stored', async () => {
