@@ -13,6 +13,7 @@ const config: Config = {
   moduleNameMapper: {
     '\\.css$': '<rootDir>/tests/support/stylesheet.ts',
     '^expo-secure-store$': '<rootDir>/tests/mocks/expo-secure-store.ts',
+    '^@react-native-community/netinfo$': '<rootDir>/tests/mocks/netinfo.ts',
     '^@/tests/(.*)$': '<rootDir>/tests/$1',
     '^@/(.*)$': '<rootDir>/src/$1',
   },

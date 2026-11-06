@@ -4,12 +4,14 @@ import { Stack } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { colorScheme, useColorScheme } from 'nativewind'
 import { useEffect, useRef } from 'react'
+import { OfflineBanner } from '@/components/shared/offline-banner'
 import {
   installForegroundRefresh,
   restoreSession,
   useSessionStatus,
 } from '@/http/session-lifecycle'
 import { queryClient } from '@/lib/query-client'
+import { installQueryManagers } from '@/lib/query-managers'
 import { resolvedScheme, useThemeStore } from '@/states/theme.store'
 
 /**
@@ -73,6 +75,8 @@ export default function RootLayout() {
     return installForegroundRefresh()
   }, [])
 
+  useEffect(() => installQueryManagers(), [])
+
   useEffect(() => {
     const isThemeReported = applied === resolvedScheme(preference, applied)
     if (isThemeReported && status !== 'restoring') hideSplash(splash.current)
@@ -80,6 +84,7 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <OfflineBanner />
       <Stack screenOptions={{ headerShown: false }} />
     </QueryClientProvider>
   )

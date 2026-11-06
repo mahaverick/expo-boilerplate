@@ -2,6 +2,7 @@ import { jest } from '@jest/globals'
 import { act, render, waitFor } from '@testing-library/react-native'
 import * as SplashScreen from 'expo-splash-screen'
 import { colorScheme } from 'nativewind'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import RootLayout from '@/app/_layout'
 import {
   installForegroundRefresh,
@@ -10,7 +11,9 @@ import {
 } from '@/http/session-lifecycle'
 import type { SessionStatus } from '@/http/session-lifecycle'
 import { queryClient } from '@/lib/query-client'
+import * as queryManagers from '@/lib/query-managers'
 import { useThemeStore } from '@/states/theme.store'
+import { METRICS } from '@/tests/support/a11y'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
 jest.mock('react-native-mmkv', () => ({
@@ -28,6 +31,7 @@ jest.mock('@/http/session-lifecycle', () => ({
   installForegroundRefresh: jest.fn(() => jest.fn()),
   useSessionStatus: jest.fn(() => 'signed-out'),
 }))
+jest.mock('@/lib/query-managers', () => ({ installQueryManagers: jest.fn(() => jest.fn()) }))
 jest.mock('expo-router', () => {
   const { useQueryClient } =
     jest.requireActual<typeof import('@tanstack/react-query')>('@tanstack/react-query')
@@ -39,6 +43,15 @@ jest.mock('expo-router', () => {
     },
   }
 })
+
+/** The layout inside the provider expo-router supplies in the app. */
+function Root() {
+  return (
+    <SafeAreaProvider initialMetrics={METRICS}>
+      <RootLayout />
+    </SafeAreaProvider>
+  )
+}
 
 /** The query clients the mocked `Stack` saw, one per render. */
 const mockSeenClients: unknown[] = []
@@ -96,7 +109,7 @@ describe('RootLayout', () => {
     const set = holdSchemeReports()
     const schedule = jest.spyOn(globalThis, 'setTimeout')
     const clear = jest.spyOn(globalThis, 'clearTimeout')
-    await render(<RootLayout />)
+    await render(<Root />)
 
     expect(set).toHaveBeenCalledWith('dark')
     expect(hide).not.toHaveBeenCalled()
@@ -134,7 +147,7 @@ describe('RootLayout', () => {
   it('hides the splash screen after 2 seconds when no scheme report arrives', async () => {
     const hide = jest.mocked(SplashScreen.hideAsync)
     const set = holdSchemeReports()
-    await render(<RootLayout />)
+    await render(<Root />)
     expect(set).toHaveBeenCalledWith('dark')
 
     await act(() => {
@@ -157,14 +170,14 @@ describe('RootLayout', () => {
   it('holds the splash screen while the session restores, then hides it', async () => {
     const hide = jest.mocked(SplashScreen.hideAsync)
     setStatus('restoring')
-    const view = await render(<RootLayout />)
+    const view = await render(<Root />)
     // The theme is applied, but the restore is pending.
     expect(colorScheme.get()).toBe('dark')
     expect(hide).not.toHaveBeenCalled()
     expect(restoreSession).toHaveBeenCalledTimes(1)
 
     setStatus('signed-in')
-    await view.rerender(<RootLayout />)
+    await view.rerender(<Root />)
     await waitFor(() => {
       expect(hide).toHaveBeenCalledTimes(1)
     })
@@ -173,7 +186,7 @@ describe('RootLayout', () => {
   it('hides the splash screen after the fallback even while the restore is pending', async () => {
     const hide = jest.mocked(SplashScreen.hideAsync)
     setStatus('restoring')
-    await render(<RootLayout />)
+    await render(<Root />)
     await act(() => {
       jest.advanceTimersByTime(1999)
     })
@@ -186,7 +199,7 @@ describe('RootLayout', () => {
 
   it('provides the app query client to every screen', async () => {
     mockSeenClients.length = 0
-    await render(<RootLayout />)
+    await render(<Root />)
     expect(mockSeenClients.length).toBeGreaterThan(0)
     expect(mockSeenClients.every((client) => client === queryClient)).toBe(true)
   })
@@ -194,8 +207,17 @@ describe('RootLayout', () => {
   it('installs the foreground refresh and removes it on unmount', async () => {
     const remove = jest.fn()
     jest.mocked(installForegroundRefresh).mockReturnValueOnce(remove)
-    const view = await render(<RootLayout />)
+    const view = await render(<Root />)
     expect(installForegroundRefresh).toHaveBeenCalledTimes(1)
+    await view.unmount()
+    expect(remove).toHaveBeenCalledTimes(1)
+  })
+
+  it('installs the query managers and removes them on unmount', async () => {
+    const remove = jest.fn()
+    jest.mocked(queryManagers.installQueryManagers).mockReturnValueOnce(remove)
+    const view = await render(<Root />)
+    expect(queryManagers.installQueryManagers).toHaveBeenCalledTimes(1)
     await view.unmount()
     expect(remove).toHaveBeenCalledTimes(1)
   })
