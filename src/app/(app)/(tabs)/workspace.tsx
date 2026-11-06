@@ -24,7 +24,7 @@ export default function Workspace() {
   const current = useCurrentTenant()
   const { status, slug } = current
   useEffect(() => {
-    if (status === 'none') router.replace('/welcome')
+    if (status === 'none') router.push('/welcome')
   }, [status])
   if (status === 'ready' && slug !== null) {
     return <WorkspaceOverview slug={slug} inPlace bottomInset={false} />

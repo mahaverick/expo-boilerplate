@@ -1,18 +1,38 @@
 import { jest } from '@jest/globals'
 import { render, screen } from '@testing-library/react-native'
 import { useGlobalSearchParams, usePathname, useSegments } from 'expo-router'
-import AppLayout from '@/app/(app)/_layout'
+import AppLayout, { unstable_settings } from '@/app/(app)/_layout'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import type { SessionStatus } from '@/http/session-lifecycle'
 import { useMaintenanceModeStore } from '@/states/maintenance-mode.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
+/** The options the mocked stack's screens received, by name. */
+const mockScreens: Record<string, unknown> = {}
+/** Receives the mocked stack's `screenOptions` on each render. */
+const mockScreenOptions = jest.fn()
+
 jest.mock('expo-router', () => {
   const { Text } = jest.requireActual<typeof import('react-native')>('react-native')
+  /** The stack, recording its options and rendering its screens. */
+  const Stack = ({ screenOptions, children }: { screenOptions: unknown; children: unknown }) => {
+    mockScreenOptions(screenOptions)
+    return (
+      <>
+        <Text>stack</Text>
+        {children as never}
+      </>
+    )
+  }
+  /** A stack screen, recording its options. */
+  Stack.Screen = ({ name, options }: { name: string; options: unknown }) => {
+    mockScreens[name] = options
+    return null
+  }
   return {
     Redirect: ({ href }: { href: string }) => <Text>{`redirect:${href}`}</Text>,
-    Stack: () => <Text>stack</Text>,
+    Stack,
     usePathname: jest.fn(() => '/'),
     useGlobalSearchParams: jest.fn(() => ({})),
     useSegments: jest.fn(() => []),
@@ -130,6 +150,21 @@ describe('(app) layout', () => {
     setStatus('signed-in')
     await render(<AppLayout />)
     expect(screen.getByText('stack')).toBeTruthy()
+  })
+
+  it('anchors the stack on the tabs', () => {
+    expect(unstable_settings).toEqual({ anchor: '(tabs)' })
+  })
+
+  it('gives the screens above the tabs an empty-titled header with Back, and the tabs none', async () => {
+    setStatus('signed-in')
+    await render(<AppLayout />)
+    expect(mockScreenOptions).toHaveBeenLastCalledWith({
+      headerShown: true,
+      headerTitle: '',
+      headerBackButtonDisplayMode: 'minimal',
+    })
+    expect(mockScreens['(tabs)']).toEqual({ headerShown: false })
   })
 
   it('checks the session before the flag', async () => {

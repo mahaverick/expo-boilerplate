@@ -32,7 +32,7 @@ jest.mock('expo-router', () => {
       }, [href])
       return null
     },
-    Stack: () => null,
+    Stack: Object.assign(() => null, { Screen: () => null }),
     usePathname: () => '/',
     useGlobalSearchParams: () => ({}),
     useSegments: () => [],

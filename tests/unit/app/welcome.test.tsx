@@ -3,11 +3,17 @@ import { fireEvent, screen, waitFor } from '@testing-library/react-native'
 import { router } from 'expo-router'
 import Welcome from '@/app/(app)/welcome'
 import { useAuthStore } from '@/states/auth.store'
+import { useCurrentTenantStore } from '@/states/current-tenant.store'
 import { useToastQueueStore } from '@/states/toast-queue.store'
 import { renderScreen, restoreApi, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
-jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn() } }))
+jest.mock('expo-router', () => ({
+  router: { replace: jest.fn(), push: jest.fn(), dismissTo: jest.fn() },
+}))
+jest.mock('@/lib/storage', () => ({
+  storage: { getString: () => undefined, set: () => undefined, remove: () => undefined },
+}))
 const mockSignOut = jest.fn(() => Promise.resolve())
 jest.mock('@/hooks/use-sign-out', () => ({
   useSignOut: () => ({ signOut: mockSignOut, isPending: false }),
@@ -33,6 +39,7 @@ const row = (overrides: { lifecycleState?: string; isPlatform?: boolean } = {}) 
 })
 
 beforeEach(() => {
+  useCurrentTenantStore.setState({ remembered: {} })
   useToastQueueStore.setState({ toasts: [] } as never)
   useAuthStore.getState().login('a', {
     id: 'u1',
@@ -62,7 +69,7 @@ describe('Welcome', () => {
     expect(screen.getByText('You’re signed in as ada@example.com.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Create workspace' })).toBeTruthy()
     await fireEvent.press(screen.getByRole('button', { name: 'Go to Home' }))
-    expect(router.replace).toHaveBeenCalledWith('/')
+    expect(router.dismissTo).toHaveBeenCalledWith('/')
     await fireEvent.press(screen.getByRole('button', { name: 'Sign out' }))
     expect(mockSignOut).toHaveBeenCalled()
   })
@@ -71,7 +78,7 @@ describe('Welcome', () => {
     serve(() => page([row()]))
     await renderScreen(<Welcome />)
     await waitFor(() => {
-      expect(router.replace).toHaveBeenCalledWith('/')
+      expect(router.dismissTo).toHaveBeenCalledWith('/')
     })
     expect(screen.queryByRole('button', { name: 'Create workspace' })).toBeNull()
   })
@@ -80,17 +87,17 @@ describe('Welcome', () => {
     serve(() => page([row({ lifecycleState: 'suspended' }), row({ isPlatform: true })]))
     await renderScreen(<Welcome />)
     expect(await screen.findByRole('button', { name: 'Create workspace' })).toBeTruthy()
-    expect(router.replace).not.toHaveBeenCalled()
+    expect(router.dismissTo).not.toHaveBeenCalled()
   })
 
   it('a failed first read counts as no workspaces', async () => {
     serve(() => ({ status: 500, data: { success: false, message: 'Boom.' } }))
     await renderScreen(<Welcome />)
     expect(await screen.findByRole('button', { name: 'Create workspace' })).toBeTruthy()
-    expect(router.replace).not.toHaveBeenCalled()
+    expect(router.dismissTo).not.toHaveBeenCalled()
   })
 
-  it('toasts then replaces to the new workspace, and the refetched list does not bounce', async () => {
+  it('toasts, remembers the new workspace and opens the Workspace tab, and the refetched list does not bounce', async () => {
     let created = false
     serve((config) => {
       if (config.method === 'post') {
@@ -107,11 +114,12 @@ describe('Welcome', () => {
     await fireEvent.changeText(screen.getByLabelText('Web address'), 'acme')
     await fireEvent.press(screen.getByRole('button', { name: 'Create workspace' }))
     await waitFor(() => {
-      expect(router.replace).toHaveBeenCalledWith('/tenants/acme')
+      expect(router.dismissTo).toHaveBeenCalledWith('/workspace')
     })
+    expect(useCurrentTenantStore.getState().remembered).toEqual({ u1: 'acme' })
     expect(useToastQueueStore.getState().toasts.map((toast) => toast.title)).toContain(
       'Acme created.'
     )
-    expect(router.replace).not.toHaveBeenCalledWith('/')
+    expect(router.dismissTo).not.toHaveBeenCalledWith('/')
   })
 })

@@ -145,7 +145,7 @@ describe('Link', () => {
       await Promise.resolve()
     })
     await waitFor(() => {
-      expect(router.replace).toHaveBeenCalledWith('/')
+      expect(router.replace).toHaveBeenCalledWith('/', { withAnchor: true })
     })
     expect(sent).toHaveLength(1)
   })
@@ -158,7 +158,7 @@ describe('Link', () => {
       </StrictMode>
     )
     await waitFor(() => {
-      expect(router.replace).toHaveBeenCalledWith('/')
+      expect(router.replace).toHaveBeenCalledWith('/', { withAnchor: true })
     })
     expect(sent).toHaveLength(1)
   })
@@ -169,7 +169,7 @@ describe('Link', () => {
     await waitFor(() => {
       expect(router.replace).toHaveBeenCalledTimes(1)
     })
-    expect(router.replace).toHaveBeenCalledWith('/')
+    expect(router.replace).toHaveBeenCalledWith('/', { withAnchor: true })
     expect(await refreshTokenStore.read()).toBe('refresh')
   })
 
@@ -205,7 +205,7 @@ describe('Link', () => {
     serveLink(() => verified({ redirect: '/auth/link' }))
     await renderScreen(<Link />)
     await waitFor(() => {
-      expect(router.replace).toHaveBeenCalledWith('/')
+      expect(router.replace).toHaveBeenCalledWith('/', { withAnchor: true })
     })
     expect(router.replace).toHaveBeenCalledTimes(1)
   })
@@ -224,7 +224,7 @@ describe('Link', () => {
     serveLink(() => verified())
     await renderScreen(<Link />)
     await waitFor(() => {
-      expect(router.replace).toHaveBeenCalledWith('/')
+      expect(router.replace).toHaveBeenCalledWith('/', { withAnchor: true })
     })
     expect(router.replace).toHaveBeenCalledTimes(1)
   })
@@ -313,7 +313,7 @@ describe('Link', () => {
     })
     // Sign-out stayed on this screen.
     await waitFor(() => {
-      expect(router.replace).toHaveBeenCalledWith('/')
+      expect(router.replace).toHaveBeenCalledWith('/', { withAnchor: true })
     })
     expect(router.replace).not.toHaveBeenCalledWith('/login')
   })
@@ -371,7 +371,7 @@ describe('Link', () => {
     expect(screen.getAllByRole('header')).toHaveLength(1)
     await fireEvent.press(screen.getByRole('button', { name: 'Try again' }))
     await waitFor(() => {
-      expect(router.replace).toHaveBeenCalledWith('/')
+      expect(router.replace).toHaveBeenCalledWith('/', { withAnchor: true })
     })
     expect(sent).toHaveLength(2)
   })
@@ -390,7 +390,7 @@ describe('Link', () => {
       await Promise.resolve()
     })
     await waitFor(() => {
-      expect(router.replace).toHaveBeenCalledWith('/')
+      expect(router.replace).toHaveBeenCalledWith('/', { withAnchor: true })
     })
     expect(sent.filter((c) => c.url === '/auth/link/verify')).toHaveLength(2)
   })
@@ -408,7 +408,7 @@ describe('Link', () => {
       await Promise.resolve()
     })
     await waitFor(() => {
-      expect(router.replace).toHaveBeenCalledWith('/')
+      expect(router.replace).toHaveBeenCalledWith('/', { withAnchor: true })
     })
     expect(sent.filter((c) => c.url === '/auth/link/verify')).toHaveLength(1)
   })

@@ -46,7 +46,9 @@ function paramText(value: string | string[] | undefined): string | undefined {
  * press while a post is in flight posts nothing, since the link is single-use.
  * After a verify it lands with `landingFor`: `/welcome` for a new account, else
  * a safe redirect, else `/welcome` for an account with no workspace, else Home.
- * Every landing replaces the route, so Back never returns to the token.
+ * Every landing replaces the route, so Back never returns to the token, and
+ * carries the `(app)` anchor, so the tabs sit beneath a landing such as
+ * `/tenants/{slug}`.
  */
 export default function Link() {
   const params = useLocalSearchParams<{ token?: string; email?: string; redirect?: string }>()
@@ -84,8 +86,8 @@ export default function Link() {
           void landingFor(session, link.requested, () =>
             queryClient.fetchQuery(tenantsQueryOptions())
           ).then((path) => {
-            // The landing is any safe path, which typed routes cannot list.
-            router.replace(path as Href)
+            // Any safe path, which typed routes cannot list; the anchor puts the tabs beneath it.
+            router.replace(path as Href, { withAnchor: true })
           })
         },
         onError: (error) => {

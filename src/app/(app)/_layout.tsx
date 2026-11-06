@@ -40,11 +40,32 @@ function loginHref(
 }
 
 /**
+ * The `(app)` stack's route settings. The tabs sit at the bottom of the stack
+ * whatever route opens it, so a cold deep link, a sign-in landing and a
+ * replace from Welcome all leave Back and the tab bar beneath the screen.
+ */
+export const unstable_settings = { anchor: '(tabs)' }
+
+/**
+ * The options of the stack screens above the tabs: a navigator header with an
+ * empty title and a Back button. `Screen` draws the one header-role title, and
+ * the header takes the top inset. The back label is the arrow alone, so the
+ * group name `(tabs)` never shows.
+ */
+const STACK_SCREEN_OPTIONS = {
+  headerShown: true,
+  headerTitle: '',
+  headerBackButtonDisplayMode: 'minimal',
+} as const
+
+/**
  * The guard for every screen that needs a session. It shows "Signing you in"
  * while the session restores, sends a signed-out person to `/login` with the path they asked for, and sends an
  * account that must add a passkey to `/passkey-required`, which sits outside
  * this group so the guard cannot loop. During maintenance `full` it redirects
  * nowhere: the screen over the stack blocks it, and the person keeps their place.
+ * The tabs show no navigator header; the screens above them show an
+ * empty-titled header with Back.
  */
 export default function AppLayout() {
   const status = useSessionStatus()
@@ -60,5 +81,9 @@ export default function AppLayout() {
       <Redirect href={loginHref(pathname, params, segments) as Href} />
     )
   if (passkeyRequired && !isFull) return <Redirect href="/passkey-required" />
-  return <Stack screenOptions={{ headerShown: false }} />
+  return (
+    <Stack screenOptions={STACK_SCREEN_OPTIONS}>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+    </Stack>
+  )
 }

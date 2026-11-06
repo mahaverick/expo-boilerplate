@@ -89,11 +89,11 @@ describe('Workspace tab', () => {
     expect(router.push).not.toHaveBeenCalled()
   })
 
-  it('replaces to /welcome when the person has no workspace', async () => {
+  it('pushes /welcome over the tabs when the person has no workspace', async () => {
     serve(() => page([]))
     await renderScreen(<Workspace />)
     await waitFor(() => {
-      expect(router.replace).toHaveBeenCalledWith('/welcome')
+      expect(router.push).toHaveBeenCalledWith('/welcome')
     })
   })
 
@@ -106,7 +106,7 @@ describe('Workspace tab', () => {
     await waitFor(() => {
       expect(sent.length).toBeGreaterThan(before)
     })
-    expect(router.replace).not.toHaveBeenCalled()
+    expect(router.push).not.toHaveBeenCalled()
   })
 
   it('shows a spinner while the list loads', async () => {

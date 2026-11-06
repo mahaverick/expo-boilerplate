@@ -107,7 +107,7 @@ export default function Workspaces() {
   }
 
   return (
-    <Screen title="Workspaces">
+    <Screen title="Workspaces" topInset={false}>
       <Text className="text-base text-muted-foreground">
         Every workspace this account belongs to.
       </Text>
