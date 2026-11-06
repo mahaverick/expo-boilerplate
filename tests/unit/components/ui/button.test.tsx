@@ -5,10 +5,10 @@ import { renderWithProviders } from '@/tests/support/a11y'
 import { describe, expect, it } from '@/tests/support/runner'
 
 describe('Button', () => {
-  it('exposes a button role, its label and a 44 point target', async () => {
+  it('exposes a button role, its label and a 48 point target', async () => {
     await renderWithProviders(<Button label="Continue" variant="primary" onPress={() => {}} />)
     const button = screen.getByRole('button', { name: 'Continue' })
-    expect(button.props.className).toContain('min-h-11')
+    expect(button.props.className).toContain('min-h-12')
   })
 
   it('calls onPress', async () => {

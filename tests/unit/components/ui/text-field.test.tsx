@@ -9,7 +9,7 @@ describe('TextField', () => {
     expect(screen.getByText('Email')).toBeTruthy()
     const input = screen.getByLabelText('Email')
     expect(input.props.value).toBe('a@b.co')
-    expect(input.props.className).toContain('min-h-11')
+    expect(input.props.className).toContain('min-h-12')
     expect(input.props.accessibilityHint).toBeUndefined()
   })
 

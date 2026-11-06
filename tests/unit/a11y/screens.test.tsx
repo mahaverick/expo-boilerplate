@@ -23,6 +23,16 @@ describe('the accessibility harness', () => {
     expect(() => assertAccessible()).toThrow()
   })
 
+  it('rejects a disabled pressable with no label', async () => {
+    await renderWithProviders(
+      <>
+        <Text accessibilityRole="header">Title</Text>
+        <Pressable accessibilityRole="button" disabled onPress={() => {}} />
+      </>
+    )
+    expect(() => assertAccessible()).toThrow()
+  })
+
   it('rejects a pressable with no role', async () => {
     await renderWithProviders(
       <>

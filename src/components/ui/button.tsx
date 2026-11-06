@@ -1,4 +1,5 @@
 import { ActivityIndicator, Pressable, Text } from 'react-native'
+import { TOUCH_TARGET } from '@/components/ui/touch-target'
 import { cn } from '@/lib/cn'
 
 /** The looks a button has. */
@@ -28,7 +29,7 @@ const TEXT: Record<ButtonVariant, string> = {
 }
 
 /**
- * A pressable button with a 44 point target. While `loading` or `disabled` it
+ * A pressable button with a 48 point target. While `loading` or `disabled` it
  * ignores presses. While `loading` it also shows a spinner and reports busy.
  * @param props - The button's label, handler, variant and state.
  * @param props.label - The text, which is also the accessibility label.
@@ -54,7 +55,8 @@ export function Button({
       disabled={inactive}
       onPress={inactive ? undefined : onPress}
       className={cn(
-        'min-h-11 flex-row items-center justify-center gap-2 rounded-md px-4',
+        TOUCH_TARGET,
+        'flex-row items-center justify-center gap-2 rounded-md px-4',
         BACKGROUND[variant],
         inactive && 'opacity-50'
       )}

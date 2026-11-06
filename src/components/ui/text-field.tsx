@@ -1,5 +1,6 @@
 import { Text, TextInput, View, type TextInputProps } from 'react-native'
 import { InlineError } from '@/components/ui/inline-error'
+import { TOUCH_TARGET } from '@/components/ui/touch-target'
 import { cn } from '@/lib/cn'
 
 /** Props of `TextField`: the `TextInput` props, plus a label and an error. */
@@ -28,7 +29,8 @@ export function TextField({ label, error, className, ...input }: TextFieldProps)
         accessibilityLabel={label}
         accessibilityHint={error}
         className={cn(
-          'min-h-11 rounded-md border border-input px-3 text-base text-foreground',
+          TOUCH_TARGET,
+          'rounded-md border border-input px-3 text-base text-foreground',
           error && 'border-destructive',
           className
         )}
