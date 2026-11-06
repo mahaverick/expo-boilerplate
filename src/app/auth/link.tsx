@@ -39,8 +39,9 @@ function paramText(value: string | string[] | undefined): string | undefined {
  * that moment: the same address goes Home without posting, another address
  * asks first, and no one posts the token once. A link with no token or no
  * address is the dead-link state and is never posted. A 400 is a dead link.
- * Any other failure leaves the link usable, so it offers Try again. Every
- * landing replaces the route, so Back never returns to the token.
+ * Any other failure leaves the link usable, so it offers Try again. A second
+ * press while a post is in flight posts nothing, since the link is single-use.
+ * Every landing replaces the route, so Back never returns to the token.
  */
 export default function Link() {
   const params = useLocalSearchParams<{ token?: string; email?: string }>()
@@ -60,8 +61,13 @@ export default function Link() {
     router.setParams({ token: undefined, email: undefined })
   }, [])
 
-  /** Posts the token. The outcome decides what shows next. */
+  /** Set while a post is in flight, and after a success, so a second press in the same frame posts nothing. */
+  const posting = useRef(false)
+
+  /** Posts the token, once at a time. The outcome decides what shows next. */
   const post = () => {
+    if (posting.current) return
+    posting.current = true
     setMode('verifying')
     verify.mutate(
       { token: link.token ?? '', email: link.email },
@@ -71,6 +77,8 @@ export default function Link() {
           router.replace('/')
         },
         onError: (error) => {
+          // Try again may post the link again.
+          posting.current = false
           setFailure({ error })
         },
       }

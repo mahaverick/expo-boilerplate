@@ -282,6 +282,43 @@ describe('Link', () => {
     expect(sent).toHaveLength(2)
   })
 
+  it('Try again pressed twice in one frame posts once', async () => {
+    let calls = 0
+    const sent = serve(() => {
+      calls += 1
+      return calls === 1 ? 'network-error' : verified()
+    })
+    await renderScreen(<Link />)
+    const retry = await screen.findByRole('button', { name: 'Try again' })
+    await act(async () => {
+      void fireEvent.press(retry)
+      void fireEvent.press(retry)
+      await Promise.resolve()
+    })
+    await waitFor(() => {
+      expect(router.replace).toHaveBeenCalledWith('/')
+    })
+    expect(sent.filter((c) => c.url === '/auth/link/verify')).toHaveLength(2)
+  })
+
+  it('Continue pressed twice in one frame posts once', async () => {
+    useAuthStore.getState().login('a', userOf('bob@example.com'))
+    setStatus('signed-in')
+    await refreshTokenStore.write('bobs-token')
+    const sent = serve((config) => (config.url === '/auth/logout' ? OK : verified()))
+    await renderScreen(<Link />)
+    const proceed = screen.getByRole('button', { name: 'Continue as ada@example.com' })
+    await act(async () => {
+      void fireEvent.press(proceed)
+      void fireEvent.press(proceed)
+      await Promise.resolve()
+    })
+    await waitFor(() => {
+      expect(router.replace).toHaveBeenCalledWith('/')
+    })
+    expect(sent.filter((c) => c.url === '/auth/link/verify')).toHaveLength(1)
+  })
+
   it('a 500 is another failure, not a dead link', async () => {
     serve(() => ({ status: 500, data: { success: false } }))
     await renderScreen(<Link />)
