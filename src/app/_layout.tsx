@@ -7,6 +7,7 @@ import { useEffect, useRef } from 'react'
 import { MaintenanceGate } from '@/components/shared/maintenance-screen'
 import { TopBanners } from '@/components/shared/top-banners'
 import { UpdateGate } from '@/components/shared/update-screen'
+import { Toaster } from '@/components/ui/toaster'
 import { installMaintenanceRecovery } from '@/http/maintenance'
 import {
   installForegroundRefresh,
@@ -47,7 +48,7 @@ function hideSplash(splash: SplashState): void {
 
 /**
  * The root layout: one stack, with no header on any screen, inside the app's
- * query client, under the update gate, the maintenance gate and the top banners. Each screen draws its own title. It applies the stored theme
+ * query client, under the update gate, the maintenance gate and the top banners, with the toaster over the stack. Each screen draws its own title. It applies the stored theme
  * to NativeWind, restores the session, and hides the splash screen once NativeWind reports that scheme and
  * the restore settles, so a stored dark theme never shows a light frame. It
  * hides after `SPLASH_FALLBACK_MS` whatever is still pending.
@@ -93,6 +94,7 @@ export default function RootLayout() {
         <MaintenanceGate>
           <TopBanners />
           <Stack screenOptions={{ headerShown: false }} />
+          <Toaster />
         </MaintenanceGate>
       </UpdateGate>
     </QueryClientProvider>
