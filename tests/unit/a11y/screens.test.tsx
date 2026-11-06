@@ -11,6 +11,7 @@ import Overview from '@/app/(app)/tenants/[slug]/index'
 import Tenants from '@/app/(app)/tenants/index'
 import Welcome from '@/app/(app)/welcome'
 import NotFound from '@/app/+not-found'
+import Confirm from '@/app/auth/confirm'
 import Link from '@/app/auth/link'
 import Login from '@/app/login'
 import PasskeyRequired from '@/app/passkey-required'
@@ -57,6 +58,7 @@ client.setQueryData(tenantsQueryOptions().queryKey, [])
 const SCREENS: Array<[string, () => React.JSX.Element]> = [
   ['Login', () => <Login />],
   ['Link (dead link)', () => <Link />],
+  ['Confirm (incomplete link)', () => <Confirm />],
   ['Home', () => <Home />],
   ['Workspace tab', () => <Workspace />],
   ['Notifications', () => <Notifications />],

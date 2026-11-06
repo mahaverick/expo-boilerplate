@@ -9,6 +9,7 @@ import {
   broadcastLogout,
   ensureSession,
   redirectToLogin,
+  refreshSettled,
   resetSessionForTests,
   subscribeAuthMessage,
   switchIdentity,
@@ -157,6 +158,56 @@ describe('session', () => {
 
   it('rejects with NoRefreshTokenError when nothing is stored', async () => {
     await expect(ensureSession()).rejects.toBeInstanceOf(NoRefreshTokenError)
+  })
+
+  it('refreshSettled resolves at once when no refresh is in flight', async () => {
+    await expect(refreshSettled()).resolves.toBeUndefined()
+  })
+
+  it('refreshSettled waits for the refresh in flight', async () => {
+    await refreshTokenStore.write('old')
+    let release: (() => void) | undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let arrived: (() => void) | undefined
+    const reached = new Promise<void>((resolve) => {
+      arrived = resolve
+    })
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/auth/refresh') {
+        arrived?.()
+        await held
+      }
+      const data =
+        config.url === '/auth/refresh'
+          ? { accessToken: 'access-1', refreshToken: 'new' }
+          : { id: 'user-1' }
+      return {
+        data: { success: true, data },
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'application/json' },
+        config,
+      }
+    }
+    void ensureSession()
+    let settled = false
+    const waiting = refreshSettled().then(() => {
+      settled = true
+    })
+    await reached
+    expect(settled).toBe(false)
+    release?.()
+    await waiting
+    expect(useAuthStore.getState().accessToken).toBe('access-1')
+    await expect(refreshSettled()).resolves.toBeUndefined()
+  })
+
+  it('refreshSettled resolves, never rejects, after a refresh that fails', async () => {
+    const failing = ensureSession().catch((error: unknown) => error)
+    await expect(refreshSettled()).resolves.toBeUndefined()
+    expect(await failing).toBeInstanceOf(NoRefreshTokenError)
   })
 
   it('broadcastLogout does nothing, since there is one process', () => {

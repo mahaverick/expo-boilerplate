@@ -4,6 +4,7 @@
  * through `useStepUp().run` inside the provider.
  */
 import { QueryClient } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { Text } from 'react-native'
 import { StepUpProvider } from '@/components/step-up/step-up-provider'
 import { Button } from '@/components/ui/button'
@@ -93,13 +94,15 @@ function stepUpClient(): QueryClient {
 
 /**
  * Renders the caller inside the provider.
+ * @param beside - Rendered next to the caller, inside the same provider, such as a route screen.
  * @returns The outcomes the caller collects.
  */
-export async function renderCaller(): Promise<Outcome[]> {
+export async function renderCaller(beside?: ReactNode): Promise<Outcome[]> {
   const outcomes: Outcome[] = []
   await renderScreen(
     <StepUpProvider>
       <Caller outcomes={outcomes} />
+      {beside}
     </StepUpProvider>,
     stepUpClient()
   )

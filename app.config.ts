@@ -7,7 +7,7 @@ import packageJson from './package.json'
  * found, so each later plan adds its paths with its screens. iOS claims the
  * paths in react's apple-app-site-association file (`docker/15-app-links.sh`).
  */
-const ANDROID_APP_LINK_PATH_PREFIXES = ['/auth/link', '/tenants/']
+const ANDROID_APP_LINK_PATH_PREFIXES = ['/auth/link', '/tenants/', '/auth/confirm']
 
 /** A bare hostname: dot-separated labels, no scheme, port or path. */
 const HOSTNAME = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i

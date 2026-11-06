@@ -132,8 +132,9 @@ token uses it up, so a second open shows the dead-link state.
   the Android intent filter with `autoVerify`, and `extra.webUrl`
   (`https://<host>`), which the passkey screen opens in an in-app browser
   (`expo-web-browser`). A value that is not a bare hostname fails the build.
-- **Android claims only `/auth/link` and `/tenants/`.** They are the paths with
-  a screen. A verified link to any other path would open the app on Page not found, so
+- **Android claims only `/auth/link`, `/tenants/` and `/auth/confirm`.** They
+  are the paths with a screen. A verified link to any other path would open
+  the app on Page not found, so
   each later plan adds its paths with its screens. iOS claims the paths in
   the web app's association file, so a link to a path with no screen there
   opens the app too, until that plan ships.
