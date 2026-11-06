@@ -33,6 +33,8 @@ jest.mock('expo-router', () => {
       return null
     },
     Stack: () => null,
+    usePathname: () => '/',
+    useGlobalSearchParams: () => ({}),
   }
 })
 jest.mock('@/lib/storage', () => ({ storage: { getString: () => '1', set: () => undefined } }))
@@ -97,7 +99,10 @@ describe('signing in from a mailed link', () => {
       }
       return {
         status: 200,
-        data: { success: true, data: { items: [], page: { hasNext: false, nextCursor: null } } },
+        data: {
+          success: true,
+          data: { items: [{ tenant: { id: 't' } }], page: { hasNext: false, nextCursor: null } },
+        },
       }
     })
     // Signed out, with the launch restore settled (no stored token).

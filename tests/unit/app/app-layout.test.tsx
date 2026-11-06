@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals'
 import { render, screen } from '@testing-library/react-native'
+import { useGlobalSearchParams, usePathname } from 'expo-router'
 import AppLayout from '@/app/(app)/_layout'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import type { SessionStatus } from '@/http/session-lifecycle'
@@ -12,6 +13,8 @@ jest.mock('expo-router', () => {
   return {
     Redirect: ({ href }: { href: string }) => <Text>{`redirect:${href}`}</Text>,
     Stack: () => <Text>stack</Text>,
+    usePathname: jest.fn(() => '/'),
+    useGlobalSearchParams: jest.fn(() => ({})),
   }
 })
 jest.mock('react-native-safe-area-context', () => ({
@@ -29,6 +32,7 @@ function setStatus(status: SessionStatus): void {
 
 beforeEach(() => {
   usePasskeySetupStore.setState({ required: false })
+  openAt('/')
   useMaintenanceModeStore.setState({ mode: 'off', message: null, since: null })
 })
 
@@ -36,7 +40,51 @@ afterEach(() => {
   jest.clearAllMocks()
 })
 
+/**
+ * Sets the route the mocked hooks report.
+ * @param path - The current path.
+ * @param params - The current query parameters.
+ */
+function openAt(path: string, params: Record<string, string | string[]> = {}): void {
+  jest.mocked(usePathname).mockReturnValue(path)
+  jest.mocked(useGlobalSearchParams).mockReturnValue(params)
+}
+
 describe('(app) layout', () => {
+  it('sends a signed-out person to /login with the path they asked for', async () => {
+    setStatus('signed-out')
+    openAt('/tenants/acme', { tab: 'x' })
+    await render(<AppLayout />)
+    expect(
+      screen.getByText(`redirect:/login?redirect=${encodeURIComponent('/tenants/acme?tab=x')}`)
+    ).toBeTruthy()
+  })
+
+  it('carries no redirect for the root', async () => {
+    setStatus('signed-out')
+    openAt('/')
+    await render(<AppLayout />)
+    expect(screen.getByText('redirect:/login')).toBeTruthy()
+  })
+
+  it('leaves a token parameter out of the redirect', async () => {
+    setStatus('signed-out')
+    openAt('/tenants/acme', { token: 'secret', tab: ['x', 'y'] })
+    await render(<AppLayout />)
+    expect(
+      screen.getByText(
+        `redirect:/login?redirect=${encodeURIComponent('/tenants/acme?tab=x&tab=y')}`
+      )
+    ).toBeTruthy()
+  })
+
+  it('carries no redirect for a path safePath refuses', async () => {
+    setStatus('signed-out')
+    openAt('/auth/link', { tab: 'x' })
+    await render(<AppLayout />)
+    expect(screen.getByText('redirect:/login')).toBeTruthy()
+  })
+
   it('redirects to /login when signed out', async () => {
     setStatus('signed-out')
     await render(<AppLayout />)

@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals'
 import { QueryClient } from '@tanstack/react-query'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
+import type { InternalAxiosRequestConfig } from 'axios'
 import { router, useLocalSearchParams } from 'expo-router'
 import { StrictMode } from 'react'
 import Link from '@/app/auth/link'
@@ -10,7 +11,7 @@ import { refreshTokenStore } from '@/http/token-store'
 import { useAuthStore } from '@/states/auth.store'
 import { resetSecureStore, setItemAsync } from '@/tests/mocks/expo-secure-store'
 import { bodyOf, renderScreen, restoreApi, screenTree, serve } from '@/tests/support/api'
-import type { FakeAnswer } from '@/tests/support/api'
+import type { FakeAnswer, FakeHandler } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 import type { User } from '@/types/api.types'
 
@@ -37,7 +38,7 @@ function userOf(email: string): User {
 }
 
 /** A verify answer in express's envelope. Built per call: the client strips the token from it. */
-const verified = (): FakeAnswer => ({
+const verified = (over: { isNewUser?: boolean; redirect?: string | null } = {}): FakeAnswer => ({
   status: 200,
   data: {
     success: true,
@@ -46,20 +47,56 @@ const verified = (): FakeAnswer => ({
       refreshToken: 'refresh',
       refreshTokenExpiresAt: '2027-01-01',
       user: userOf('ada@example.com'),
-      isNewUser: true,
-      redirect: '/somewhere',
+      isNewUser: false,
+      redirect: null,
+      ...over,
     },
   },
 })
+
+/**
+ * A `GET /tenants` answer: one page that holds the given memberships.
+ * @param rows - The memberships.
+ */
+function tenantList(rows: unknown[]): FakeAnswer {
+  return {
+    status: 200,
+    data: { success: true, data: { items: rows, page: { hasNext: false, nextCursor: null } } },
+  }
+}
+
+/** What `GET /tenants` answers. Each test starts with one workspace. */
+let tenants: FakeAnswer = tenantList([{ tenant: { id: 't' } }])
+
+/**
+ * Serves the API like `serve`, but answers `GET /tenants` from `tenants` and
+ * leaves it out of the record, so a test counts the sign-in calls alone.
+ * @param handler - Picks the answer for every other request.
+ * @returns The other requests the adapter saw, in order.
+ */
+function serveLink(handler: FakeHandler): InternalAxiosRequestConfig[] {
+  const seen: InternalAxiosRequestConfig[] = []
+  serve((config) => {
+    if (config.url === '/tenants') return tenants
+    seen.push(config)
+    return handler(config)
+  })
+  return seen
+}
+
+/** The paths `router.replace` was called with. */
+function replaced(): unknown[] {
+  return jest.mocked(router.replace).mock.calls.map(([href]) => href)
+}
 
 /** An empty success. */
 const OK: FakeAnswer = { status: 200, data: { success: true, data: null } }
 
 /**
  * Sets the link's query parameters.
- * @param params - The `token` and `email` the route carries.
+ * @param params - The `token`, `email` and `redirect` the route carries.
  */
-function openWith(params: { token?: string; email?: string }): void {
+function openWith(params: { token?: string; email?: string; redirect?: string }): void {
   jest.mocked(useLocalSearchParams).mockReturnValue(params)
 }
 
@@ -73,6 +110,7 @@ function setStatus(status: SessionStatus): void {
 
 beforeEach(() => {
   resetSecureStore()
+  tenants = tenantList([{ tenant: { id: 't' } }])
   setStatus('signed-out')
   openWith({ token: 'tok', email: 'ada@example.com' })
 })
@@ -86,7 +124,7 @@ afterEach(() => {
 describe('Link', () => {
   it('reads token and email once, then clears them from the route', async () => {
     let release: ((answer: FakeAnswer) => void) | undefined
-    const sent = serve(
+    const sent = serveLink(
       () =>
         new Promise<FakeAnswer>((resolve) => {
           release = resolve
@@ -113,7 +151,7 @@ describe('Link', () => {
   })
 
   it('posts once under StrictMode', async () => {
-    const sent = serve(() => verified())
+    const sent = serveLink(() => verified())
     await renderScreen(
       <StrictMode>
         <Link />
@@ -125,8 +163,8 @@ describe('Link', () => {
     expect(sent).toHaveLength(1)
   })
 
-  it('lands on Home after a success, and ignores the redirect', async () => {
-    serve(() => verified())
+  it('lands on Home after a success when the account has a workspace', async () => {
+    serveLink(() => verified())
     await renderScreen(<Link />)
     await waitFor(() => {
       expect(router.replace).toHaveBeenCalledTimes(1)
@@ -135,9 +173,65 @@ describe('Link', () => {
     expect(await refreshTokenStore.read()).toBe('refresh')
   })
 
+  it('lands on /welcome for a new account, whatever was asked for', async () => {
+    openWith({ token: 'tok', email: 'ada@example.com', redirect: '/tenants/acme' })
+    serveLink(() => verified({ isNewUser: true, redirect: '/somewhere' }))
+    await renderScreen(<Link />)
+    await waitFor(() => {
+      expect(replaced()).toContain('/welcome')
+    })
+  })
+
+  it('lands on the verify answer’s safe redirect', async () => {
+    openWith({ token: 'tok', email: 'ada@example.com', redirect: '/other' })
+    serveLink(() => verified({ redirect: '/tenants/acme?tab=x' }))
+    await renderScreen(<Link />)
+    await waitFor(() => {
+      expect(replaced()).toContain('/tenants/acme?tab=x')
+    })
+  })
+
+  it('lands on the link’s own redirect when the answer has none', async () => {
+    openWith({ token: 'tok', email: 'ada@example.com', redirect: '/tenants/acme' })
+    serveLink(() => verified())
+    await renderScreen(<Link />)
+    await waitFor(() => {
+      expect(replaced()).toContain('/tenants/acme')
+    })
+  })
+
+  it('ignores an unsafe redirect', async () => {
+    openWith({ token: 'tok', email: 'ada@example.com', redirect: '//evil.example' })
+    serveLink(() => verified({ redirect: '/auth/link' }))
+    await renderScreen(<Link />)
+    await waitFor(() => {
+      expect(router.replace).toHaveBeenCalledWith('/')
+    })
+    expect(router.replace).toHaveBeenCalledTimes(1)
+  })
+
+  it('lands on /welcome when the account has no workspace', async () => {
+    tenants = tenantList([])
+    serveLink(() => verified())
+    await renderScreen(<Link />)
+    await waitFor(() => {
+      expect(replaced()).toContain('/welcome')
+    })
+  })
+
+  it('lands on / when the workspace list read fails', async () => {
+    tenants = 'network-error'
+    serveLink(() => verified())
+    await renderScreen(<Link />)
+    await waitFor(() => {
+      expect(router.replace).toHaveBeenCalledWith('/')
+    })
+    expect(router.replace).toHaveBeenCalledTimes(1)
+  })
+
   it('trims the email', async () => {
     openWith({ token: 'tok', email: '  ada@example.com ' })
-    const sent = serve(() => verified())
+    const sent = serveLink(() => verified())
     await renderScreen(<Link />)
     await waitFor(() => {
       expect(sent).toHaveLength(1)
@@ -147,7 +241,7 @@ describe('Link', () => {
 
   it('waits for the restore before it decides', async () => {
     setStatus('restoring')
-    const sent = serve(() => verified())
+    const sent = serveLink(() => verified())
     const client = new QueryClient()
     const view = await renderScreen(<Link />, client)
     expect(sent).toHaveLength(0)
@@ -162,7 +256,7 @@ describe('Link', () => {
   it('signed in as the same address, it goes Home without posting', async () => {
     useAuthStore.getState().login('a', userOf('Ada@Example.com'))
     setStatus('signed-in')
-    const sent = serve(() => verified())
+    const sent = serveLink(() => verified())
     await renderScreen(<Link />)
     await waitFor(() => {
       expect(router.replace).toHaveBeenCalledWith('/')
@@ -174,7 +268,7 @@ describe('Link', () => {
     openWith({})
     useAuthStore.getState().login('a', userOf('ada@example.com'))
     setStatus('signed-in')
-    const sent = serve(() => verified())
+    const sent = serveLink(() => verified())
     await renderScreen(<Link />)
     await waitFor(() => {
       expect(router.replace).toHaveBeenCalledWith('/')
@@ -190,7 +284,7 @@ describe('Link', () => {
     const gate = new Promise<void>((resolve) => {
       releaseLogout = resolve
     })
-    const sent = serve(async (config) => {
+    const sent = serveLink(async (config) => {
       if (config.url === '/auth/logout') {
         await gate
         return OK
@@ -227,7 +321,7 @@ describe('Link', () => {
   it('Stay signed in goes Home', async () => {
     useAuthStore.getState().login('a', userOf('bob@example.com'))
     setStatus('signed-in')
-    const sent = serve(() => verified())
+    const sent = serveLink(() => verified())
     await renderScreen(<Link />)
     await fireEvent.press(screen.getByRole('button', { name: 'Stay signed in' }))
     expect(router.replace).toHaveBeenCalledWith('/')
@@ -235,7 +329,7 @@ describe('Link', () => {
   })
 
   it('400 shows the dead-link state', async () => {
-    const sent = serve((config) =>
+    const sent = serveLink((config) =>
       config.url === '/auth/link/verify'
         ? { status: 400, data: { success: false, message: 'Bad link' } }
         : OK
@@ -256,7 +350,7 @@ describe('Link', () => {
     ['a blank email', { token: 'tok', email: '   ' }],
   ])('%s is the dead-link state and is never posted', async (_name, params) => {
     openWith(params)
-    const sent = serve(() => verified())
+    const sent = serveLink(() => verified())
     await renderScreen(<Link />)
     expect(
       await screen.findByRole('header', { name: 'This link has expired or was already used' })
@@ -266,7 +360,7 @@ describe('Link', () => {
 
   it('another failure says so, and Try again posts again', async () => {
     let calls = 0
-    const sent = serve(() => {
+    const sent = serveLink(() => {
       calls += 1
       return calls === 1 ? 'network-error' : verified()
     })
@@ -284,7 +378,7 @@ describe('Link', () => {
 
   it('Try again pressed twice in one frame posts once', async () => {
     let calls = 0
-    const sent = serve(() => {
+    const sent = serveLink(() => {
       calls += 1
       return calls === 1 ? 'network-error' : verified()
     })
@@ -305,7 +399,7 @@ describe('Link', () => {
     useAuthStore.getState().login('a', userOf('bob@example.com'))
     setStatus('signed-in')
     await refreshTokenStore.write('bobs-token')
-    const sent = serve((config) => (config.url === '/auth/logout' ? OK : verified()))
+    const sent = serveLink((config) => (config.url === '/auth/logout' ? OK : verified()))
     await renderScreen(<Link />)
     const proceed = screen.getByRole('button', { name: 'Continue as ada@example.com' })
     await act(async () => {
@@ -320,7 +414,7 @@ describe('Link', () => {
   })
 
   it('a 500 is another failure, not a dead link', async () => {
-    serve(() => ({ status: 500, data: { success: false } }))
+    serveLink(() => ({ status: 500, data: { success: false } }))
     await renderScreen(<Link />)
     expect(
       await screen.findByText('We couldn’t sign you in. Check your connection and try again.')
@@ -333,7 +427,9 @@ describe('Link', () => {
     setItemAsync.mockImplementation((key, value, options) =>
       key === 'refresh_token' ? Promise.reject(new Error('keychain')) : realSet(key, value, options)
     )
-    serve((config) => (config.url === '/auth/link/verify' ? verified() : { status: 500, data: {} }))
+    serveLink((config) =>
+      config.url === '/auth/link/verify' ? verified() : { status: 500, data: {} }
+    )
     await renderScreen(<Link />)
     expect(
       await screen.findByText(

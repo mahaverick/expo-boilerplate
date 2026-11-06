@@ -390,8 +390,6 @@ Each item is a change for react or for a later plan, with the reason it waits.
 - **`/welcome` waits for plan 3c.** A new account lands on Home, which says
   "You have no workspaces yet." React sends it to `/welcome` to create its
   first workspace.
-- **The link's `redirect` is ignored.** Plan 3c reads it through a safe-path
-  check, since an unchecked redirect is an open redirect.
 - **Two items from react PR #183 wait for the account-deletion plan.**
   `/delete-account` can create an account, and passkey-required mode blocks
   deletion. That plan owns the screen.

@@ -1,16 +1,20 @@
 import { jest } from '@jest/globals'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import Login from '@/app/login'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import { useMaintenanceModeStore } from '@/states/maintenance-mode.store'
 import { bodyOf, renderScreen, restoreApi, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
-jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }))
+jest.mock('expo-router', () => ({
+  router: { replace: jest.fn() },
+  useLocalSearchParams: jest.fn(() => ({})),
+}))
 jest.mock('@/http/session-lifecycle', () => ({ useSessionStatus: jest.fn(() => 'signed-out') }))
 
 beforeEach(() => {
+  jest.mocked(useLocalSearchParams).mockReturnValue({})
   jest.mocked(useSessionStatus).mockReturnValue('signed-out')
   useMaintenanceModeStore.setState({ mode: 'off', message: null, since: null })
 })
@@ -99,5 +103,52 @@ describe('Login', () => {
       useMaintenanceModeStore.setState({ mode: 'off' })
     })
     expect(router.replace).toHaveBeenCalledWith('/')
+  })
+
+  it('sends a safe redirect with the link request', async () => {
+    jest.mocked(useLocalSearchParams).mockReturnValue({ redirect: '/tenants/acme?tab=x' })
+    const sent = serve(() => ({ status: 200, data: { success: true, data: null } }))
+    await renderScreen(<Login />)
+    await submit('ada@example.com')
+    await screen.findByRole('header', { name: 'Check your inbox' })
+    expect(bodyOf(sent[0])).toMatchObject({ redirect: '/tenants/acme?tab=x' })
+  })
+
+  it.each([['//evil.example'], ['https://evil.example'], ['/auth/link']])(
+    'sends no redirect for %s',
+    async (redirect) => {
+      jest.mocked(useLocalSearchParams).mockReturnValue({ redirect })
+      const sent = serve(() => ({ status: 200, data: { success: true, data: null } }))
+      await renderScreen(<Login />)
+      await submit('ada@example.com')
+      await screen.findByRole('header', { name: 'Check your inbox' })
+      expect(bodyOf(sent[0])).not.toHaveProperty('redirect')
+    }
+  )
+
+  it('does not navigate itself after the link is sent', async () => {
+    jest.mocked(useLocalSearchParams).mockReturnValue({ redirect: '/tenants/acme' })
+    serve(() => ({ status: 200, data: { success: true, data: null } }))
+    await renderScreen(<Login />)
+    await submit('ada@example.com')
+    await screen.findByRole('header', { name: 'Check your inbox' })
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('shows the sign-in-link notice, and hides it once the link is sent', async () => {
+    jest.mocked(useLocalSearchParams).mockReturnValue({ notice: 'sign-in-link' })
+    serve(() => ({ status: 200, data: { success: true, data: null } }))
+    await renderScreen(<Login />)
+    const text = 'Sign in with an email link. This app doesn’t use passwords.'
+    expect(screen.getByText(text)).toBeTruthy()
+    await submit('ada@example.com')
+    await screen.findByRole('header', { name: 'Check your inbox' })
+    expect(screen.queryByText(text)).toBeNull()
+  })
+
+  it.each([['other'], ['Sign-In-Link'], ['']])('shows no notice for %p', async (notice) => {
+    jest.mocked(useLocalSearchParams).mockReturnValue({ notice })
+    await renderScreen(<Login />)
+    expect(screen.queryByText(/doesn’t use passwords/)).toBeNull()
   })
 })
