@@ -12,10 +12,11 @@ jest.mock('expo-router', () => ({ router: { push: jest.fn() } }))
 const HREF = '/settings/account/profile' as Href
 
 describe('SettingsRow', () => {
-  it('shows the title and description, and pushes its href', async () => {
+  it('shows the title and description, reads the description as a hint, and pushes its href', async () => {
     await renderWithProviders(<SettingsRow title="Profile" description="Your name." href={HREF} />)
     expect(screen.getByText('Profile')).toBeTruthy()
     expect(screen.getByText('Your name.')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Profile' }).props.accessibilityHint).toBe('Your name.')
     await fireEvent.press(screen.getByRole('link', { name: 'Profile' }))
     expect(router.push).toHaveBeenCalledWith(HREF)
   })

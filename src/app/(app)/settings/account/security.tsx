@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
+import { useRef } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
 import { LoadError } from '@/components/shared/load-error'
 import { Button } from '@/components/ui/button'
@@ -148,7 +149,8 @@ function Devices() {
 
 /**
  * "Sign out other devices". The write needs a recent sign-in, so it runs
- * through `useStepUp().run`. It refreshes the devices list on success.
+ * through `useStepUp().run`. It refreshes the devices list on success. A ref
+ * guard keeps two presses in one frame from starting two runs.
  * @returns The block.
  */
 function SignOutOthers() {
@@ -156,6 +158,8 @@ function SignOutOthers() {
   const { run } = useStepUp()
   const waiting = useStepUpWaiting()
   const queryClient = useQueryClient()
+  /** Set from a run's start until it settles. */
+  const inFlight = useRef(false)
   return (
     <View className="gap-2">
       <Text className="text-base text-muted-foreground">
@@ -166,15 +170,21 @@ function SignOutOthers() {
         label={waiting ? STEP_UP_WAITING_LABEL : 'Sign out other devices'}
         loading={revoke.isPending || waiting}
         onPress={() => {
-          run(() => revoke.mutateAsync()).then(
-            ({ revoked }) => {
-              toast.success(revokedMessage(revoked))
-              void queryClient.invalidateQueries({ queryKey: sessionKeys.all })
-            },
-            (error: unknown) => {
-              toast.error(isReauthRequired(error) ? stepUpRefusal(error) : messageFrom(error))
-            }
-          )
+          if (inFlight.current) return
+          inFlight.current = true
+          run(() => revoke.mutateAsync())
+            .then(
+              ({ revoked }) => {
+                toast.success(revokedMessage(revoked))
+                void queryClient.invalidateQueries({ queryKey: sessionKeys.all })
+              },
+              (error: unknown) => {
+                toast.error(isReauthRequired(error) ? stepUpRefusal(error) : messageFrom(error))
+              }
+            )
+            .finally(() => {
+              inFlight.current = false
+            })
         }}
       />
     </View>

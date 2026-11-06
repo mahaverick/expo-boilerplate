@@ -180,6 +180,22 @@ describe('Profile screen', () => {
     expect(patches(sent)).toHaveLength(1)
   })
 
+  it('a save shows the stored names from the answer, with another device’s change', async () => {
+    serveProfile((config) => {
+      const body = bodyOf(config) as Record<string, string>
+      return envelope({ ...USER, ...body, lastName: 'King' })
+    })
+    await renderScreen(<Profile />)
+    await fireEvent.changeText(screen.getByLabelText('First name'), 'Grace')
+    await fireEvent.press(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => {
+      expect(screen.getByLabelText('Last name').props.value).toBe('King')
+    })
+    expect(screen.getByLabelText('First name').props.value).toBe('Grace')
+    await fireEvent.press(screen.getByRole('button', { name: 'Save changes' }))
+    expect(await screen.findByText('Change a name before saving.')).toBeTruthy()
+  })
+
   it('shows a failed load with Try again when there is no data', async () => {
     useAuthStore.getState().logout()
     serve(() => ({ status: 500, data: { success: false, message: 'Boom' } }))

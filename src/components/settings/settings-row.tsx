@@ -12,7 +12,8 @@ interface SettingsRowProps {
 
 /**
  * A row that opens a settings screen. It pushes the route, so Back returns to
- * the Settings tab.
+ * the Settings tab. A screen reader reads the title as the label and the
+ * description as the hint.
  * @param props - The row's title, description and route.
  * @returns The row.
  */
@@ -21,6 +22,7 @@ export function SettingsRow({ title, description, href }: SettingsRowProps) {
     <Pressable
       accessibilityRole="link"
       accessibilityLabel={title}
+      accessibilityHint={description}
       onPress={() => {
         router.push(href)
       }}

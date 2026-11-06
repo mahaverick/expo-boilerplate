@@ -188,6 +188,20 @@ describe('Security screen', () => {
     expect(revokes[0]?.method).toBe('post')
   })
 
+  it('two presses in one frame post once and toast once', async () => {
+    const sent = serveAll()
+    await renderCaller(<Security />)
+    await screen.findByText('Pixel 9')
+    const button = screen.getByRole('button', { name: 'Sign out other devices' })
+    await act(async () => {
+      void fireEvent.press(button)
+      void fireEvent.press(button)
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(toasts()).toEqual(['Signed out 2 other sessions.']))
+    expect(sent.filter((c) => c.url === '/auth/sessions/revoke-others')).toHaveLength(1)
+  })
+
   it('refetches the devices after a revoke', async () => {
     const sent = serveAll()
     await renderCaller(<Security />)

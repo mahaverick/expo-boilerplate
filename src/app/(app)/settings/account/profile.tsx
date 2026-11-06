@@ -35,8 +35,8 @@ const PROFILE_ERROR = 'Your profile didn’t load. Select Try again.'
 /**
  * The name form and the read-only email and join date. Only a name the person
  * changed from the stored names (as loaded until the first edit, blur or save,
- * or as last saved) is checked and sent, so a stored name that today’s rules
- * refuse does not block changing the other. The changed subset is checked with
+ * or as the save's answer stored them) is checked and sent, so a stored name
+ * that today’s rules refuse does not block changing the other. The changed subset is checked with
  * `updateProfileSchema.partial()`; the parsed value, trimmed, reaches the wire.
  * @param props - The loaded user.
  * @param props.user - The signed-in user.
@@ -77,8 +77,9 @@ function ProfileDetails({ user }: { user: User }) {
           setMessages(found)
           return
         }
+        let updated: User
         try {
-          await updateProfile.mutateAsync(parsed.data)
+          updated = await updateProfile.mutateAsync(parsed.data)
         } catch (error) {
           const found: FieldMessages = {}
           const loose: string[] = [...formErrorsFrom(error)]
@@ -96,7 +97,11 @@ function ProfileDetails({ user }: { user: User }) {
           }
           return
         }
-        const saved: Names = { ...value, ...parsed.data }
+        // The answer, not the form: another device may have changed the untouched name.
+        const saved: Names = {
+          firstName: updated.firstName ?? '',
+          lastName: updated.lastName ?? '',
+        }
         rebase(saved)
         form.reset(saved)
         toast.success('Profile updated.')
