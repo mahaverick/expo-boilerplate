@@ -44,7 +44,12 @@ function sharedExpoRows(): string[] {
  *   `updates.enabled: false`. The app does not ship over-the-air updates.
  */
 const config: KnipConfig = {
-  entry: [...sharedExpoRows(), ...Object.keys(manifest.testPorts ?? {})],
+  // The config plugin: Expo loads it by the path in app.config.ts, which knip cannot follow.
+  entry: [
+    ...sharedExpoRows(),
+    ...Object.keys(manifest.testPorts ?? {}),
+    'plugins/with-backup-rules.js',
+  ],
   ignore: ['scripts/sync-check.d.mts', 'scripts/styleseed.d.mts'],
   ignoreDependencies: ['@tanstack/react-form', 'expo-updates'],
 }

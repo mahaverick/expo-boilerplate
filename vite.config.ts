@@ -256,13 +256,19 @@ export default defineConfig({
           'app.config.ts',
           'babel.config.js',
           'metro.config.js',
+          'plugins/with-backup-rules.js',
         ],
         rules: typeAwareRulesOff,
         env: { node: true },
       },
       {
         // CommonJS: Metro loads these with require(), and package.json sets no `type`.
-        files: ['babel.config.js', 'metro.config.js', 'eslint.config.js'],
+        files: [
+          'babel.config.js',
+          'metro.config.js',
+          'eslint.config.js',
+          'plugins/with-backup-rules.js',
+        ],
         rules: { 'typescript/no-require-imports': 'off' },
       },
       {
