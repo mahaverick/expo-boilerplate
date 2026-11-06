@@ -43,16 +43,32 @@ describe('revokeToken', () => {
   })
 
   it.each([200, 400, 401])('deletes pending_revoke on %i', async (status) => {
-    await pendingRevokeStore.write('tok')
+    await pendingRevokeStore.add('tok')
     answerWith(status)
     await revokeToken('tok')
-    await expect(pendingRevokeStore.read()).resolves.toBeNull()
+    await expect(pendingRevokeStore.list()).resolves.toEqual([])
   })
 
   it.each([undefined, 500, 503, 429])('keeps the token in pending_revoke on %s', async (status) => {
     answerWith(status)
     await revokeToken('tok')
-    await expect(pendingRevokeStore.read()).resolves.toBe('tok')
+    await expect(pendingRevokeStore.list()).resolves.toEqual(['tok'])
+  })
+})
+
+describe('a second token', () => {
+  it('leaves an earlier pending token when the later one is revoked with 200', async () => {
+    await pendingRevokeStore.add('A')
+    answerWith(200)
+    await revokeToken('B')
+    await expect(pendingRevokeStore.list()).resolves.toEqual(['A'])
+  })
+
+  it('keeps both tokens when the later logout gets no response', async () => {
+    await pendingRevokeStore.add('A')
+    answerWith(undefined)
+    await revokeToken('B')
+    await expect(pendingRevokeStore.list()).resolves.toEqual(['A', 'B'])
   })
 })
 
@@ -63,11 +79,20 @@ describe('retryPendingRevoke', () => {
     expect(sent).toHaveLength(0)
   })
 
-  it('posts the pending token and clears it on success', async () => {
-    await pendingRevokeStore.write('tok')
+  it('revokes every pending token in turn and empties the list', async () => {
+    await pendingRevokeStore.add('A')
+    await pendingRevokeStore.add('B')
     const { sent } = answerWith(200)
     await retryPendingRevoke()
-    expect(sent).toHaveLength(1)
-    await expect(pendingRevokeStore.read()).resolves.toBeNull()
+    const bodies = sent.map((c): unknown => JSON.parse((c as { data: string }).data))
+    expect(bodies).toEqual([{ refreshToken: 'A' }, { refreshToken: 'B' }])
+    await expect(pendingRevokeStore.list()).resolves.toEqual([])
+  })
+
+  it('keeps a token whose retry gets a 503', async () => {
+    await pendingRevokeStore.add('A')
+    answerWith(503)
+    await retryPendingRevoke()
+    await expect(pendingRevokeStore.list()).resolves.toEqual(['A'])
   })
 })

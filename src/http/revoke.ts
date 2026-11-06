@@ -1,6 +1,7 @@
 /**
- * @file Revokes a refresh token with the API. A token whose logout gets no
- * answer stays in `pending_revoke` until a later call reaches the API.
+ * @file Revokes refresh tokens with the API. A token is kept in
+ * `pending_revoke` until its logout settles, so a later sign-out never drops
+ * an earlier token that the API has not revoked.
  */
 import { apiClient } from '@/http/client'
 import { pendingRevokeStore } from '@/http/token-store'
@@ -10,12 +11,12 @@ import { statusFrom } from '@/lib/api-error'
 const SETTLED_STATUSES = new Set([400, 401])
 
 /**
- * Posts the token to `/auth/logout`. A 2xx, 400 or 401 settles it, so
- * `pending_revoke` is cleared. No response, a 5xx or a 429 keeps the token in
- * `pending_revoke` for `retryPendingRevoke`. Never rejects.
+ * Posts `/auth/logout` for one token and removes it from `pending_revoke`
+ * when the answer settles it: a 2xx, 400 or 401. No response, a 5xx or a 429
+ * leaves it there. Never rejects.
  * @param token - The refresh token to revoke.
  */
-export async function revokeToken(token: string): Promise<void> {
+async function postRevoke(token: string): Promise<void> {
   try {
     await apiClient.post(
       '/auth/logout',
@@ -24,16 +25,23 @@ export async function revokeToken(token: string): Promise<void> {
     )
   } catch (error) {
     const status = statusFrom(error)
-    if (status === undefined || !SETTLED_STATUSES.has(status)) {
-      await pendingRevokeStore.write(token).catch(() => {})
-      return
-    }
+    if (status === undefined || !SETTLED_STATUSES.has(status)) return
   }
-  await pendingRevokeStore.clear()
+  await pendingRevokeStore.remove(token)
 }
 
-/** Revokes the token in `pending_revoke`, if there is one. */
+/**
+ * Adds the token to `pending_revoke`, then posts its logout. Other pending
+ * tokens are never touched. Never rejects.
+ * @param token - The refresh token to revoke.
+ */
+export async function revokeToken(token: string): Promise<void> {
+  // A failed save must not stop the attempt: the post may still settle it.
+  await pendingRevokeStore.add(token).catch(() => {})
+  await postRevoke(token)
+}
+
+/** Revokes every token in `pending_revoke`, one after the other. */
 export async function retryPendingRevoke(): Promise<void> {
-  const token = await pendingRevokeStore.read()
-  if (token !== null) await revokeToken(token)
+  for (const token of await pendingRevokeStore.list()) await postRevoke(token)
 }

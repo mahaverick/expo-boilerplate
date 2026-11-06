@@ -51,9 +51,41 @@ describe('refreshTokenStore', () => {
 })
 
 describe('pendingRevokeStore', () => {
-  it('keeps its token under pending_revoke', async () => {
-    await pendingRevokeStore.write('old')
-    expect(setItemAsync).toHaveBeenCalledWith('pending_revoke', 'old', OPTIONS)
-    await expect(pendingRevokeStore.read()).resolves.toBe('old')
+  it('keeps its tokens as a JSON array under pending_revoke', async () => {
+    await pendingRevokeStore.add('a')
+    await pendingRevokeStore.add('b')
+    expect(setItemAsync).toHaveBeenLastCalledWith('pending_revoke', '["a","b"]', OPTIONS)
+    await expect(pendingRevokeStore.list()).resolves.toEqual(['a', 'b'])
+  })
+
+  it('adds a token once', async () => {
+    await pendingRevokeStore.add('a')
+    await pendingRevokeStore.add('a')
+    await expect(pendingRevokeStore.list()).resolves.toEqual(['a'])
+  })
+
+  it('drops the oldest token when a sixth arrives', async () => {
+    for (const t of ['1', '2', '3', '4', '5', '6']) await pendingRevokeStore.add(t)
+    await expect(pendingRevokeStore.list()).resolves.toEqual(['2', '3', '4', '5', '6'])
+  })
+
+  it('removes one token and keeps the others', async () => {
+    await pendingRevokeStore.add('a')
+    await pendingRevokeStore.add('b')
+    await pendingRevokeStore.remove('a')
+    await expect(pendingRevokeStore.list()).resolves.toEqual(['b'])
+    await pendingRevokeStore.remove('b')
+    expect(deleteItemAsync).toHaveBeenCalledWith('pending_revoke', OPTIONS)
+    await expect(pendingRevokeStore.list()).resolves.toEqual([])
+  })
+
+  it.each(['not json', '{"a":1}', '[1,2]'])('reads %s as empty', async (raw) => {
+    await setItemAsync('pending_revoke', raw)
+    await expect(pendingRevokeStore.list()).resolves.toEqual([])
+  })
+
+  it('keeps both tokens when two adds run at once', async () => {
+    await Promise.all([pendingRevokeStore.add('a'), pendingRevokeStore.add('b')])
+    await expect(pendingRevokeStore.list()).resolves.toEqual(['a', 'b'])
   })
 })

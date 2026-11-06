@@ -50,5 +50,76 @@ function storeFor(key: string): RefreshTokenStore {
 /** Holds the session's refresh token under `refresh_token`. */
 export const refreshTokenStore: RefreshTokenStore = storeFor('refresh_token')
 
-/** Holds a token whose logout has not reached the API, under `pending_revoke`. */
-export const pendingRevokeStore: RefreshTokenStore = storeFor('pending_revoke')
+/** The most tokens `pending_revoke` holds; a sixth drops the oldest. */
+const PENDING_REVOKE_LIMIT = 5
+
+/** The tokens whose logout has not reached the API. */
+export interface PendingRevokeStore {
+  /** Every pending token, oldest first. A value that cannot be read gives an empty list. */
+  list(): Promise<string[]>
+  /** Adds a token, once. A sixth token drops the oldest. Rejects when the write fails. */
+  add(token: string): Promise<void>
+  /** Removes one token and keeps the others. Never rejects. */
+  remove(token: string): Promise<void>
+}
+
+/** The raw store under `pending_revoke`; its value is a JSON array of tokens. */
+const pendingSlot = storeFor('pending_revoke')
+
+/** Runs after every earlier change, so two changes never overwrite each other. */
+let pendingQueue: Promise<unknown> = Promise.resolve()
+
+/**
+ * Runs `change` after the changes queued before it.
+ * @param change - A read-modify-write on the pending list.
+ */
+function serialized<T>(change: () => Promise<T>): Promise<T> {
+  const run = pendingQueue.then(change)
+  pendingQueue = run.catch(() => {})
+  return run
+}
+
+/**
+ * Parses the stored value.
+ * @param raw - The stored JSON, or `null`.
+ * @returns The tokens, or an empty list for anything but an array of strings.
+ */
+function parseTokens(raw: string | null): string[] {
+  if (raw === null) return []
+  try {
+    const value: unknown = JSON.parse(raw)
+    return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Saves the list, or clears the key when it is empty.
+ * @param tokens - The tokens to keep.
+ */
+async function saveTokens(tokens: string[]): Promise<void> {
+  if (tokens.length === 0) await pendingSlot.clear()
+  else await pendingSlot.write(JSON.stringify(tokens))
+}
+
+/** Holds the tokens whose logout has not reached the API, under `pending_revoke`. */
+export const pendingRevokeStore: PendingRevokeStore = {
+  async list() {
+    return parseTokens(await pendingSlot.read())
+  },
+  add(token) {
+    return serialized(async () => {
+      const tokens = parseTokens(await pendingSlot.read())
+      if (tokens.includes(token)) return
+      await saveTokens([...tokens, token].slice(-PENDING_REVOKE_LIMIT))
+    })
+  },
+  remove(token) {
+    return serialized(async () => {
+      const tokens = parseTokens(await pendingSlot.read())
+      if (!tokens.includes(token)) return
+      await saveTokens(tokens.filter((item) => item !== token)).catch(() => {})
+    })
+  },
+}
