@@ -1,8 +1,9 @@
 import { jest } from '@jest/globals'
-import { fireEvent, screen, waitFor } from '@testing-library/react-native'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import { router } from 'expo-router'
 import Login from '@/app/login'
 import { useSessionStatus } from '@/http/session-lifecycle'
+import { useMaintenanceModeStore } from '@/states/maintenance-mode.store'
 import { bodyOf, renderScreen, restoreApi, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
@@ -11,6 +12,7 @@ jest.mock('@/http/session-lifecycle', () => ({ useSessionStatus: jest.fn(() => '
 
 beforeEach(() => {
   jest.mocked(useSessionStatus).mockReturnValue('signed-out')
+  useMaintenanceModeStore.setState({ mode: 'off', message: null, since: null })
 })
 
 afterEach(() => {
@@ -86,5 +88,16 @@ describe('Login', () => {
   it('stays when signed out', async () => {
     await renderScreen(<Login />)
     expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it('goes Home when signed in, but not during full maintenance', async () => {
+    jest.mocked(useSessionStatus).mockReturnValue('signed-in')
+    useMaintenanceModeStore.setState({ mode: 'full' })
+    await renderScreen(<Login />)
+    expect(router.replace).not.toHaveBeenCalled()
+    await act(() => {
+      useMaintenanceModeStore.setState({ mode: 'off' })
+    })
+    expect(router.replace).toHaveBeenCalledWith('/')
   })
 })

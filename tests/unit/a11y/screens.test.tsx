@@ -7,6 +7,7 @@ import Link from '@/app/auth/link'
 import Login from '@/app/login'
 import PasskeyRequired from '@/app/passkey-required'
 import { SigningInScreen } from '@/components/auth/signing-in-screen'
+import { MaintenanceScreen } from '@/components/shared/maintenance-screen'
 import { tenantsQueryOptions } from '@/queries/tenant.queries'
 import { A11Y_SCREENS, assertAccessible, renderWithProviders } from '@/tests/support/a11y'
 import { describe, expect, it } from '@/tests/support/runner'
@@ -33,6 +34,7 @@ const SCREENS: Array<[string, () => React.JSX.Element]> = [
   ['Passkey required', () => <PasskeyRequired />],
   ['Not found', () => <NotFound />],
   ['Signing you in', () => <SigningInScreen />],
+  ['Maintenance', () => <MaintenanceScreen message={null} since={null} />],
 ]
 for (const [name, screenElement] of SCREENS) {
   A11Y_SCREENS.push({

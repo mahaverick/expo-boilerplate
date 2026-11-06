@@ -4,6 +4,7 @@ import * as SplashScreen from 'expo-splash-screen'
 import { colorScheme } from 'nativewind'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import RootLayout from '@/app/_layout'
+import * as maintenance from '@/http/maintenance'
 import {
   installForegroundRefresh,
   restoreSession,
@@ -30,6 +31,10 @@ jest.mock('@/http/session-lifecycle', () => ({
   restoreSession: jest.fn(() => Promise.resolve()),
   installForegroundRefresh: jest.fn(() => jest.fn()),
   useSessionStatus: jest.fn(() => 'signed-out'),
+}))
+jest.mock('@/http/maintenance', () => ({
+  ...jest.requireActual<typeof import('@/http/maintenance')>('@/http/maintenance'),
+  installMaintenanceRecovery: jest.fn(() => jest.fn()),
 }))
 jest.mock('@/lib/query-managers', () => ({ installQueryManagers: jest.fn(() => jest.fn()) }))
 jest.mock('expo-router', () => {
@@ -218,6 +223,15 @@ describe('RootLayout', () => {
     jest.mocked(queryManagers.installQueryManagers).mockReturnValueOnce(remove)
     const view = await render(<Root />)
     expect(queryManagers.installQueryManagers).toHaveBeenCalledTimes(1)
+    await view.unmount()
+    expect(remove).toHaveBeenCalledTimes(1)
+  })
+
+  it('installs the maintenance recovery and removes it on unmount', async () => {
+    const remove = jest.fn()
+    jest.mocked(maintenance.installMaintenanceRecovery).mockReturnValueOnce(remove)
+    const view = await render(<Root />)
+    expect(maintenance.installMaintenanceRecovery).toHaveBeenCalledTimes(1)
     await view.unmount()
     expect(remove).toHaveBeenCalledTimes(1)
   })

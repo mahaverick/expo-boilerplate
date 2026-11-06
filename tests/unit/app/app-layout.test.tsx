@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react-native'
 import AppLayout from '@/app/(app)/_layout'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import type { SessionStatus } from '@/http/session-lifecycle'
+import { useMaintenanceModeStore } from '@/states/maintenance-mode.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
@@ -28,6 +29,7 @@ function setStatus(status: SessionStatus): void {
 
 beforeEach(() => {
   usePasskeySetupStore.setState({ required: false })
+  useMaintenanceModeStore.setState({ mode: 'off', message: null, since: null })
 })
 
 afterEach(() => {
@@ -65,6 +67,22 @@ describe('(app) layout', () => {
   it('checks the session before the flag', async () => {
     setStatus('signed-out')
     usePasskeySetupStore.setState({ required: true })
+    await render(<AppLayout />)
+    expect(screen.getByText('redirect:/login')).toBeTruthy()
+  })
+
+  it('redirects nowhere during full maintenance, and keeps the stack', async () => {
+    useMaintenanceModeStore.setState({ mode: 'full' })
+    setStatus('signed-out')
+    usePasskeySetupStore.setState({ required: true })
+    await render(<AppLayout />)
+    expect(screen.getByText('stack')).toBeTruthy()
+    expect(screen.queryByText(/redirect:/)).toBeNull()
+  })
+
+  it('still redirects during read_only maintenance', async () => {
+    useMaintenanceModeStore.setState({ mode: 'read_only' })
+    setStatus('signed-out')
     await render(<AppLayout />)
     expect(screen.getByText('redirect:/login')).toBeTruthy()
   })
