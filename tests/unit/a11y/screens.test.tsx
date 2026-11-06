@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { Href } from 'expo-router'
 import { Pressable, Text, TextInput } from 'react-native'
 import Home from '@/app/(app)/(tabs)/index'
 import Notifications from '@/app/(app)/(tabs)/notifications'
@@ -13,6 +14,7 @@ import Link from '@/app/auth/link'
 import Login from '@/app/login'
 import PasskeyRequired from '@/app/passkey-required'
 import { SigningInScreen } from '@/components/auth/signing-in-screen'
+import { SettingsRow } from '@/components/settings/settings-row'
 import { MaintenanceScreen } from '@/components/shared/maintenance-screen'
 import { UpdateScreen } from '@/components/shared/update-screen'
 import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
@@ -220,6 +222,20 @@ describe('the accessibility harness', () => {
     )
     expect(() => assertAccessible()).toThrow()
   })
+})
+
+A11Y_SCREENS.push({
+  name: 'Settings row under a header',
+  element: (
+    <>
+      <Text accessibilityRole="header">Settings</Text>
+      <SettingsRow
+        title="Profile"
+        description="Your name."
+        href={'/settings/account/profile' as Href}
+      />
+    </>
+  ),
 })
 
 describe('A11Y_SCREENS', () => {
