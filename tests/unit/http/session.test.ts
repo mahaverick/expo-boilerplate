@@ -10,6 +10,7 @@ import {
   ensureSession,
   redirectToLogin,
   resetSessionForTests,
+  subscribeAuthMessage,
   switchIdentity,
 } from '@/http/session'
 import { refreshTokenStore } from '@/http/token-store'
@@ -158,11 +159,34 @@ describe('session', () => {
     await expect(ensureSession()).rejects.toBeInstanceOf(NoRefreshTokenError)
   })
 
-  it('broadcasts nothing, since there is one process', () => {
+  it('broadcastLogout does nothing, since there is one process', () => {
     expect(() => {
       broadcastLogout()
-      broadcastAuthMessage('signed_in')
     }).not.toThrow()
+  })
+
+  it('broadcastAuthMessage calls every handler subscribed for its type, and only those', () => {
+    const confirmed = jest.fn()
+    const alsoConfirmed = jest.fn()
+    const signedIn = jest.fn()
+    const offConfirmed = subscribeAuthMessage('step_up_confirmed', confirmed)
+    const offAlso = subscribeAuthMessage('step_up_confirmed', alsoConfirmed)
+    const offSignedIn = subscribeAuthMessage('signed_in', signedIn)
+    broadcastAuthMessage('step_up_confirmed')
+    expect(confirmed).toHaveBeenCalledTimes(1)
+    expect(alsoConfirmed).toHaveBeenCalledTimes(1)
+    expect(signedIn).not.toHaveBeenCalled()
+    offConfirmed()
+    offAlso()
+    offSignedIn()
+  })
+
+  it('an unsubscribed handler hears nothing', () => {
+    const handler = jest.fn()
+    const off = subscribeAuthMessage('step_up_confirmed', handler)
+    off()
+    broadcastAuthMessage('step_up_confirmed')
+    expect(handler).not.toHaveBeenCalled()
   })
 
   it('redirectToLogin replaces the route with /login', () => {

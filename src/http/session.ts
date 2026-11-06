@@ -1,7 +1,8 @@
 /**
  * @file The session port. The refresh token lives in SecureStore and a
- * restore posts it in the body. There is one process, so nothing is
- * broadcast and the core takes no lock.
+ * restore posts it in the body. There is one process, so the core takes no
+ * lock, a logout is told to no one, and an auth message reaches only the
+ * subscribers in this process (`subscribeAuthMessage`).
  *
  * A refresh can still overlap a sign-out or a sign-in on this device. The
  * core reads the token, posts it, writes the rotated one, then signs in. A
@@ -126,8 +127,33 @@ export function resetSessionForTests(): void {
 /** Does nothing: there is no other tab to tell. */
 export function broadcastLogout(): void {}
 
-/** Does nothing with the message: there is no other tab to tell. */
-export const broadcastAuthMessage: (type: AuthMessageType) => void = () => {}
+/** The handlers subscribed to each auth message, in this process. */
+const authMessageHandlers: Record<AuthMessageType, Set<() => void>> = {
+  signed_in: new Set(),
+  step_up_confirmed: new Set(),
+}
+
+/**
+ * Tells this process's subscribers of `type`, such as a "Confirm it’s you"
+ * dialog waiting on `step_up_confirmed`. There is no other tab to tell.
+ * @param type - The message.
+ */
+export const broadcastAuthMessage: (type: AuthMessageType) => void = (type) => {
+  for (const handler of authMessageHandlers[type]) handler()
+}
+
+/**
+ * Calls `handler` each time `broadcastAuthMessage(type)` runs in this process.
+ * @param type - The message to hear.
+ * @param handler - Called with no arguments.
+ * @returns Unsubscribes the handler.
+ */
+export function subscribeAuthMessage(type: AuthMessageType, handler: () => void): () => void {
+  authMessageHandlers[type].add(handler)
+  return () => {
+    authMessageHandlers[type].delete(handler)
+  }
+}
 
 /** Sends the app to the sign-in screen once a session has ended. */
 export function redirectToLogin(): void {

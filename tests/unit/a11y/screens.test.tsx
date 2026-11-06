@@ -18,6 +18,7 @@ import { SigningInScreen } from '@/components/auth/signing-in-screen'
 import { SettingsRow } from '@/components/settings/settings-row'
 import { MaintenanceScreen } from '@/components/shared/maintenance-screen'
 import { UpdateScreen } from '@/components/shared/update-screen'
+import { StepUpDialog } from '@/components/step-up/step-up-dialog'
 import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
 import { billingKeys } from '@/queries/billing.queries'
 import { clientSettingsKeys } from '@/queries/client-settings.queries'
@@ -202,6 +203,21 @@ for (const [name, preferencesQueryClient] of PREFERENCE_SCREENS) {
     ),
   })
 }
+
+/** A client holding the client settings, so the dialog's update check makes no request. */
+const stepUpClient = new QueryClient({
+  defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+})
+stepUpClient.setQueryData(clientSettingsKeys.all, null)
+// The other views are checked where the dialog's tests reach them.
+A11Y_SCREENS.push({
+  name: 'Confirm it’s you',
+  element: (
+    <QueryClientProvider client={stepUpClient}>
+      <StepUpDialog onConfirmed={() => {}} onDismissed={() => {}} />
+    </QueryClientProvider>
+  ),
+})
 
 describe('the accessibility harness', () => {
   it('accepts a screen with one header and a labelled pressable', async () => {

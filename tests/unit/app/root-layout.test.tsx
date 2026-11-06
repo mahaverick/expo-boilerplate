@@ -40,10 +40,14 @@ jest.mock('@/lib/query-managers', () => ({ installQueryManagers: jest.fn(() => j
 jest.mock('expo-router', () => {
   const { useQueryClient } =
     jest.requireActual<typeof import('@tanstack/react-query')>('@tanstack/react-query')
+  const { useContext } = jest.requireActual<typeof import('react')>('react')
+  const { StepUpContext } =
+    jest.requireActual<typeof import('@/hooks/use-step-up')>('@/hooks/use-step-up')
   return {
-    /** Records the query client the screens would read. */
+    /** Records the query client and the step-up runner the screens would read. */
     Stack: function Stack() {
       mockSeenClients.push(useQueryClient())
+      mockSeenStepUps.push(useContext(StepUpContext))
       return null
     },
   }
@@ -60,6 +64,9 @@ function Root() {
 
 /** The query clients the mocked `Stack` saw, one per render. */
 const mockSeenClients: unknown[] = []
+
+/** The step-up runners the mocked `Stack` saw, one per render. */
+const mockSeenStepUps: unknown[] = []
 
 /** NativeWind's own `set`, which in tests reports the scheme at once. */
 const apply = colorScheme.set.bind(colorScheme)
@@ -207,6 +214,13 @@ describe('RootLayout', () => {
     await render(<Root />)
     expect(mockSeenClients.length).toBeGreaterThan(0)
     expect(mockSeenClients.every((client) => client === queryClient)).toBe(true)
+  })
+
+  it('wraps every screen in the one step-up provider', async () => {
+    mockSeenStepUps.length = 0
+    await render(<Root />)
+    expect(mockSeenStepUps.length).toBeGreaterThan(0)
+    expect(mockSeenStepUps.every((stepUp) => stepUp !== null)).toBe(true)
   })
 
   it('installs the foreground refresh and removes it on unmount', async () => {
