@@ -1,11 +1,11 @@
 import { jest } from '@jest/globals'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { Href } from 'expo-router'
 import { Pressable, Text, TextInput } from 'react-native'
 import Home from '@/app/(app)/(tabs)/index'
 import Notifications from '@/app/(app)/(tabs)/notifications'
 import Settings from '@/app/(app)/(tabs)/settings'
 import Workspace from '@/app/(app)/(tabs)/workspace'
+import Profile from '@/app/(app)/settings/account/profile'
 import Overview from '@/app/(app)/tenants/[slug]/index'
 import Tenants from '@/app/(app)/tenants/index'
 import Welcome from '@/app/(app)/welcome'
@@ -58,6 +58,7 @@ const SCREENS: Array<[string, () => React.JSX.Element]> = [
   ['Workspace tab', () => <Workspace />],
   ['Notifications', () => <Notifications />],
   ['Settings', () => <Settings />],
+  ['Profile', () => <Profile />],
   ['Welcome', () => <Welcome />],
   ['Workspaces', () => <Tenants />],
   ['Passkey required', () => <PasskeyRequired />],
@@ -229,11 +230,7 @@ A11Y_SCREENS.push({
   element: (
     <>
       <Text accessibilityRole="header">Settings</Text>
-      <SettingsRow
-        title="Profile"
-        description="Your name."
-        href={'/settings/account/profile' as Href}
-      />
+      <SettingsRow title="Profile" description="Your name." href={'/settings/account/profile'} />
     </>
   ),
 })

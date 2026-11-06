@@ -35,8 +35,7 @@ export const ACCOUNT_SECTIONS: ReadonlyArray<AccountSection> = [
     key: 'profile',
     title: 'Profile',
     description: 'Your name.',
-    // Typed routes list this screen once its file exists.
-    href: '/settings/account/profile' as Href,
+    href: '/settings/account/profile',
   },
   {
     key: 'security',
