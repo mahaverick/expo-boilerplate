@@ -21,7 +21,7 @@ const BACKGROUND: Record<ButtonVariant, string | undefined> = {
   ghost: undefined,
 }
 
-/** The label class of each variant. */
+/** The label class of each variant. The spinner takes the same colour. */
 const TEXT: Record<ButtonVariant, string> = {
   primary: 'text-primary-foreground',
   secondary: 'text-secondary-foreground',
@@ -62,7 +62,12 @@ export function Button({
       )}
     >
       {loading ? (
-        <ActivityIndicator accessibilityElementsHidden importantForAccessibility="no" />
+        <ActivityIndicator
+          testID="button-spinner"
+          className={TEXT[variant]}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        />
       ) : null}
       <Text className={cn('text-base font-medium', TEXT[variant])}>{label}</Text>
     </Pressable>

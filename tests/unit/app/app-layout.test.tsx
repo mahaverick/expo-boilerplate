@@ -46,7 +46,7 @@ describe('(app) layout', () => {
     await render(<AppLayout />)
     expect(screen.getByRole('header', { name: 'Signing you in' })).toBeTruthy()
     const spinner = screen.getByTestId('session-spinner', { includeHiddenElements: true })
-    expect(spinner.parent?.props.className ?? spinner.props.className).toContain('text-foreground')
+    expect(spinner.props.className).toContain('text-foreground')
   })
 
   it('shows passkey-required when the flag is set', async () => {

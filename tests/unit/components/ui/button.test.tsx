@@ -47,4 +47,14 @@ describe('Button', () => {
     else expect(button.props.className).not.toContain('bg-')
     expect(screen.getByText('Go').props.className).toContain(text)
   })
+
+  it.each([
+    ['primary', 'text-primary-foreground'],
+    ['secondary', 'text-secondary-foreground'],
+    ['ghost', 'text-foreground'],
+  ] as const)('colours the %s spinner like its label', async (variant, text) => {
+    await renderWithProviders(<Button label="Go" variant={variant} loading onPress={() => {}} />)
+    const spinner = screen.getByTestId('button-spinner', { includeHiddenElements: true })
+    expect(spinner.props.className).toContain(text)
+  })
 })
