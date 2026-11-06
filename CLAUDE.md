@@ -428,7 +428,8 @@ The files are listed in [ARCHITECTURE.md](ARCHITECTURE.md#workspaces-and-the-she
   `bottomInset={false}`. `TopBanners` holds the offline and read-only banners
   in one container so two banners pad the inset once.
 - **Confirmations use `Alert`**, the platform dialog, with a Cancel button and
-  a destructive confirm. No custom dialog component exists. Non-blocking
+  a destructive confirm. The one custom dialog is the step-up dialog, a
+  full-screen `Modal` (see "Account settings and step-up"). Non-blocking
   results use `@/lib/toast`; an error that blocks a form renders inline.
 - **The trial explainer records "seen" when it shows.**
   `trial-explainer:{userId}:{tenantId}` in MMKV holds `1` once the alert
@@ -443,6 +444,83 @@ The files are listed in [ARCHITECTURE.md](ARCHITECTURE.md#workspaces-and-the-she
   `/register`, `/reset-password` and `/verify-email` go to
   `/login?notice=sign-in-link` and keep no other query, so nothing a retired
   link carried reaches the next screen.
+
+## Account settings and step-up
+
+The rules below cover the Settings tab, the account screens and the "Confirm
+it’s you" flow. The files are listed in
+[ARCHITECTURE.md](ARCHITECTURE.md#account-settings-and-step-up).
+
+- **The Settings tab lists rows; the screens sit in the `(app)` stack.**
+  Account holds Profile, Security and Notifications
+  (`ACCOUNT_SECTIONS` in `src/constants/settings.ts`), and each row opens
+  `/settings/account/{name}` under the stack's empty-titled header with Back.
+  The Workspace group is text only. `/profile` and `/settings/account`
+  redirect to Profile. Section headings inside a screen are plain text, not
+  headings, because a screen has one header role and the accessibility
+  harness rejects a second.
+- **The step-up provider sits in the root layout, not in `(app)`.**
+  `StepUpProvider` wraps the stack inside the update and maintenance gates.
+  `/auth/confirm` is a root route, so a provider under `(app)` would unmount
+  with the dialog it holds when the link opens. Inside the gates, a blocking
+  screen still covers the dialog's owner.
+- **The dialog hides while an overlay covers the app, and keeps its place.**
+  A React Native `Modal` draws over everything, including the update and
+  maintenance screens. The dialog sets `visible` to false while an update is
+  required or maintenance is `full`, and it stays mounted, so the view, the
+  resend wait and the baseline survive. It returns when the overlay ends.
+- **Android back reaches the dialog through the `Modal`'s `onRequestClose`.**
+  A `BackHandler` does not fire under a `Modal`. Back cancels from the start
+  and the resume-failed views. While the dialog waits on an emailed link or
+  resumes, only Cancel leaves, so a stray press does not drop the action.
+- **The dialog shows its own messages inline.** A toast draws under a native
+  `Modal`, so the person would never see it. A failed link request or resend
+  renders as an inline notice in the dialog.
+- **`run` retries once, and only for a refusal that held the current
+  token.** `useStepUp().run(action)` runs the action. On `REAUTH_REQUIRED`
+  sent with an older token than the store holds, another confirmation has
+  landed, so it retries at once. Otherwise it opens the dialog, and after a
+  confirmation retries once. A second refusal rejects and never reopens the
+  dialog. Cancel rejects with the original refusal. Two refused actions share
+  one dialog and one confirmation.
+- **The confirmation signal is in-process.** The shared
+  `useConfirmStepUpLink` calls `broadcastAuthMessage('step_up_confirmed')`.
+  The session port emits it to `subscribeAuthMessage` handlers in this
+  process, with no other tab to tell. `broadcastLogout` stays a no-op. The
+  dialog never trusts the signal alone: it compares the `auth_time` of the
+  stored token with the one it held when it opened, refreshes once with
+  `ensureSession()` when that is not newer, and keeps waiting if the refreshed
+  token is not newer either.
+- **`/auth/confirm` works unseen beneath the dialog.** The `Modal` covers
+  every route, so the link opens the screen under the dialog. The screen posts
+  the token on mount, the dialog resumes and closes, and the screen then goes
+  back (`router.replace('/')` when there is nowhere to go back to). The person
+  sees "Confirmed. Continuing…" in the dialog, not the screen.
+- **`/auth/confirm` awaits `refreshSettled()` before it posts.** Opening the
+  emailed link brings the app to the foreground, which starts a refresh. If
+  that refresh landed after the confirmation, it would overwrite the new token
+  with one that has the old `auth_time`, and the retried action would be
+  refused again. `refreshSettled()` resolves at once when no refresh is in
+  flight and never rejects.
+- **The link works only for the session that asked for it.** Signed out,
+  `/auth/confirm` posts nothing and offers Sign in. A race can still cost one
+  extra prompt: when a verify presents a refresh token that a concurrent
+  refresh has rotated, express marks every refresh row of the session
+  (`markSessionReauthenticated` in `src/services/session.service.ts`), so the
+  next refresh carries the new `auth_time`, and the session is not revoked.
+- **`useChangedFields` freezes its baseline on the first change, blur or
+  submit.** Until then the baseline follows the stored profile and the form
+  follows it too (`form.reset`), so a name changed elsewhere shows, and Save
+  without editing says "Change a name before saving." After the freeze, a
+  refetch cannot make an edit look unchanged or send a stale value. A save
+  sends only the changed fields and rebases the baseline to what it stored.
+- **Security lists devices from `GET /auth/sessions`.** React has no such
+  list. A row shows the device name, "Web browser" for a web session or
+  "Unknown device", tags the current one "This device", and shows "Last
+  active" and "Signed in". "Sign out other devices" runs through step-up.
+- **Profile and Notifications write on the screen that shows them.** Both
+  read the cached query and write with a mutation. A failed write reports
+  inline (Profile) or as a toast (Notifications, whose rows stay as they were).
 
 ## Copy
 
@@ -498,9 +576,9 @@ Each item is a change for react or for a later plan, with the reason it waits.
   branches 82, functions 86 and lines 89. The shared tests alone (31 manifest
   rows, 29 of them test files) cover statements 43.78%, branches 46.00%,
   functions 31.47% and lines 42.51% of `src/`, because they exercise only part
-  of the 75 shared files. The full suite measures statements 73.49%, branches
-  73.32%, functions 64.30% and lines 72.74% on 6 November 2026.
-  `jest.config.ts` and `ci.yml` hold 73, 73, 63 and 72. React should mark more
+  of the 75 shared files. The full suite measures statements 78.37%, branches
+  76.50%, functions 70.30% and lines 78.18% on 7 November 2026.
+  `jest.config.ts` and `ci.yml` hold 78, 76, 70 and 78. React should mark more
   of its tests for expo; then expo raises each threshold toward react's.
 - **One copy-style case is skipped by name.** `test` and `test:coverage` pass
   `--testNamePattern` with a negative lookahead that skips only "finds the copy
@@ -526,20 +604,30 @@ Each item is a change for react or for a later plan, with the reason it waits.
   `src/http/interceptors.ts`; once expo copies it, remove the guard.
 - **Passkeys wait for a device.** The library spike needs a dev client on a
   device, and the machine that wrote plan 3b has no simulator or emulator
-  (checked 6 November 2026). The webauthn port stays a stub. The plan that
-  writes account security runs the spike.
-- **Step-up and `/auth/confirm` wait for the first step-up write.** Nothing in
-  the app calls a route behind `requireRecentAuth`. The body-token interceptor
-  already lists both step-up verify routes, so that plan does not touch it.
+  (checked 6 November 2026). The webauthn port stays a stub. Security shows no
+  passkey section, and step-up offers only the emailed link. A later plan runs
+  the spike.
+- **A dialog on its start view does not hear a confirmation.** It subscribes to
+  `step_up_confirmed` only on the email view. A link opened before the person
+  selects Email me a link is a rare path; the subscription belongs on the start
+  view too.
+- **A late foreground refresh can overwrite the confirmed token.** A refresh
+  that starts after `refreshSettled()` resolved can still replace the new token
+  with one that has an older `auth_time`. At worst the retried action is refused
+  once, or the next step-up action prompts again. The fix is for the session
+  port's `keepUnlessChanged` to keep a token whose `auth_time` is newer.
 - **`minimumAppVersion` is untyped in the shared core.** React's
   `ClientSettings` and `isClientSettings` omit the field, so expo parses it
   itself. A react PR types it; once expo copies that, replace
   `src/lib/minimum-version.ts`'s schema with the shared type.
-- **Notifications and Settings are placeholder tabs.** The Notifications tab
-  says the feature is not in this version. The Settings tab lists its two
-  groups as text and holds Sign out. Plans 3c4 and 3c2 fill them.
-- **The onboarding steps that point at Settings or Members show no link.**
-  Plans 3c2 and 3c3 add those screens and the links with them.
+- **The Notifications tab is a placeholder.** It says the feature is not in
+  this version. Plan 3c4 fills it. The Settings tab is real: its Account rows
+  open Profile, Security and Notifications preferences.
+- **The Workspace group on the Settings tab is text only.** The onboarding steps
+  that point at workspace settings or Members show no link. Plan 3c3 adds those
+  screens and the links with them.
+- **The Privacy (usage analytics) section waits for plan 3d.** The telemetry
+  port is a stub, and react hides the section when analytics are unavailable.
 - **The iOS App Store ID is unset.** Plan 3e sets `IOS_APP_STORE_ID` for each
   build profile; until then the iOS update screen has no store button.
 - **Every "Mark done" button has the same accessible label.** The web app

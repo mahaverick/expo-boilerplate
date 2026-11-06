@@ -7,8 +7,11 @@ This file is for a developer who runs, tests or checks the app.
 
 As of 6 November 2026 the app signs a person in with an emailed link and keeps
 the session in the device's secure storage. A signed-in person sees four tabs:
-Home, Workspace (the current workspace's overview), Notifications and Settings
-(with Sign out). Notifications and Settings are placeholders. The app also
+Home, Workspace (the current workspace's overview), Notifications and Settings.
+Notifications is a placeholder. Settings opens Profile, Security (sign-in
+methods, signed-in devices and "Sign out other devices") and notification
+preferences, and holds Sign out. An action that needs a recent sign-in asks the
+person to confirm it by an emailed link. The app also
 lists and creates workspaces (`/tenants`, `/welcome`), shows a full-screen
 notice for an update or for maintenance, and has a blocking screen for an
 account that must add a passkey (`/passkey-required`). It holds the shared
@@ -132,8 +135,8 @@ token uses it up, so a second open shows the dead-link state.
   the Android intent filter with `autoVerify`, and `extra.webUrl`
   (`https://<host>`), which the passkey screen opens in an in-app browser
   (`expo-web-browser`). A value that is not a bare hostname fails the build.
-- **Android claims only `/auth/link`, `/tenants/`, `/auth/confirm` and `/settings/account/security`.** They
-  are the paths with a screen. A verified link to any other path would open
+- **Android claims only `/auth/link`, `/tenants/`, `/auth/confirm` and
+  `/settings/account/security`.** They are the paths with a screen. A verified link to any other path would open
   the app on Page not found, so
   each later plan adds its paths with its screens. iOS claims the paths in
   the web app's association file, so a link to a path with no screen there
@@ -311,6 +314,30 @@ date, the device and the OS version beside each.
 - [ ] **The back gesture does nothing on the passkey screen.** With an account
       in passkey-required mode, swipe back on iOS and press Back on Android.
       The screen stays.
+- [ ] **An emailed step-up link opened while the dialog waits.** On the
+      Security screen, wait until the last confirmation is older than the API's
+      step-up window, then select Sign out other devices. The "Confirm it’s
+      you" dialog opens full screen. Select Email me a link, open the mailed
+      link from the mail app on the same phone, on iOS and on Android. The
+      dialog shows "Confirmed. Continuing…", closes, and the screen goes back
+      to Security. The other devices are signed out once, with one toast.
+- [ ] **A step-up link opened from another phone.** Request the link on phone
+      A, then open it on phone B. Phone B shows "Sign in to confirm" or "This
+      link didn’t confirm it’s you", and phone A's dialog keeps waiting. A
+      link requested on phone A confirms there and nowhere else.
+- [ ] **Android back on each dialog view.** Press Back on the start view and on
+      the resume-failed view (turn on airplane mode as the link opens): the
+      dialog cancels, and the action reports its refusal. Press Back on the
+      email view and on "Confirmed. Continuing…": nothing happens, and only
+      Cancel leaves.
+- [ ] **The dialog hides under full maintenance and comes back.** With the
+      dialog open, set the API's maintenance mode to `full`. The maintenance
+      screen shows with no dialog above it. Set the mode to `off`. The dialog
+      returns on the same view.
+- [ ] **The Settings rows and switches fit at 200% text.** With the largest
+      system font, open the Settings tab, Profile, Security and Notifications.
+      Every row, field, button and switch is reachable by scrolling, no text
+      is cut off, and each switch can be toggled.
 
 ## Reporting a problem
 
