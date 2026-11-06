@@ -6,9 +6,10 @@ developer who changes the code. The rules for changing it are in
 [SECURITY.md](SECURITY.md).
 
 The app is the iOS and Android client for the same account, workspaces and API
-as react-boilerplate. As of 6 November 2026 it ships the foundation only: a
-placeholder screen, the shared core, the theme, and the ports that connect the
-two. The design for the screens that follow is in
+as react-boilerplate. As of 6 November 2026 it signs a person in with an emailed
+link and keeps the session on the device. It has the sign-in, link, Home and
+passkey-required screens, the shared core, the theme, and the ports that
+connect the two. The design for the screens that follow is in
 [the spec](docs/superpowers/specs/2026-11-03-expo-boilerplate-design.md).
 
 | Concern | Choice                                                                       |
@@ -25,12 +26,12 @@ two. The design for the screens that follow is in
 
 ```
 src/
-  app/              Expo Router routes: _layout.tsx (theme, splash), index.tsx
-  components/ui/    the UI kit; empty until a plan writes it
+  app/              Expo Router routes: _layout.tsx (theme, splash, restore), login, auth/link, passkey-required, (app)/ for signed-in screens, +native-intent
+  components/       auth/ (the sign-in form) and ui/ (the UI kit: Screen, Button, TextField, InlineError, TOUCH_TARGET)
   constants/        shared: routes, roles, audit actions; frontend-app.ts is a port
-  hooks/            shared hooks
-  http/             shared: interceptors, refresh core; client.ts and session.ts are ports
-  lib/              shared pure logic; toast.ts is a port
+  hooks/            shared hooks; use-sign-out.ts is expo's own
+  http/             shared: interceptors, refresh core; client.ts and session.ts are ports; token-store, revoke, body-token and session-lifecycle are expo's
+  lib/              shared pure logic; toast.ts is a port; app-links.ts is expo's
   observability/    flags/ and telemetry/: both are ports
   polyfills.ts      the Web APIs Hermes may lack, loaded first
   ports/            navigation.ts, runtime.ts, webauthn.ts
@@ -57,12 +58,17 @@ a shared file imports.
    `Intl.RelativeTimeFormat` while they load.
    `tests/unit/entry-order.test.ts` holds it.
 2. Expo Router builds the route tree from `src/app/`. `src/app/_layout.tsx` is
-   the root layout: one `Stack` with no header.
+   the root layout: one `Stack` with no header, inside a `QueryClientProvider`
+   for the app's one query client (`src/lib/query-client.ts`). Each screen
+   draws its own title through `Screen`.
 3. The layout imports `global.css` first, calls
    `SplashScreen.preventAutoHideAsync()` at module scope, and applies the stored
    theme ([The theme and the splash screen](#the-theme-and-the-splash-screen)).
-4. `src/app/index.tsx` is the placeholder screen: the app's name on the theme's
-   background, with the `header` role.
+4. The layout calls `restoreSession()` and `installForegroundRefresh()`
+   ([Sessions](#sessions)). Routes under `src/app/(app)/` render only for a
+   signed-in person: its layout shows "Signing you in" with a spinner while the
+   restore runs, sends a signed-out person to `/login`, and sends an account that must add a passkey
+   to `/passkey-required`. Home is `src/app/(app)/index.tsx`.
 
 ## Polyfills
 
@@ -103,7 +109,7 @@ manifest, so a new port or export is a change to both.
 | -------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `src/constants/frontend-app.ts`        | `FRONTEND_APP`                                                                                  | `'web'`. Mailed links point at `WEB_URL` and reach the app through universal links, so express builds links and policy for the web app.                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `src/http/client.ts`                   | `apiClient`, `unwrap`                                                                           | Builds `apiClient` with `createApiClient` (`baseURL` is `EXPO_PUBLIC_API_URL` plus `API_PREFIX`, `withCredentials: false`) and installs the shared interceptor chain. A request counts as an API request when it goes to that origin under `API_PREFIX`; only those carry `X-Client: native` and `X-Device-Name` (the `expo-device` model name, when known), and a guard removes the bearer token from every other request. An unset URL leaves a relative base, so no request counts and importing the file never throws. `unwrap` is the shared one. |
-| `src/http/session.ts`                  | `broadcastAuthMessage`, `broadcastLogout`, `ensureSession`, `redirectToLogin`, `switchIdentity` | `ensureSession` rejects with `NoRefreshTokenError`, an auth verdict, because the app stores no refresh token yet, so the app counts as signed out. The broadcast functions do nothing, since there is one process. `redirectToLogin` calls `router.replace('/')`. `switchIdentity` clears the query cache and the auth store when a different user signs in.                                                                                                                                                                                           |
+| `src/http/session.ts`                  | `broadcastAuthMessage`, `broadcastLogout`, `ensureSession`, `redirectToLogin`, `switchIdentity` | `ensureSession` builds the shared refresh core with the `body` transport over `refreshTokenStore` (SecureStore), so a restore posts the stored token in the body and keeps the rotated one. The broadcast functions do nothing, since there is one process. `redirectToLogin` calls `router.replace('/login')`. `switchIdentity` clears the query cache and the auth store when a different user signs in.                                                                                                                                             |
 | `src/lib/toast.ts`                     | `toast`                                                                                         | `toast.success`, `toast.error`, `toast.warning` and `toast.dismiss` over the Zustand queue in `src/states/toast-queue.store.ts`. A toast raised with the `id` of a queued one replaces it. Nothing renders the queue yet.                                                                                                                                                                                                                                                                                                                              |
 | `src/observability/flags/flag-keys.ts` | `CLIENT_FLAGS`                                                                                  | This app's slice of express's flag registry: the entries with `client: true` and an app list that names it, copied by hand. It holds react's two example flags.                                                                                                                                                                                                                                                                                                                                                                                        |
 | `src/observability/telemetry/index.ts` | `AnalyticsKey`, `analyticsKey`, `getAnalyticsSessionIdFor`, `track`                             | `track` does nothing. `analyticsKey` brands its argument and returns it. `getAnalyticsSessionIdFor` returns `null`. No event leaves the app.                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -114,9 +120,89 @@ manifest, so a new port or export is a change to both.
 | `src/states/maintenance-mode.store.ts` | `useMaintenanceModeStore`                                                                       | A Zustand store of the maintenance mode, the owner's notice and the start time, set from the `Maintenance-Mode` header, the status endpoint or a 503 body. Memory only, and the same shape as react's.                                                                                                                                                                                                                                                                                                                                                 |
 | `tests/support/runner.ts`              | `describe`, `it`, `test`, `expect`, `beforeEach`, `afterEach`, `repoRoot`, `copyStyleRoots`     | Re-exports `describe`, `it`, `test`, `expect`, `beforeEach` and `afterEach` from `@jest/globals`. `repoRoot` is the repository root, and `copyStyleRoots` is `['src', 'src/components/ui']`.                                                                                                                                                                                                                                                                                                                                                           |
 
-Later plans replace three ports. The session port gets the body transport and
-`expo-secure-store`, the toast port gets a toaster, and the telemetry port gets
-PostHog. Update this table in the same pull request.
+Later plans replace three ports. The toast port gets a toaster, the telemetry
+port gets PostHog, and the webauthn port gets a passkey library once a spike
+on a device picks one. Update this table in the same pull request.
+
+## Sessions
+
+The refresh token never lives in memory longer than one request. It never
+enters a Zustand store, a query cache, a mutation result, a log or an analytics
+event. These expo-owned modules hold the session:
+
+- `src/http/token-store.ts`: `refreshTokenStore` (SecureStore key
+  `refresh_token`) and `pendingRevokeStore` (key `pending_revoke`, a capped
+  list of tokens whose logout has not reached the API). Every call passes
+  `WHEN_UNLOCKED_THIS_DEVICE_ONLY`. A read deletes a value only when it fails
+  to decrypt (`ERR_DECRYPT`); any other read failure, such as a locked
+  Keychain, rejects with a plain `Error` and keeps the item. It also counts
+  session changes (`markSessionChange`).
+- `src/http/session.ts`: the session port. It hands the shared refresh core a
+  store that notes when a refresh read the token. After a sign-out or a
+  sign-in, that refresh keeps nothing: its write throws a plain `Error`, its
+  rotated token is revoked, and a sign-in it already made is undone. The
+  core's `onSignedOut` and `onIdentityChanged` empty the query cache and the
+  passkey-setup flag.
+- `src/lib/query-client.ts`: the app's one `QueryClient`, at module scope so
+  a forced sign-out outside React can empty it.
+- `src/http/revoke.ts`: `revokeToken` saves a token to `pending_revoke`, then
+  posts `/auth/logout`; `retryPendingRevoke` posts every pending token.
+- `src/http/body-token.ts`: the interceptors that add the stored token to the
+  body of the routes express reads it from, keep the token a sign-in returns
+  (a session change, and a clear of the passkey-setup flag), remove
+  `refreshToken` from a failed request's `error.config.data`, and set the
+  passkey-setup flag.
+- `src/http/session-lifecycle.ts`: `restoreSession` (reinstall check, then
+  the refresh, with the pending revokes beside it), `useSessionStatus` and `installForegroundRefresh`.
+- `src/hooks/use-sign-out.ts`: expo's sign-out, which replaces the shared
+  `useLogout`.
+- `src/lib/app-links.ts`: `TOKEN_PATHS`, the paths whose query holds a one-time
+  token.
+- `src/app/+native-intent.tsx`: Expo Router's hook for an incoming URL. It
+  strips the query and fragment from every non-https link.
+- `plugins/with-backup-rules.js`: the config plugin that writes Android's two
+  backup rule files and points the manifest at them.
+
+The launch restore runs in this order:
+
+1. If MMKV has no `installed` key, this is the first launch of an install. A
+   reinstalled iPhone keeps the previous install's Keychain items, so the
+   restore adds any token it finds to `pending_revoke`, clears
+   `refresh_token`, then writes `installed`. These steps are local. When the
+   token cannot join the list, it is still cleared and its revoke posts
+   directly.
+2. `retryPendingRevoke()` starts posting each token in `pending_revoke`. The
+   restore does not wait for it: each revoke can take the client's 30-second
+   timeout, and the list keeps each token until its revoke settles.
+3. `ensureSession()` posts the stored token to `/auth/refresh`. A verdict (the
+   API refuses the token, or no token exists) signs the store out. Any other
+   failure leaves the token for the next foreground.
+
+`installForegroundRefresh()` repeats step 3 each time the app returns from the
+background, after the launch restore settles. It also clears the
+passkey-setup flag, so a person who added a passkey on the website is let
+through, and the next refused request sets the flag again.
+
+Sign-out runs on the device first: it marks a session change, the token joins
+`pending_revoke`, leaves `refresh_token`, the query cache, the auth store and
+the passkey-setup flag clear, the app goes to `/login`, and only then does the
+API hear of it. A request that never answers cannot leave the person signed
+in. A forced sign-out (`signOut` in `client.ts`, after a 401 that is not an
+expiry) clears the same state.
+
+App links: the Android intent filter claims only `/auth/link`, the one path
+with a screen. Each later plan adds its paths with its screens. iOS claims the
+paths in react's apple-app-site-association file. The passkey screen opens the
+website through `expo-web-browser`, since `Linking.openURL` would hand a
+verified app link back to the app.
+
+The body transport sends `refreshToken` in the body of these routes:
+`/auth/logout`, `/auth/sessions/revoke-others`, `/auth/link/verify`,
+`/auth/passkeys/sign-in/verify`, `/invitations/confirm`,
+`/auth/step-up/link/verify` and `/auth/passkeys/step-up/verify`. It keeps the
+token from the answers of `/auth/link/verify`, `/auth/passkeys/sign-in/verify`
+and `/invitations/confirm`. `/auth/refresh` is in neither list: the shared
+refresh core posts the token itself and keeps the rotated one.
 
 ## The theme and the splash screen
 
@@ -134,12 +220,15 @@ PostHog. Update this table in the same pull request.
 - **Applying it.** The root layout passes the preference to NativeWind's
   `colorScheme.set`, `system` included, so the OS keeps control.
 - **The splash screen hides once**, when NativeWind reports the stored scheme
-  or after 2 seconds (`SPLASH_FALLBACK_MS`), whichever comes first. The scheme
+  and the session restore has settled, or after 2 seconds
+  (`SPLASH_FALLBACK_MS`), whichever comes first. The scheme
   reaches NativeWind through a native appearance event after `set` returns, so
   hiding right after `set` could show one light frame. NativeWind drops that
   event while the app is not active, so the 2-second bound stops a lost event
-  from holding the splash screen until a force-quit. The cost is one possible
-  light frame on a slow device that takes longer than 2 seconds.
+  from holding the splash screen until a force-quit. The same bound covers a
+  restore that waits on a slow network. The cost is one possible light frame on
+  a slow device that takes longer than 2 seconds. A restore still pending then
+  leaves the `(app)` layout rendering nothing until it settles.
   `tests/unit/app/root-layout.test.tsx` covers both paths with fake timers. No
   device has run it.
 
@@ -159,8 +248,10 @@ Expo's answers to what the shared files assume are in
 
 - `tests/unit/` holds the shared tests, which run unchanged through the runner
   port, and expo's own: the entry order, the polyfills, the ports, the theme,
-  the root layout, the STYLESEED table, the contrast of the tokens, the lint
-  design lock and the sync check.
+  the root layout, the session modules, the screens, the UI kit, the
+  accessibility harness (`tests/unit/a11y/`), the app config and backup
+  plugin, the STYLESEED table, the contrast of the tokens, the lint design
+  lock and the sync check.
 - `tests/setup.ts` unrefs TanStack Query's timers so a shared test needs no
   teardown.
 - `jest.config.ts` maps `@/` to `src/`, `@/tests/` to `tests/`, and `.css`

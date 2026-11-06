@@ -5,20 +5,24 @@ Expo SDK 58 and TypeScript app for iOS and Android that talks to the
 `express-boilerplate` API and shares its core logic with `react-boilerplate`.
 This file is for a developer who runs, tests or checks the app.
 
-As of 6 November 2026 the app ships the foundation: a placeholder screen that
-shows the app's name, the shared core copied from react, a stored light, dark
-or system theme, and the gate and CI that hold them. Sign-in, workspaces and
-the other screens are in [the spec](docs/superpowers/specs/2026-11-03-expo-boilerplate-design.md)
-and arrive in later plans.
+As of 6 November 2026 the app signs a person in with an emailed link and keeps
+the session in the device's secure storage. It has four screens: sign-in
+(`/login`), the link landing (`/auth/link`), Home (`/`, with Sign out) and a
+blocking screen for an account that must add a passkey
+(`/passkey-required`). It also holds the shared core copied from react, a
+stored light, dark or system theme, and the gate and CI that hold them.
+Workspaces and the other screens are in
+[the spec](docs/superpowers/specs/2026-11-03-expo-boilerplate-design.md) and
+arrive in later plans.
 
-| Concern | Choice                                                         |
-| ------- | -------------------------------------------------------------- |
-| Runtime | Expo SDK 58, React Native 0.88.1 (Hermes), React 19.3          |
-| Routing | Expo Router, file-based from `src/app/`                        |
-| Data    | TanStack Query, axios, TanStack Form with Zod 4, Zustand       |
-| Styling | NativeWind 4 on Tailwind 3, react's STYLESEED tokens           |
-| Storage | `react-native-mmkv` (the theme), `expo-secure-store` (planned) |
-| Tests   | Jest 30 through `jest-expo`, React Native Testing Library      |
+| Concern | Choice                                                        |
+| ------- | ------------------------------------------------------------- |
+| Runtime | Expo SDK 58, React Native 0.88.1 (Hermes), React 19.3         |
+| Routing | Expo Router, file-based from `src/app/`                       |
+| Data    | TanStack Query, axios, TanStack Form with Zod 4, Zustand      |
+| Styling | NativeWind 4 on Tailwind 3, react's STYLESEED tokens          |
+| Storage | `react-native-mmkv` (the theme), `expo-secure-store` (tokens) |
+| Tests   | Jest 30 through `jest-expo`, React Native Testing Library     |
 
 Other docs:
 
@@ -86,6 +90,7 @@ dev client, installs it and starts Metro. Later runs start Metro alone with
 | Variable              | Used by              | Meaning                                                                                |
 | --------------------- | -------------------- | -------------------------------------------------------------------------------------- |
 | `EXPO_PUBLIC_API_URL` | `src/http/client.ts` | The API's origin, with no path: `http://localhost:4040`. The client appends `/api/v1`. |
+| `APP_LINK_HOST`       | `app.config.ts`      | The web app's bare hostname, such as `app.example.com`. Build time only.               |
 
 - **Expo inlines it into the bundle when Metro builds.** Change it, then run
   `pnpm start --clear`. It is public: never put a secret in an `EXPO_PUBLIC_*`
@@ -110,6 +115,31 @@ dev client, installs it and starts Metro. Later runs start Metro alone with
 - **Unset, the base URL is relative.** No request then counts as an API request,
   so none carries the client headers. The tests set it to
   `https://api.example.test`.
+
+### App links
+
+A mailed link opens in the app when the app is installed, and in the browser
+when it is not. A sign-in link works once: the first screen that posts its
+token uses it up, so a second open shows the dead-link state.
+
+- **`APP_LINK_HOST` turns app links on.** Set it when you build, as a bare
+  hostname with no scheme, port or path (`APP_LINK_HOST=app.example.com`).
+  It is not `EXPO_PUBLIC_*`, so the bundle does not carry it. `app.config.ts`
+  uses it for the iOS associated domains (`applinks:` and `webcredentials:`),
+  the Android intent filter with `autoVerify`, and `extra.webUrl`
+  (`https://<host>`), which the passkey screen opens in an in-app browser
+  (`expo-web-browser`). A value that is not a bare hostname fails the build.
+- **Android claims only `/auth/link`.** It is the one path with a screen. A
+  verified link to any other path would open the app on Page not found, so
+  each later plan adds its paths with its screens. iOS claims the paths in
+  the web app's association file, so a link to a path with no screen there
+  opens the app too, until that plan ships.
+- **Unset, the app has no app links.** The custom scheme
+  (`expo-boilerplate://`) still opens the app, but `src/app/+native-intent.tsx`
+  drops its query and fragment, so a token never arrives that way. The
+  passkey screen then shows no "Open the website" button.
+- **The web app must serve the association files** for the same host. React's
+  `docker/15-app-links.sh` lists the paths.
 
 ## Scripts
 
@@ -144,9 +174,10 @@ messages follow Conventional Commits, and commits are GPG-signed.
 
 - **Unit tests** live in `tests/unit/` and run under Jest. The shared tests are
   react's, unchanged; expo's own cover the ports, the polyfills, the entry
-  order, the theme, the root layout and the tokens.
-- **The coverage thresholds** are statements 43, branches 46, functions 31 and
-  lines 42. They sit below react's until more shared tests run here
+  order, the theme, the root layout, the tokens, the session modules, the
+  screens, the UI kit and the accessibility harness.
+- **The coverage thresholds** are statements 58, branches 57, functions 44 and
+  lines 57. They sit below react's until more shared tests run here
   ([CLAUDE.md](CLAUDE.md#follow-ups)).
 - **One copy-style case is skipped by name**, for the reason CLAUDE.md gives.
 
@@ -156,14 +187,15 @@ The tests run on Node. These checks need a dev client on one iPhone and one
 Android phone (or an emulator), and nobody has run them yet. Record the
 date, the device and the OS version beside each.
 
-- [ ] **The app opens.** The splash screen hides, and the screen shows the
-      app's name on the theme's background.
+- [ ] **The app opens.** The splash screen hides once the theme is reported and
+      the session restore has settled. A signed-out phone shows the sign-in
+      screen on the theme's background.
 - [ ] **The theme follows the system.** With the preference at `system`
       (the default), switch the phone between light and dark in its settings. The
       background changes with it.
 - [ ] **A stored dark theme shows no light frame.** Set the preference to
       `dark` through `useThemeStore.getState().setPreference('dark')` from a
-      temporary call in `src/app/index.tsx`, force-quit, and reopen with the
+      temporary call in `src/app/(app)/index.tsx`, force-quit, and reopen with the
       phone in light mode. Remove the call afterwards. The splash screen hides
       within 2 seconds, and a slow device may show one light frame first.
 - [ ] **The polyfills work.** In the dev client's console, `new
@@ -180,10 +212,45 @@ date, the device and the OS version beside each.
       (`src/lib/billing-format.ts`).
 - [ ] **One request carries `traceparent`.** This proves
       `crypto.getRandomValues`. Send one request through `apiClient` from a
-      temporary call in `src/app/index.tsx`, with the API running and
+      temporary call in `src/app/(app)/index.tsx`, with the API running and
       `EXPO_PUBLIC_API_URL` set. Read the request's headers in the API's log or in
       React Native DevTools. `traceparent` is present, and so are `X-Client:
   native` and `X-Device-Name`. Remove the call afterwards.
+- [ ] **Sign-in works end to end.** Request a link on the sign-in screen, open
+      the mailed link, and land on Home. Force-quit and reopen: Home shows
+      without a new link. Tap Sign out: the sign-in screen shows, and the API
+      has revoked the session.
+- [ ] **SecureStore survives a lock-screen change.** Signed in, change the
+      phone's passcode or biometrics, or remove and set the screen lock, then
+      reopen the app. Record whether the session survives. A value that can no
+      longer be decrypted is dropped, and the app then counts as signed out.
+- [ ] **A locked phone keeps the session.** Signed in, send the app to the
+      background, lock the phone, then unlock it and return to the app, which
+      refreshes on that return. It is still signed in. Record any error code a
+      read returns; the app deletes a value only on `ERR_DECRYPT`.
+- [ ] **A reinstall signs out on iOS.** Signed in, delete the app and install
+      it again. The first launch shows the sign-in screen, because the
+      previous install's Keychain item is dropped and queued for revoke.
+- [ ] **"Open the website" stays in the browser on Android.** Build with
+      `APP_LINK_HOST` set, sign in to an account in passkey-required mode, and
+      tap Open the website. The security page opens in the in-app browser,
+      not back in the app.
+- [ ] **Both kinds of app link open in the app.** Build with `APP_LINK_HOST`
+      set to a host whose association files are live. Open a mailed
+      `https://<host>/auth/link?...` link from the mail app: it opens in the
+      app, not the browser. Open `expo-boilerplate://auth/link?token=x`: the
+      app opens on Home or the sign-in screen and ignores the token.
+- [ ] **Android backup leaves the app signed out.** Signed in, run
+      `adb shell bmgr backupnow com.mahaverick.expoboilerplate`, uninstall,
+      reinstall to restore, and open the app. It shows the sign-in screen. If it
+      does not, the backup rules do not match SecureStore's preferences file
+      ([SECURITY.md](SECURITY.md#known-gaps)).
+- [ ] **200% font size fits on every screen.** Set the system font size to its
+      largest on both platforms. On the sign-in, link, Home and passkey screens,
+      every control is reachable by scrolling, and no text is cut off.
+- [ ] **The back gesture does nothing on the passkey screen.** With an account
+      in passkey-required mode, swipe back on iOS and press Back on Android.
+      The screen stays.
 
 ## Reporting a problem
 

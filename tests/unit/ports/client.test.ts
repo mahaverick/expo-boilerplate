@@ -1,10 +1,14 @@
 import { jest } from '@jest/globals'
-import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
+import { AxiosError, type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios'
 import { apiClient } from '@/http/client'
+import { queryClient } from '@/lib/query-client'
 import { useAuthStore } from '@/states/auth.store'
+import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 import { afterEach, describe, expect, it } from '@/tests/support/runner'
+import type { User } from '@/types/api.types'
 
 jest.mock('expo-device', () => ({ modelName: 'Pixel 9' }))
+jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }))
 
 /**
  * An adapter that answers every request with an empty success envelope and
@@ -65,5 +69,27 @@ describe('apiClient', () => {
     await apiClient.get('/profile', { adapter })
     expect(sent[0]?.headers.has('Authorization')).toBe(false)
     expect(sent[1]?.headers.get('Authorization')).toBe('Bearer token-1')
+  })
+
+  it('a forced sign-out clears the passkey flag and the query cache', async () => {
+    useAuthStore.getState().login('access', { id: 'u1' } as User)
+    usePasskeySetupStore.getState().setRequired(true)
+    queryClient.setQueryData(['profile'], 'cached')
+    /** Refuses the session with a 401 that is not an expiry. */
+    const refuse: AxiosAdapter = (config) =>
+      Promise.reject(
+        new AxiosError('no', 'ERR_BAD_REQUEST', config, null, {
+          data: { success: false, code: 'SESSION_REVOKED', message: 'no' },
+          status: 401,
+          statusText: '',
+          headers: {},
+          config,
+        })
+      )
+    apiClient.defaults.adapter = refuse
+    await expect(apiClient.get('/tenants')).rejects.toBeDefined()
+    expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    expect(usePasskeySetupStore.getState().required).toBe(false)
+    expect(queryClient.getQueryData(['profile'])).toBeUndefined()
   })
 })

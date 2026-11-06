@@ -6,10 +6,14 @@
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
 import { modelName } from 'expo-device'
 import { API_PREFIX } from '@/constants/routes'
+import { installBodyToken } from '@/http/body-token'
 import { createApiClient } from '@/http/create-api-client'
 import { installInterceptors as installSharedInterceptors } from '@/http/interceptors'
 import { broadcastLogout, ensureSession, redirectToLogin } from '@/http/session'
+import { markSessionChange, refreshTokenStore } from '@/http/token-store'
+import { queryClient } from '@/lib/query-client'
 import { useAuthStore } from '@/states/auth.store'
+import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 
 export { unwrap } from '@/http/create-api-client'
 
@@ -79,7 +83,12 @@ function installInterceptors(client: AxiosInstance): void {
     isApiRequest: (config) => isApiRequest(client, config),
     ensureSession: () => ensureSession(),
     signOut: () => {
+      markSessionChange()
       useAuthStore.getState().logout()
+      // A non-expiry 401 is a verdict the shared core never sees, so it cannot clear the store.
+      void refreshTokenStore.clear()
+      queryClient.clear()
+      usePasskeySetupStore.getState().setRequired(false)
       broadcastLogout()
       redirectToLogin()
     },
@@ -88,6 +97,8 @@ function installInterceptors(client: AxiosInstance): void {
     },
   })
   client.interceptors.request.use((config) => addClientHeaders(client, config))
+  // Axios runs request interceptors in reverse order of registration and response interceptors in registration order. Registered after the shared chain, the body token is added on every attempt, a 401 replay included, and the capture stores the token before the mutation's promise resolves.
+  installBodyToken(client, (config) => isApiRequest(client, config))
 }
 
 /**

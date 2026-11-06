@@ -1,5 +1,5 @@
-import { createMMKV } from 'react-native-mmkv'
 import { create } from 'zustand'
+import { storage } from '@/lib/storage'
 
 /** The user's colour theme choice; `system` follows the OS. */
 export type ThemePreference = 'light' | 'dark' | 'system'
@@ -8,8 +8,6 @@ export type ThemePreference = 'light' | 'dark' | 'system'
 type ColorScheme = 'light' | 'dark'
 
 const STORAGE_KEY = 'theme'
-
-const storage = createMMKV()
 
 /**
  * The preference saved in MMKV, or `system` when none is saved or the saved

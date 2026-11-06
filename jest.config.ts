@@ -12,6 +12,7 @@ const config: Config = {
   preset: 'jest-expo',
   moduleNameMapper: {
     '\\.css$': '<rootDir>/tests/support/stylesheet.ts',
+    '^expo-secure-store$': '<rootDir>/tests/mocks/expo-secure-store.ts',
     '^@/tests/(.*)$': '<rootDir>/tests/$1',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
@@ -25,7 +26,7 @@ const config: Config = {
    * more of its tests for expo (CLAUDE.md, "Follow-ups").
    */
   coverageThreshold: {
-    global: { statements: 43, branches: 46, functions: 31, lines: 42 },
+    global: { statements: 58, branches: 57, functions: 44, lines: 57 },
   },
 }
 
