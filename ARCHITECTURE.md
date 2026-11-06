@@ -7,9 +7,11 @@ developer who changes the code. The rules for changing it are in
 
 The app is the iOS and Android client for the same account, workspaces and API
 as react-boilerplate. As of 6 November 2026 it signs a person in with an emailed
-link and keeps the session on the device. It has the sign-in, link, Home and
-passkey-required screens, the shared core, the theme, and the ports that
-connect the two. The design for the screens that follow is in
+link and keeps the session on the device. It has four tabs (Home, Workspace,
+Notifications and Settings), a workspace's overview, the list and creation of
+workspaces, the screens that block the app for an update or maintenance, the
+shared core, the theme, and the ports that connect the two. The design for the
+screens that follow is in
 [the spec](docs/superpowers/specs/2026-11-03-expo-boilerplate-design.md).
 
 | Concern | Choice                                                                       |
@@ -26,18 +28,18 @@ connect the two. The design for the screens that follow is in
 
 ```
 src/
-  app/              Expo Router routes: _layout.tsx (theme, splash, restore), login, auth/link, passkey-required, (app)/ for signed-in screens, +native-intent
-  components/       auth/ (the sign-in form) and ui/ (the UI kit: Screen, Button, TextField, InlineError, TOUCH_TARGET)
+  app/              Expo Router routes (see "The route tree"), +native-intent
+  components/       auth/ (the sign-in form), shared/ (banners, update and maintenance screens, load error, empty state), ui/ (the UI kit: Screen, Button, TextField, InlineError, Toaster, TOUCH_TARGET), workspaces/ (switcher, gate, overview, getting started, create form)
   constants/        shared: routes, roles, audit actions; frontend-app.ts is a port
-  hooks/            shared hooks; use-sign-out.ts is expo's own
-  http/             shared: interceptors, refresh core; client.ts and session.ts are ports; token-store, revoke, body-token and session-lifecycle are expo's
-  lib/              shared pure logic; toast.ts is a port; app-links.ts is expo's
+  hooks/            shared hooks; use-sign-out, use-current-tenant, use-is-online and use-top-banner are expo's own
+  http/             shared: interceptors, refresh core; client.ts and session.ts are ports; token-store, revoke, body-token, session-lifecycle and maintenance are expo's
+  lib/              shared pure logic; toast.ts is a port; app-links, minimum-version, query-managers and safe-path are expo's
   observability/    flags/ and telemetry/: both are ports
   polyfills.ts      the Web APIs Hermes may lack, loaded first
   ports/            navigation.ts, runtime.ts, webauthn.ts
   queries/          shared TanStack Query hooks
   schemas/          shared Zod schemas
-  states/           auth, maintenance-mode (ports), theme, toast-queue (expo's own)
+  states/           auth, maintenance-mode (ports), theme, toast-queue and current-tenant (expo's own)
   types/            shared types
 ```
 
@@ -67,8 +69,11 @@ a shared file imports.
 4. The layout calls `restoreSession()` and `installForegroundRefresh()`
    ([Sessions](#sessions)). Routes under `src/app/(app)/` render only for a
    signed-in person: its layout shows "Signing you in" with a spinner while the
-   restore runs, sends a signed-out person to `/login`, and sends an account that must add a passkey
-   to `/passkey-required`. Home is `src/app/(app)/(tabs)/index.tsx`.
+   restore runs, sends a signed-out person to `/login` with the path they asked
+   for as `redirect`, and sends an account that must add a passkey to
+   `/passkey-required`. Home is `src/app/(app)/(tabs)/index.tsx`.
+5. The same layout also installs `installQueryManagers()` and
+   `installMaintenanceRecovery()` ([Workspaces and the shell](#workspaces-and-the-shell)).
 
 ## Polyfills
 
@@ -110,7 +115,7 @@ manifest, so a new port or export is a change to both.
 | `src/constants/frontend-app.ts`        | `FRONTEND_APP`                                                                                  | `'web'`. Mailed links point at `WEB_URL` and reach the app through universal links, so express builds links and policy for the web app.                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `src/http/client.ts`                   | `apiClient`, `unwrap`                                                                           | Builds `apiClient` with `createApiClient` (`baseURL` is `EXPO_PUBLIC_API_URL` plus `API_PREFIX`, `withCredentials: false`) and installs the shared interceptor chain. A request counts as an API request when it goes to that origin under `API_PREFIX`; only those carry `X-Client: native` and `X-Device-Name` (the `expo-device` model name, when known), and a guard removes the bearer token from every other request. An unset URL leaves a relative base, so no request counts and importing the file never throws. `unwrap` is the shared one. |
 | `src/http/session.ts`                  | `broadcastAuthMessage`, `broadcastLogout`, `ensureSession`, `redirectToLogin`, `switchIdentity` | `ensureSession` builds the shared refresh core with the `body` transport over `refreshTokenStore` (SecureStore), so a restore posts the stored token in the body and keeps the rotated one. The broadcast functions do nothing, since there is one process. `redirectToLogin` calls `router.replace('/login')`. `switchIdentity` clears the query cache and the auth store when a different user signs in.                                                                                                                                             |
-| `src/lib/toast.ts`                     | `toast`                                                                                         | `toast.success`, `toast.error`, `toast.warning` and `toast.dismiss` over the Zustand queue in `src/states/toast-queue.store.ts`. A toast raised with the `id` of a queued one replaces it. Nothing renders the queue yet.                                                                                                                                                                                                                                                                                                                              |
+| `src/lib/toast.ts`                     | `toast`                                                                                         | `toast.success`, `toast.error`, `toast.warning` and `toast.dismiss` over the Zustand queue in `src/states/toast-queue.store.ts`. A toast raised with the `id` of a queued one replaces it. `src/components/ui/toaster.tsx` renders the newest 3.                                                                                                                                                                                                                                                                                                       |
 | `src/observability/flags/flag-keys.ts` | `CLIENT_FLAGS`                                                                                  | This app's slice of express's flag registry: the entries with `client: true` and an app list that names it, copied by hand. It holds react's two example flags.                                                                                                                                                                                                                                                                                                                                                                                        |
 | `src/observability/telemetry/index.ts` | `AnalyticsKey`, `analyticsKey`, `getAnalyticsSessionIdFor`, `track`                             | `track` does nothing. `analyticsKey` brands its argument and returns it. `getAnalyticsSessionIdFor` returns `null`. No event leaves the app.                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `src/ports/navigation.ts`              | `assignLocation`                                                                                | A `url` that begins with `/` goes to `router.replace`, so back does not return to the signed-in screen. Any other `url` goes to `Linking.openURL`, and its rejection is caught, so a URL nothing handles is dropped, never an unhandled rejection.                                                                                                                                                                                                                                                                                                     |
@@ -120,9 +125,9 @@ manifest, so a new port or export is a change to both.
 | `src/states/maintenance-mode.store.ts` | `useMaintenanceModeStore`                                                                       | A Zustand store of the maintenance mode, the owner's notice and the start time, set from the `Maintenance-Mode` header, the status endpoint or a 503 body. Memory only, and the same shape as react's.                                                                                                                                                                                                                                                                                                                                                 |
 | `tests/support/runner.ts`              | `describe`, `it`, `test`, `expect`, `beforeEach`, `afterEach`, `repoRoot`, `copyStyleRoots`     | Re-exports `describe`, `it`, `test`, `expect`, `beforeEach` and `afterEach` from `@jest/globals`. `repoRoot` is the repository root, and `copyStyleRoots` is `['src', 'src/components/ui']`.                                                                                                                                                                                                                                                                                                                                                           |
 
-Later plans replace three ports. The toast port gets a toaster, the telemetry
-port gets PostHog, and the webauthn port gets a passkey library once a spike
-on a device picks one. Update this table in the same pull request.
+Later plans replace two ports. The telemetry port gets PostHog, and the
+webauthn port gets a passkey library once a spike on a device picks one.
+Update this table in the same pull request.
 
 ## Sessions
 
@@ -204,6 +209,66 @@ token from the answers of `/auth/link/verify`, `/auth/passkeys/sign-in/verify`
 and `/invitations/confirm`. `/auth/refresh` is in neither list: the shared
 refresh core posts the token itself and keeps the rotated one.
 
+## Workspaces and the shell
+
+### The route tree
+
+```
+src/app/
+  _layout.tsx                  query client, update gate, maintenance gate, top banners, stack, toaster
+  login.tsx                    sign-in; reads redirect and notice
+  forgot-password.tsx          retired password paths (also register, reset-password, verify-email):
+                               redirect to /login?notice=sign-in-link
+  auth/link.tsx                the mailed link's landing
+  passkey-required.tsx         the blocking screen for an account that must add a passkey
+  +native-intent.tsx, +not-found.tsx
+  (app)/                       the session guard
+    _layout.tsx                restore, sign-in redirect, passkey redirect
+    welcome.tsx                create a first workspace
+    (tabs)/
+      _layout.tsx              four tabs, no navigator header
+      index.tsx                Home
+      workspace.tsx            the current workspace's overview, in place
+      notifications.tsx        placeholder
+      settings.tsx             placeholder groups and Sign out
+    tenants/
+      index.tsx                all workspaces, and Create
+      [slug]/index.tsx         one workspace's overview
+```
+
+### The modules
+
+- **The query managers.** `src/lib/query-managers.ts` ties TanStack Query's
+  focus to `AppState` and its online state to NetInfo. `src/hooks/use-is-online.ts`
+  reads the online state for the offline banner.
+- **Maintenance.** `src/http/maintenance.ts` holds the response interceptor
+  (installed on `apiClient` in `src/http/client.ts`), the recovery after
+  `full`, and `useMaintenanceMode`. `src/components/shared/` draws the
+  maintenance screen, the offline banner, the read-only banner and
+  `TopBanners`, which holds both banners under one top inset.
+- **The update screen.** `src/lib/minimum-version.ts` parses
+  `minimumAppVersion` from the client settings, compares versions and builds
+  the store link. `src/components/shared/update-screen.tsx` draws the screen.
+- **The blocking order.** `src/app/_layout.tsx` nests `UpdateGate`, then
+  `MaintenanceGate`, then the stack. The update screen covers the maintenance
+  screen, which covers the app. The toaster sits inside the maintenance gate,
+  so both overlays cover it.
+- **Redirects.** `src/lib/safe-path.ts` holds `safePath`, which checks a
+  redirect, and `landingFor`, which picks where a sign-in lands: `/welcome` for
+  a new account, a safe redirect, `/welcome` for an account with no workspace,
+  else Home.
+- **The current workspace.** `src/states/current-tenant.store.ts` remembers a
+  person's last workspace in MMKV, and `src/hooks/use-current-tenant.ts`
+  resolves it against the list of workspaces the API returns.
+- **The workspace screens.** `src/components/workspaces/` holds the switcher
+  (`workspace-switcher.tsx`), the gate for loading, missing and suspended
+  states (`workspace-gate.tsx`), the overview shared by the Workspace tab and
+  `/tenants/[slug]` (`workspace-overview.tsx`), Getting started, the trial
+  explainer (`trial-explainer.ts`) and the create form.
+- **The frame.** `Screen` draws the one header-role title and owns the top
+  safe-area inset, unless a navigator header or a top banner takes it
+  (`useTopBanner`).
+
 ## The theme and the splash screen
 
 - **Tokens.** `tailwind.config.ts` holds react's STYLESEED colours in sRGB hex
@@ -248,10 +313,11 @@ Expo's answers to what the shared files assume are in
 
 - `tests/unit/` holds the shared tests, which run unchanged through the runner
   port, and expo's own: the entry order, the polyfills, the ports, the theme,
-  the root layout, the session modules, the screens, the UI kit, the
-  accessibility harness (`tests/unit/a11y/`), the app config and backup
-  plugin, the STYLESEED table, the contrast of the tokens, the lint design
-  lock and the sync check.
+  the root layout, the session modules, the query managers, the maintenance
+  and update behaviour, `safePath`, the current-workspace store and hook, the
+  screens, the UI kit, the accessibility harness (`tests/unit/a11y/`), the app
+  config and backup plugin, the STYLESEED table, the contrast of the tokens,
+  the lint design lock and the sync check.
 - `tests/setup.ts` unrefs TanStack Query's timers so a shared test needs no
   teardown.
 - `jest.config.ts` maps `@/` to `src/`, `@/tests/` to `tests/`, and `.css`

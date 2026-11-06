@@ -6,12 +6,14 @@ Expo SDK 58 and TypeScript app for iOS and Android that talks to the
 This file is for a developer who runs, tests or checks the app.
 
 As of 6 November 2026 the app signs a person in with an emailed link and keeps
-the session in the device's secure storage. It has four screens: sign-in
-(`/login`), the link landing (`/auth/link`), Home (`/`, with Sign out) and a
-blocking screen for an account that must add a passkey
-(`/passkey-required`). It also holds the shared core copied from react, a
-stored light, dark or system theme, and the gate and CI that hold them.
-Workspaces and the other screens are in
+the session in the device's secure storage. A signed-in person sees four tabs:
+Home, Workspace (the current workspace's overview), Notifications and Settings
+(with Sign out). Notifications and Settings are placeholders. The app also
+lists and creates workspaces (`/tenants`, `/welcome`), shows a full-screen
+notice for an update or for maintenance, and has a blocking screen for an
+account that must add a passkey (`/passkey-required`). It holds the shared
+core copied from react, a stored light, dark or system theme, and the gate and
+CI that hold them. The remaining screens are in
 [the spec](docs/superpowers/specs/2026-11-03-expo-boilerplate-design.md) and
 arrive in later plans.
 
@@ -91,6 +93,7 @@ dev client, installs it and starts Metro. Later runs start Metro alone with
 | --------------------- | -------------------- | -------------------------------------------------------------------------------------- |
 | `EXPO_PUBLIC_API_URL` | `src/http/client.ts` | The API's origin, with no path: `http://localhost:4040`. The client appends `/api/v1`. |
 | `APP_LINK_HOST`       | `app.config.ts`      | The web app's bare hostname, such as `app.example.com`. Build time only.               |
+| `IOS_APP_STORE_ID`    | `app.config.ts`      | The app's numeric App Store ID, such as `1234567890`. Build time only.                 |
 
 - **Expo inlines it into the bundle when Metro builds.** Change it, then run
   `pnpm start --clear`. It is public: never put a secret in an `EXPO_PUBLIC_*`
@@ -129,8 +132,8 @@ token uses it up, so a second open shows the dead-link state.
   the Android intent filter with `autoVerify`, and `extra.webUrl`
   (`https://<host>`), which the passkey screen opens in an in-app browser
   (`expo-web-browser`). A value that is not a bare hostname fails the build.
-- **Android claims only `/auth/link` and `/tenants/`.** They are the paths with a screen. A
-  verified link to any other path would open the app on Page not found, so
+- **Android claims only `/auth/link` and `/tenants/`.** They are the paths with
+  a screen. A verified link to any other path would open the app on Page not found, so
   each later plan adds its paths with its screens. iOS claims the paths in
   the web app's association file, so a link to a path with no screen there
   opens the app too, until that plan ships.
@@ -140,6 +143,17 @@ token uses it up, so a second open shows the dead-link state.
   passkey screen then shows no "Open the website" button.
 - **The web app must serve the association files** for the same host. React's
   `docker/15-app-links.sh` lists the paths.
+
+### The store link
+
+When the installed build is older than the API's `minimumAppVersion`, the
+update screen offers a button to the store.
+
+- **`IOS_APP_STORE_ID` sets the iOS link**, `itms-apps://apps.apple.com/app/id{id}`.
+  It is digits only, and any other value fails the build. With no ID the iOS
+  update screen has no button.
+- **Android needs no variable.** It opens `market://details?id={package}`, with
+  the package from `app.config.ts`.
 
 ## Scripts
 
@@ -176,8 +190,8 @@ messages follow Conventional Commits, and commits are GPG-signed.
   react's, unchanged; expo's own cover the ports, the polyfills, the entry
   order, the theme, the root layout, the tokens, the session modules, the
   screens, the UI kit and the accessibility harness.
-- **The coverage thresholds** are statements 58, branches 57, functions 44 and
-  lines 57. They sit below react's until more shared tests run here
+- **The coverage thresholds** are statements 73, branches 73, functions 63 and
+  lines 72. They sit below react's until more shared tests run here
   ([CLAUDE.md](CLAUDE.md#follow-ups)).
 - **One copy-style case is skipped by name**, for the reason CLAUDE.md gives.
 
@@ -217,9 +231,10 @@ date, the device and the OS version beside each.
       React Native DevTools. `traceparent` is present, and so are `X-Client:
   native` and `X-Device-Name`. Remove the call afterwards.
 - [ ] **Sign-in works end to end.** Request a link on the sign-in screen, open
-      the mailed link, and land on Home. Force-quit and reopen: Home shows
-      without a new link. Tap Sign out: the sign-in screen shows, and the API
-      has revoked the session.
+      the mailed link, and land on Home (or Welcome, for a new account).
+      Force-quit and reopen: the app opens signed in without a new link. On the
+      Settings tab, tap Sign out: the sign-in screen shows, and the API has
+      revoked the session.
 - [ ] **SecureStore survives a lock-screen change.** Signed in, change the
       phone's passcode or biometrics, or remove and set the screen lock, then
       reopen the app. Record whether the session survives. A value that can no
@@ -246,8 +261,39 @@ date, the device and the OS version beside each.
       does not, the backup rules do not match SecureStore's preferences file
       ([SECURITY.md](SECURITY.md#known-gaps)).
 - [ ] **200% font size fits on every screen.** Set the system font size to its
-      largest on both platforms. On the sign-in, link, Home and passkey screens,
-      every control is reachable by scrolling, and no text is cut off.
+      largest on both platforms. On the sign-in, link, passkey, Home,
+      Workspace, Notifications and Settings screens, every control is reachable
+      by scrolling, and no text is cut off.
+- [ ] **The workspace switcher fits at 200% text.** With the largest system
+      font, open the switcher on the Workspace tab and on `/tenants/{slug}`.
+      Every workspace and Create a workspace are reachable, and no name is cut
+      off. On Android with edge-to-edge, the sheet's first row is clear of the
+      status bar.
+- [ ] **The overview fits at 200% text.** Open a workspace's overview with the
+      largest system font. Getting started and Details are reachable by
+      scrolling, and no text is cut off.
+- [ ] **A toast shows above the keyboard.** Create a workspace and, with the
+      keyboard still open, wait for the success toast. It is visible above the
+      keyboard.
+- [ ] **Offline and back.** Turn on airplane mode. The offline banner shows
+      below the status bar, queries pause, and no screen shows an empty state
+      for a failed load. Turn it off. The banner goes, and the screens refetch
+      without a reload.
+- [ ] **Full maintenance and its recovery.** Set the API's maintenance mode to
+      `full`. The maintenance screen covers the app on both platforms, the back
+      gesture does nothing, and a signed-in person keeps their place. Set the
+      mode to `off`. The screen goes, the session is checked, and the screens
+      refetch.
+- [ ] **The update screen on both platforms.** Raise the API's
+      `minimumAppVersion` for iOS and for Android above the installed build.
+      Within 5 minutes, or on the next foreground, the update screen covers the
+      app. The back gesture does nothing. On Android the button opens the
+      store. On iOS the button shows only for a build with `IOS_APP_STORE_ID`
+      set, and it opens the App Store.
+- [ ] **A mailed `/tenants/{slug}` link opens the workspace on Android.** Build
+      with `APP_LINK_HOST` set. Open `https://<host>/tenants/<slug>` from the
+      mail app while signed in: the workspace's overview opens in the app, not
+      the browser. While signed out, sign in and land on it.
 - [ ] **The back gesture does nothing on the passkey screen.** With an account
       in passkey-required mode, swipe back on iOS and press Back on Android.
       The screen stays.
