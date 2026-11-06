@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 /**
  * Tracks what an edit form started from, so a save sends only what the person
@@ -8,7 +8,7 @@ import { useEffect, useRef } from 'react'
  * make an edit look unchanged or send a stale value. `rebase` moves the baseline
  * to the values just saved.
  * @param baseline - The stored values, as of the latest load.
- * @returns `changed`, `freeze` and `rebase`.
+ * @returns `changed`, `freeze`, `isFrozen` and `rebase`.
  */
 export function useChangedFields<T extends Record<string, string>>(baseline: T) {
   const frozen = useRef<T | null>(null)
@@ -21,6 +21,12 @@ export function useChangedFields<T extends Record<string, string>>(baseline: T) 
   function freeze(): void {
     frozen.current ??= latest.current
   }
+
+  /**
+   * Whether the baseline is pinned.
+   * @returns True after the first change, blur, save or rebase.
+   */
+  const isFrozen = useCallback((): boolean => frozen.current !== null, [])
 
   /**
    * The keys whose trimmed value differs from the frozen baseline.
@@ -50,5 +56,5 @@ export function useChangedFields<T extends Record<string, string>>(baseline: T) 
     frozen.current = value
   }
 
-  return { changed, freeze, rebase }
+  return { changed, freeze, isFrozen, rebase }
 }

@@ -107,6 +107,35 @@ describe('Profile screen', () => {
     expect(bodyOf(patches(sent)[0])).toEqual({ firstName: 'Grace', lastName: 'King' })
   })
 
+  it('a refetch before any edit updates the shown name, and Save then posts nothing', async () => {
+    const sent = serveProfile()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = await renderScreen(<Profile />, client)
+    client.setQueryData(profileKeys.detail, { ...USER, firstName: 'Grace' })
+    await view.rerender(screenTree(<Profile />, client))
+    await waitFor(() => {
+      expect(screen.getByLabelText('First name').props.value).toBe('Grace')
+    })
+    await fireEvent.press(screen.getByRole('button', { name: 'Save changes' }))
+    expect(await screen.findByText('Change a name before saving.')).toBeTruthy()
+    expect(patches(sent)).toHaveLength(0)
+  })
+
+  it('a refetch after an edit changes neither the shown values nor what is sent', async () => {
+    const sent = serveProfile()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = await renderScreen(<Profile />, client)
+    await fireEvent.changeText(screen.getByLabelText('Last name'), 'Byron')
+    client.setQueryData(profileKeys.detail, { ...USER, firstName: 'Grace' })
+    await view.rerender(screenTree(<Profile />, client))
+    expect(screen.getByLabelText('First name').props.value).toBe('Ada')
+    await fireEvent.press(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => {
+      expect(patches(sent)).toHaveLength(1)
+    })
+    expect(bodyOf(patches(sent)[0])).toEqual({ lastName: 'Byron' })
+  })
+
   it('validates the changed field and posts nothing when it is blank', async () => {
     const sent = serveProfile()
     await renderScreen(<Profile />)

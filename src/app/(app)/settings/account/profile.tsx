@@ -1,5 +1,5 @@
 import { useForm } from '@tanstack/react-form'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
 import { LoadError } from '@/components/shared/load-error'
 import { Button } from '@/components/ui/button'
@@ -49,7 +49,7 @@ function ProfileDetails({ user }: { user: User }) {
   const [notice, setNotice] = useState<string | null>(null)
   const submitting = useRef(false)
   const stored: Names = { firstName: user.firstName ?? '', lastName: user.lastName ?? '' }
-  const { changed, freeze, rebase } = useChangedFields(stored)
+  const { changed, freeze, isFrozen, rebase } = useChangedFields(stored)
 
   const form = useForm({
     defaultValues: stored,
@@ -105,6 +105,11 @@ function ProfileDetails({ user }: { user: User }) {
       }
     },
   })
+
+  /** While the form is pristine, it follows the stored names, so it and the baseline agree. */
+  useEffect(() => {
+    if (!isFrozen()) form.reset({ firstName: stored.firstName, lastName: stored.lastName })
+  }, [form, isFrozen, stored.firstName, stored.lastName])
 
   /**
    * Builds a change handler that freezes the baseline, drops the messages that
