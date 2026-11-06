@@ -60,6 +60,14 @@ describe('Home', () => {
     expect(screen.getByRole('header', { name: 'Welcome back, ada@example.com' })).toBeTruthy()
   })
 
+  it('greets by email when the first name is empty', async () => {
+    useAuthStore.getState().logout()
+    signIn('')
+    serve(() => page([{ tenant: { id: 't1' }, role: 'owner' }]))
+    await renderScreen(<Home />)
+    expect(screen.getByRole('header', { name: 'Welcome back, ada@example.com' })).toBeTruthy()
+  })
+
   it('offers to create a workspace only for an empty list', async () => {
     serve(() => page([]))
     await renderScreen(<Home />)

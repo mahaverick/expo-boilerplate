@@ -21,7 +21,8 @@ const TENANTS_ERROR =
 export default function Home() {
   const user = useAuthStore((state) => state.user)
   const tenants = useTenants()
-  const name = user?.firstName ?? user?.email ?? ''
+  // `||`, not `??`: an empty first name falls back to the email.
+  const name = user?.firstName || user?.email || ''
   let body
   if (tenants.data === undefined && tenants.isError) {
     body = (
