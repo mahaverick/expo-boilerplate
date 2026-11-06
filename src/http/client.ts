@@ -6,6 +6,7 @@
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
 import { modelName } from 'expo-device'
 import { API_PREFIX } from '@/constants/routes'
+import { installBodyToken } from '@/http/body-token'
 import { createApiClient } from '@/http/create-api-client'
 import { installInterceptors as installSharedInterceptors } from '@/http/interceptors'
 import { broadcastLogout, ensureSession, redirectToLogin } from '@/http/session'
@@ -91,6 +92,8 @@ function installInterceptors(client: AxiosInstance): void {
     },
   })
   client.interceptors.request.use((config) => addClientHeaders(client, config))
+  // Axios runs request interceptors in reverse order of registration and response interceptors in registration order. Registered after the shared chain, the body token is added on every attempt, a 401 replay included, and the capture stores the token before the mutation's promise resolves.
+  installBodyToken(client, (config) => isApiRequest(client, config))
 }
 
 /**
