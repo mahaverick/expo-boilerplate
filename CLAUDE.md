@@ -328,8 +328,10 @@ The files are listed in [ARCHITECTURE.md](ARCHITECTURE.md#workspaces-and-the-she
   the maintenance screen, and the maintenance screen covers the app
   (`UpdateGate`, then `MaintenanceGate`, in `src/app/_layout.tsx`). The
   passkey screen is a route that the `(app)` guard redirects to, so both
-  overlays cover it too. None of the three answers the back gesture
-  (`gestureEnabled: false` and an Android `BackHandler` that returns `true`).
+  overlays cover it too. All three register a `BackHandler` that
+  returns `true`, which stops Android's back button. Only the passkey route
+  sets `gestureEnabled: false`, because the update and maintenance screens are
+  overlays, not stack screens.
   In `full` the `(app)` guard and the sign-in screens redirect nowhere, so a
   person keeps their place until the mode ends. The toaster renders under
   the overlays, so a toast never shows over a blocking screen.

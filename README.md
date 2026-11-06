@@ -272,9 +272,10 @@ date, the device and the OS version beside each.
 - [ ] **The overview fits at 200% text.** Open a workspace's overview with the
       largest system font. Getting started and Details are reachable by
       scrolling, and no text is cut off.
-- [ ] **A toast shows above the keyboard.** Create a workspace and, with the
-      keyboard still open, wait for the success toast. It is visible above the
-      keyboard.
+- [ ] **A toast sits above the tab bar and the home indicator on both
+      platforms.** Mark a Getting started step done on the Workspace tab. The
+      success toast shows clear of the tab bar and the home indicator, and
+      the tab bar stays reachable.
 - [ ] **Offline and back.** Turn on airplane mode. The offline banner shows
       below the status bar, queries pause, and no screen shows an empty state
       for a failed load. Turn it off. The banner goes, and the screens refetch
