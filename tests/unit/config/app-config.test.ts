@@ -59,7 +59,10 @@ describe('app.config', () => {
         action: 'VIEW',
         autoVerify: true,
         // Only the paths with a screen: a verified link to any other path would loop back into the app.
-        data: [{ scheme: 'https', host: 'app.example.com', pathPrefix: '/auth/link' }],
+        data: [
+          { scheme: 'https', host: 'app.example.com', pathPrefix: '/auth/link' },
+          { scheme: 'https', host: 'app.example.com', pathPrefix: '/tenants/' },
+        ],
         category: ['BROWSABLE', 'DEFAULT'],
       },
     ])

@@ -1,4 +1,4 @@
-import { router, type Href } from 'expo-router'
+import { router } from 'expo-router'
 import { useState } from 'react'
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -14,6 +14,12 @@ import { useCurrentTenantStore } from '@/states/current-tenant.store'
 interface WorkspaceSwitcherProps {
   /** The web address of the open workspace, when the route has one. */
   currentSlug?: string
+  /**
+   * True where the screen shows the remembered workspace itself, as the tab
+   * does: choosing one remembers it and stays. Otherwise it opens the
+   * workspace's screen.
+   */
+  inPlace?: boolean
 }
 
 /** What a failed list says: a claim about the request, not the account. */
@@ -63,9 +69,10 @@ function SwitcherRow({
  * failed list shows Try again, never "No workspaces yet".
  * @param props - The open workspace's web address, when known.
  * @param props.currentSlug - The open workspace's web address.
+ * @param props.inPlace - True to stay on the screen after choosing.
  * @returns The trigger and its sheet.
  */
-export function WorkspaceSwitcher({ currentSlug }: WorkspaceSwitcherProps) {
+export function WorkspaceSwitcher({ currentSlug, inPlace = false }: WorkspaceSwitcherProps) {
   const [open, setOpen] = useState(false)
   const tenants = useTenants()
   const userId = useAuthStore((state) => state.user?.id)
@@ -85,8 +92,7 @@ export function WorkspaceSwitcher({ currentSlug }: WorkspaceSwitcherProps) {
   const choose = (slug: string): void => {
     if (userId !== undefined) useCurrentTenantStore.getState().remember(userId, slug)
     setOpen(false)
-    // Typed routes do not list /tenants/[slug] yet, so the path is cast.
-    router.push(`/tenants/${slug}` as Href)
+    if (!inPlace) router.push(`/tenants/${slug}`)
   }
 
   let list

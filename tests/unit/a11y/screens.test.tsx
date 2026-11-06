@@ -5,6 +5,7 @@ import Home from '@/app/(app)/(tabs)/index'
 import Notifications from '@/app/(app)/(tabs)/notifications'
 import Settings from '@/app/(app)/(tabs)/settings'
 import Workspace from '@/app/(app)/(tabs)/workspace'
+import Overview from '@/app/(app)/tenants/[slug]/index'
 import Tenants from '@/app/(app)/tenants/index'
 import Welcome from '@/app/(app)/welcome'
 import NotFound from '@/app/+not-found'
@@ -14,13 +15,16 @@ import PasskeyRequired from '@/app/passkey-required'
 import { SigningInScreen } from '@/components/auth/signing-in-screen'
 import { MaintenanceScreen } from '@/components/shared/maintenance-screen'
 import { UpdateScreen } from '@/components/shared/update-screen'
-import { tenantsQueryOptions } from '@/queries/tenant.queries'
+import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
+import { billingKeys } from '@/queries/billing.queries'
+import { clientSettingsKeys } from '@/queries/client-settings.queries'
+import { tenantKeys, tenantsQueryOptions, type TenantWithRole } from '@/queries/tenant.queries'
 import { A11Y_SCREENS, assertAccessible, renderWithProviders } from '@/tests/support/a11y'
 import { describe, expect, it } from '@/tests/support/runner'
 
 jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), push: jest.fn(), setParams: jest.fn() },
-  useLocalSearchParams: () => ({}),
+  useLocalSearchParams: () => ({ slug: 'acme' }),
   Stack: { Screen: () => null },
 }))
 /** The in-memory stand-in for MMKV. */
@@ -64,6 +68,90 @@ for (const [name, screenElement] of SCREENS) {
   A11Y_SCREENS.push({
     name,
     element: <QueryClientProvider client={client}>{screenElement()}</QueryClientProvider>,
+  })
+}
+
+/**
+ * A query client that already holds a workspace's reads, so the screen makes
+ * no request.
+ * @param detail - The `GET /tenants/acme` answer: a workspace, or `null` for a 404.
+ * @param list - The caller's memberships.
+ * @returns The seeded client.
+ */
+function seeded(detail: unknown, list: TenantWithRole[]): QueryClient {
+  const seed = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  seed.setQueryData(tenantKeys.detail('acme'), detail)
+  seed.setQueryData(tenantsQueryOptions().queryKey, list)
+  seed.setQueryData(billingKeys.billing('acme'), null)
+  seed.setQueryData(clientSettingsKeys.all, null)
+  seed.setQueryData(tenantKeys.onboarding('acme'), {
+    state: 'in_progress',
+    steps: [
+      {
+        key: 'profile',
+        title: 'Add a profile',
+        description: 'Say who you are.',
+        scope: 'tenant',
+        kind: 'manual',
+        required: true,
+        completedAt: null,
+        source: null,
+      },
+    ],
+    requiredDone: 0,
+    requiredTotal: 1,
+    completedAt: null,
+    dismissedAt: null,
+  })
+  return seed
+}
+
+/** The workspace the overview shows. */
+const ACME = {
+  id: 't-acme',
+  name: 'Acme',
+  slug: 'acme',
+  description: null,
+  logo: null,
+  website: null,
+  lifecycleState: 'active',
+  deletedAt: null,
+  createdAt: '2026-01-05T00:00:00.000Z',
+  updatedAt: '2026-01-05T00:00:00.000Z',
+  isPlatform: false,
+  role: 'owner',
+  access: 'member',
+}
+
+/** The workspace screens, each over its own seeded client. */
+const WORKSPACE_SCREENS: Array<[string, QueryClient, () => React.JSX.Element]> = [
+  [
+    'Workspace overview',
+    seeded(ACME, [{ tenant: ACME, role: 'owner', joinedAt: '2026-01-05', isPlatform: false }]),
+    () => <Overview />,
+  ],
+  ['Workspace not available', seeded(null, []), () => <WorkspaceOverview slug="acme" />],
+  [
+    'Workspace suspended',
+    seeded(null, [
+      {
+        tenant: { ...ACME, lifecycleState: 'suspended' },
+        role: 'owner',
+        joinedAt: '2026-01-05',
+        isPlatform: false,
+      },
+    ]),
+    () => <WorkspaceOverview slug="acme" />,
+  ],
+]
+for (const [name, workspaceClient, workspaceScreen] of WORKSPACE_SCREENS) {
+  A11Y_SCREENS.push({
+    name,
+    element: (
+      <QueryClientProvider client={workspaceClient}>{workspaceScreen()}</QueryClientProvider>
+    ),
   })
 }
 

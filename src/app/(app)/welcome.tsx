@@ -1,4 +1,4 @@
-import { router, type Href } from 'expo-router'
+import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Text } from 'react-native'
 import { Button } from '@/components/ui/button'
@@ -45,8 +45,7 @@ export default function Welcome() {
    */
   const onCreated = (tenant: Tenant): void => {
     toast.success(`${tenant.name} created.`)
-    // Typed routes do not list /tenants/[slug] yet, so the path is cast.
-    router.replace(`/tenants/${tenant.slug}` as Href)
+    router.replace(`/tenants/${tenant.slug}`)
   }
 
   return (

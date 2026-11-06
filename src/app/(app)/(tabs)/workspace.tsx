@@ -1,8 +1,9 @@
-import { router, type Href } from 'expo-router'
+import { router } from 'expo-router'
 import { useEffect } from 'react'
 import { ActivityIndicator } from 'react-native'
 import { LoadError } from '@/components/shared/load-error'
 import { Screen } from '@/components/ui/screen'
+import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
 import { WorkspaceSwitcher } from '@/components/workspaces/workspace-switcher'
 import { useCurrentTenant } from '@/hooks/use-current-tenant'
 
@@ -12,22 +13,25 @@ const TENANTS_ERROR =
 
 /**
  * The workspace tab. It has no web address of its own, so it resolves the
- * current workspace (the last one used, else the first eligible) and replaces
- * itself with that workspace's screen. With none it goes to /welcome. A failed
- * list shows the error with Try again, never the empty state.
+ * current workspace (the last one used, else the first eligible) and shows its
+ * overview in place, with no navigation out of the tabs. Choosing another in
+ * the switcher remembers it, and the tab shows that one. With none it goes to
+ * /welcome. A failed list shows the error with Try again, never the empty
+ * state.
  * @returns The screen.
  */
 export default function Workspace() {
   const current = useCurrentTenant()
   const { status, slug } = current
   useEffect(() => {
-    // Typed routes do not list /tenants/[slug] yet, so the path is cast.
-    if (status === 'ready') router.replace(`/tenants/${slug}` as Href)
-    else if (status === 'none') router.replace('/welcome')
-  }, [status, slug])
+    if (status === 'none') router.replace('/welcome')
+  }, [status])
+  if (status === 'ready' && slug !== null) {
+    return <WorkspaceOverview slug={slug} inPlace bottomInset={false} />
+  }
   return (
     <Screen title="Workspace" bottomInset={false}>
-      <WorkspaceSwitcher currentSlug={slug ?? undefined} />
+      <WorkspaceSwitcher inPlace />
       {status === 'error' ? (
         <LoadError message={TENANTS_ERROR} onRetry={current.retry} />
       ) : (

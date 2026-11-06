@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals'
 import { fireEvent, screen, waitFor } from '@testing-library/react-native'
-import { router, type Href } from 'expo-router'
+import { router } from 'expo-router'
 import Welcome from '@/app/(app)/welcome'
 import { useAuthStore } from '@/states/auth.store'
 import { useToastQueueStore } from '@/states/toast-queue.store'
@@ -107,7 +107,7 @@ describe('Welcome', () => {
     await fireEvent.changeText(screen.getByLabelText('Web address'), 'acme')
     await fireEvent.press(screen.getByRole('button', { name: 'Create workspace' }))
     await waitFor(() => {
-      expect(router.replace).toHaveBeenCalledWith('/tenants/acme' as Href)
+      expect(router.replace).toHaveBeenCalledWith('/tenants/acme')
     })
     expect(useToastQueueStore.getState().toasts.map((toast) => toast.title)).toContain(
       'Acme created.'

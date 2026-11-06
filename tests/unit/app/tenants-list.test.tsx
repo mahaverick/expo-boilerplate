@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals'
 import { fireEvent, screen, waitFor } from '@testing-library/react-native'
-import { router, type Href } from 'expo-router'
+import { router } from 'expo-router'
 import Tenants from '@/app/(app)/tenants/index'
 import { useToastQueueStore } from '@/states/toast-queue.store'
 import { renderScreen, restoreApi, serve } from '@/tests/support/api'
@@ -60,7 +60,7 @@ describe('Workspaces list', () => {
     serve(() => page([row('acme', 'Acme'), row('frozen', 'Frozen', 'suspended')]))
     await renderScreen(<Tenants />)
     await fireEvent.press(await screen.findByRole('button', { name: 'Acme, /acme' }))
-    expect(router.push).toHaveBeenCalledWith('/tenants/acme' as Href)
+    expect(router.push).toHaveBeenCalledWith('/tenants/acme')
     expect(screen.queryByRole('button', { name: /Frozen/ })).toBeNull()
   })
 
@@ -105,7 +105,7 @@ describe('Workspaces list', () => {
     await fireEvent.changeText(screen.getByLabelText('Web address'), 'acme')
     await fireEvent.press(screen.getByRole('button', { name: 'Create workspace' }))
     await waitFor(() => {
-      expect(router.push).toHaveBeenCalledWith('/tenants/acme' as Href)
+      expect(router.push).toHaveBeenCalledWith('/tenants/acme')
     })
     expect(useToastQueueStore.getState().toasts.map((toast) => toast.title)).toContain(
       'Acme created.'

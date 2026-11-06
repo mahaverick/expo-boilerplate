@@ -1,4 +1,4 @@
-import { router, type Href } from 'expo-router'
+import { router } from 'expo-router'
 import { ActivityIndicator, Pressable, Text, View } from 'react-native'
 import { EmptyState } from '@/components/shared/empty-state'
 import { LoadError } from '@/components/shared/load-error'
@@ -19,7 +19,7 @@ const TENANTS_ERROR =
  */
 function openWorkspace(slug: string): void {
   // Typed routes do not list /tenants/[slug] yet, so the path is cast.
-  router.push(`/tenants/${slug}` as Href)
+  router.push(`/tenants/${slug}`)
 }
 
 /**

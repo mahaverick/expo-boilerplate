@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals'
 import { fireEvent, screen } from '@testing-library/react-native'
-import { router, type Href } from 'expo-router'
+import { router } from 'expo-router'
 import { WorkspaceSwitcher } from '@/components/workspaces/workspace-switcher'
 import { useAuthStore } from '@/states/auth.store'
 import { useCurrentTenantStore } from '@/states/current-tenant.store'
@@ -82,7 +82,7 @@ describe('WorkspaceSwitcher', () => {
     expect(screen.getByText('Your workspaces')).toBeTruthy()
     await fireEvent.press(screen.getByRole('button', { name: 'Beta, /beta' }))
     expect(useCurrentTenantStore.getState().recall('u1')).toBe('beta')
-    expect(router.push).toHaveBeenCalledWith('/tenants/beta' as Href)
+    expect(router.push).toHaveBeenCalledWith('/tenants/beta')
     expect(screen.queryByText('Your workspaces')).toBeNull()
   })
 
