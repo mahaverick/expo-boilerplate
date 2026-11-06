@@ -224,10 +224,10 @@ date, the device and the OS version beside each.
       phone's passcode or biometrics, or remove and set the screen lock, then
       reopen the app. Record whether the session survives. A value that can no
       longer be decrypted is dropped, and the app then counts as signed out.
-- [ ] **A locked phone keeps the session.** Signed in, lock the phone, wait
-      for a background refresh, then unlock and open the app. It is still
-      signed in. Record the error code a locked read returns; the app deletes
-      a value only on `ERR_DECRYPT`.
+- [ ] **A locked phone keeps the session.** Signed in, send the app to the
+      background, lock the phone, then unlock it and return to the app, which
+      refreshes on that return. It is still signed in. Record any error code a
+      read returns; the app deletes a value only on `ERR_DECRYPT`.
 - [ ] **A reinstall signs out on iOS.** Signed in, delete the app and install
       it again. The first launch shows the sign-in screen, because the
       previous install's Keychain item is dropped and queued for revoke.

@@ -353,8 +353,8 @@ Each item is a change for react or for a later plan, with the reason it waits.
   branches 82, functions 86 and lines 89. The shared tests alone (31 manifest
   rows, 29 of them test files) cover statements 43.78%, branches 46.00%,
   functions 31.47% and lines 42.51% of `src/`, because they exercise only part
-  of the 75 shared files. The full suite measures statements 58.03%, branches
-  57.24%, functions 44.70% and lines 57.05% on 6 November 2026.
+  of the 75 shared files. The full suite measures statements 60.16%, branches
+  58.94%, functions 46.71% and lines 59.13% on 6 November 2026.
   `jest.config.ts` and `ci.yml` hold 58, 57, 44 and 57. React
   should mark more of its tests for expo; then expo raises each threshold
   toward react's.
