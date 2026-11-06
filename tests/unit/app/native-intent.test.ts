@@ -10,6 +10,13 @@ describe('redirectSystemPath', () => {
     'expo-boilerplate://invitations/accept?token=x',
     'expo-boilerplate:///invitations/confirm?token=x',
     'expo-boilerplate://auth/link',
+    'expo-boilerplate://auth/link/?token=x',
+    'expo-boilerplate://auth//link?token=x',
+    'expo-boilerplate://auth/%6Cink?token=x',
+    'expo-boilerplate:/auth/link?token=x',
+    'expo-boilerplate://AUTH/Link?token=x',
+    'expo-boilerplate://auth%2Flink?token=x',
+    'expo-boilerplate://auth/link#token=x',
   ])('drops a custom-scheme path that carries a token: %s', (path) => {
     expect(redirectSystemPath({ path, initial: true })).toBe('/')
     expect(redirectSystemPath({ path, initial: false })).toBe('/')
@@ -20,12 +27,19 @@ describe('redirectSystemPath', () => {
     expect(redirectSystemPath({ path, initial: true })).toBe(path)
   })
 
-  it('keeps a custom-scheme path with no token', () => {
-    expect(redirectSystemPath({ path: 'expo-boilerplate://settings', initial: true })).toBe(
-      'expo-boilerplate://settings'
+  it('strips the query and fragment from a custom-scheme path with no token', () => {
+    expect(redirectSystemPath({ path: 'expo-boilerplate://settings?x=1', initial: true })).toBe(
+      '/settings'
     )
-    expect(redirectSystemPath({ path: 'expo-boilerplate:///', initial: false })).toBe(
-      'expo-boilerplate:///'
+    expect(redirectSystemPath({ path: 'expo-boilerplate://settings#a', initial: true })).toBe(
+      '/settings'
+    )
+    expect(redirectSystemPath({ path: 'expo-boilerplate:///', initial: false })).toBe('/')
+  })
+
+  it('drops a custom-scheme path with a malformed percent sequence', () => {
+    expect(redirectSystemPath({ path: 'expo-boilerplate://auth/%E0%A4%A', initial: true })).toBe(
+      '/'
     )
   })
 
