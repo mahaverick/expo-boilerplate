@@ -1,10 +1,15 @@
 import { jest } from '@jest/globals'
-import { render, screen } from '@testing-library/react-native'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { act, fireEvent, render, screen } from '@testing-library/react-native'
 import { useGlobalSearchParams, usePathname, useSegments } from 'expo-router'
+import { Text } from 'react-native'
 import AppLayout, { unstable_settings } from '@/app/(app)/_layout'
+import { useSignOut } from '@/hooks/use-sign-out'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import type { SessionStatus } from '@/http/session-lifecycle'
+import { useAuthStore } from '@/states/auth.store'
 import { useMaintenanceModeStore } from '@/states/maintenance-mode.store'
+import { useOwnSignOutStore } from '@/states/own-sign-out.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
@@ -32,6 +37,7 @@ jest.mock('expo-router', () => {
   }
   return {
     Redirect: ({ href }: { href: string }) => <Text>{`redirect:${href}`}</Text>,
+    router: { replace: jest.fn() },
     Stack,
     usePathname: jest.fn(() => '/'),
     useGlobalSearchParams: jest.fn(() => ({})),
@@ -52,6 +58,7 @@ function setStatus(status: SessionStatus): void {
 }
 
 beforeEach(() => {
+  useOwnSignOutStore.setState({ isOwn: false })
   usePasskeySetupStore.setState({ required: false })
   openAt('/')
   useMaintenanceModeStore.setState({ mode: 'off', message: null, since: null })
@@ -85,6 +92,49 @@ describe('(app) layout', () => {
     expect(
       screen.getByText(`redirect:/login?redirect=${encodeURIComponent('/tenants/acme?tab=x')}`)
     ).toBeTruthy()
+  })
+
+  it('an expired session, with no sign-out of the person’s own, keeps the redirect', async () => {
+    setStatus('signed-out')
+    openAt('/tenants/acme', { slug: 'acme' }, ['(app)', 'tenants', '[slug]'])
+    await render(<AppLayout />)
+    expect(
+      screen.getByText(`redirect:/login?redirect=${encodeURIComponent('/tenants/acme')}`)
+    ).toBeTruthy()
+  })
+
+  it('signing out from /tenants/acme lands on /login with no redirect', async () => {
+    jest
+      .mocked(useSessionStatus)
+      .mockImplementation(() =>
+        useAuthStore((state) => state.isAuthenticated) ? 'signed-in' : 'signed-out'
+      )
+    useAuthStore.setState({ accessToken: 'access', isAuthenticated: true })
+    openAt('/tenants/acme', { slug: 'acme' }, ['(app)', 'tenants', '[slug]'])
+    /** Signs out, as the Settings tab's button does. */
+    function SignOutButton() {
+      const { signOut } = useSignOut()
+      return <Text onPress={() => void signOut()}>sign out</Text>
+    }
+    await render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AppLayout />
+        <SignOutButton />
+      </QueryClientProvider>
+    )
+    expect(screen.getByText('stack')).toBeTruthy()
+    await act(async () => {
+      await fireEvent.press(screen.getByText('sign out'))
+    })
+    expect(screen.getByText('redirect:/login')).toBeTruthy()
+    expect(screen.queryByText(/redirect=/)).toBeNull()
+  })
+
+  it('forgets the sign-out once the next session is signed in', async () => {
+    useOwnSignOutStore.setState({ isOwn: true })
+    setStatus('signed-in')
+    await render(<AppLayout />)
+    expect(useOwnSignOutStore.getState().isOwn).toBe(false)
   })
 
   it('leaves a catch-all segment out of the redirect', async () => {

@@ -4,6 +4,7 @@ import { SignInLinkScreen } from '@/components/auth/sign-in-link-screen'
 import { useMaintenanceMode } from '@/http/maintenance'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import { safePath } from '@/lib/safe-path'
+import { useOwnSignOutStore } from '@/states/own-sign-out.store'
 
 /** What the notice says. Only `?notice=sign-in-link` shows it. */
 const SIGN_IN_LINK_NOTICE = 'Sign in with an email link. This app doesn’t use passwords.'
@@ -23,6 +24,7 @@ function first(value: string | string[] | undefined): string | undefined {
  * `?notice=sign-in-link` adds a line saying the app uses no passwords. A session that
  * becomes signed in while it shows, such as a refresh that succeeds after an
  * offline start, replaces it with Home, except during maintenance `full`.
+ * Once it shows, a sign-out of the person's own is over, so it clears that mark.
  */
 export default function Login() {
   const params = useLocalSearchParams<{ redirect?: string; notice?: string }>()
@@ -30,6 +32,9 @@ export default function Login() {
   const notice = first(params.notice) === 'sign-in-link' ? SIGN_IN_LINK_NOTICE : undefined
   const status = useSessionStatus()
   const isFull = useMaintenanceMode() === 'full'
+  useEffect(() => {
+    useOwnSignOutStore.setState({ isOwn: false })
+  }, [])
   useEffect(() => {
     if (status === 'signed-in' && !isFull) router.replace('/')
   }, [status, isFull])

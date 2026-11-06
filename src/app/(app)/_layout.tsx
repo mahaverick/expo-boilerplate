@@ -6,10 +6,12 @@ import {
   useSegments,
   type Href,
 } from 'expo-router'
+import { useEffect } from 'react'
 import { SigningInScreen } from '@/components/auth/signing-in-screen'
 import { useMaintenanceMode } from '@/http/maintenance'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import { safePath } from '@/lib/safe-path'
+import { useOwnSignOutStore } from '@/states/own-sign-out.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 
 /**
@@ -64,6 +66,8 @@ const STACK_SCREEN_OPTIONS = {
  * account that must add a passkey to `/passkey-required`, which sits outside
  * this group so the guard cannot loop. During maintenance `full` it redirects
  * nowhere: the screen over the stack blocks it, and the person keeps their place.
+ * A sign-out the person asked for carries no `redirect`, so the next person on
+ * the device never lands on the previous person's path.
  * The tabs show no navigator header; the screens above them show an
  * empty-titled header with Back.
  */
@@ -74,12 +78,18 @@ export default function AppLayout() {
   const params = useGlobalSearchParams()
   const segments: string[] = useSegments()
   const passkeyRequired = usePasskeySetupStore((state) => state.required)
+  const isOwnSignOut = useOwnSignOutStore((state) => state.isOwn)
+  useEffect(() => {
+    if (status === 'signed-in' && isOwnSignOut) useOwnSignOutStore.setState({ isOwn: false })
+  }, [status, isOwnSignOut])
   if (status === 'restoring') return <SigningInScreen />
-  if (status === 'signed-out' && !isFull)
+  if (status === 'signed-out' && !isFull) {
+    if (isOwnSignOut) return <Redirect href="/login" />
     return (
       // The redirect is any path the person asked for, which typed routes cannot list.
       <Redirect href={loginHref(pathname, params, segments) as Href} />
     )
+  }
   if (passkeyRequired && !isFull) return <Redirect href="/passkey-required" />
   return (
     <Stack screenOptions={STACK_SCREEN_OPTIONS}>

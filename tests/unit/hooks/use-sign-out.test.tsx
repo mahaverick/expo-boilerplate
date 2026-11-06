@@ -10,6 +10,7 @@ import { apiClient } from '@/http/client'
 import { ensureSession, resetSessionForTests } from '@/http/session'
 import { pendingRevokeStore, refreshTokenStore } from '@/http/token-store'
 import { useAuthStore } from '@/states/auth.store'
+import { useOwnSignOutStore } from '@/states/own-sign-out.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 import { getItemAsync, resetSecureStore, setItemAsync } from '@/tests/mocks/expo-secure-store'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
@@ -62,6 +63,19 @@ afterEach(() => {
 })
 
 describe('useSignOut', () => {
+  it('marks the sign-out as the person’s own before the store signs out', async () => {
+    answerWith(200)
+    useOwnSignOutStore.setState({ isOwn: false })
+    const seen: boolean[] = []
+    const unsubscribe = useAuthStore.subscribe((state) => {
+      if (!state.isAuthenticated) seen.push(useOwnSignOutStore.getState().isOwn)
+    })
+    const { result } = await renderHook(() => useSignOut(), { wrapper })
+    await act(() => result.current.signOut())
+    unsubscribe()
+    expect(seen[0]).toBe(true)
+  })
+
   it('clears the token, the query cache and the store before the logout request', async () => {
     answerWith(200)
     const { result } = await renderHook(() => useSignOut(), { wrapper })

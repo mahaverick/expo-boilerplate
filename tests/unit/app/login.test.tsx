@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import Login from '@/app/login'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import { useMaintenanceModeStore } from '@/states/maintenance-mode.store'
+import { useOwnSignOutStore } from '@/states/own-sign-out.store'
 import { bodyOf, renderScreen, restoreApi, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
@@ -34,6 +35,12 @@ async function submit(email: string): Promise<void> {
 }
 
 describe('Login', () => {
+  it('forgets a sign-out of the person’s own once it shows', async () => {
+    useOwnSignOutStore.setState({ isOwn: true })
+    await renderScreen(<Login />)
+    expect(useOwnSignOutStore.getState().isOwn).toBe(false)
+  })
+
   it('shows Sign in as its one header, with the send button', async () => {
     await renderScreen(<Login />)
     expect(screen.getByRole('header', { name: 'Sign in' })).toBeTruthy()

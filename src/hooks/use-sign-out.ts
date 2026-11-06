@@ -9,6 +9,7 @@ import { useCallback, useRef, useState } from 'react'
 import { retryPendingRevoke, revokeToken } from '@/http/revoke'
 import { markSessionChange, pendingRevokeStore, refreshTokenStore } from '@/http/token-store'
 import { useAuthStore } from '@/states/auth.store'
+import { useOwnSignOutStore } from '@/states/own-sign-out.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 
 /** What `useSignOut` returns. */
@@ -51,6 +52,8 @@ export function useSignOut(): SignOut {
         // Again after the clear: a refresh that read the token during the steps above.
         markSessionChange()
         queryClient.clear()
+        // Before the store signs out, so the (app) guard adds no redirect for the next person.
+        useOwnSignOutStore.setState({ isOwn: true })
         useAuthStore.getState().logout()
         usePasskeySetupStore.getState().setRequired(false)
         if (options?.navigate !== false) router.replace('/login')
