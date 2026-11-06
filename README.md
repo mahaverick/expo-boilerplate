@@ -224,9 +224,17 @@ date, the device and the OS version beside each.
       phone's passcode or biometrics, or remove and set the screen lock, then
       reopen the app. Record whether the session survives. A value that can no
       longer be decrypted is dropped, and the app then counts as signed out.
+- [ ] **A locked phone keeps the session.** Signed in, lock the phone, wait
+      for a background refresh, then unlock and open the app. It is still
+      signed in. Record the error code a locked read returns; the app deletes
+      a value only on `ERR_DECRYPT`.
 - [ ] **A reinstall signs out on iOS.** Signed in, delete the app and install
       it again. The first launch shows the sign-in screen, because the
-      previous install's Keychain item is revoked and dropped.
+      previous install's Keychain item is dropped and queued for revoke.
+- [ ] **"Open the website" stays in the browser on Android.** Build with
+      `APP_LINK_HOST` set, sign in to an account in passkey-required mode, and
+      tap Open the website. The security page opens in the in-app browser,
+      not back in the app.
 - [ ] **Both kinds of app link open in the app.** Build with `APP_LINK_HOST`
       set to a host whose association files are live. Open a mailed
       `https://<host>/auth/link?...` link from the mail app: it opens in the

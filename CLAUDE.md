@@ -213,12 +213,13 @@ Each tool below was checked on 6 November 2026 against Expo SDK 58
 - **Lint bans palette classes, arbitrary-value colours and colour literals**
   in the files expo owns under `src/` (`tests/unit/lint/design-lock.test.ts`).
 - **The splash screen hides once.** `src/app/_layout.tsx` hides it when
-  NativeWind reports the stored scheme and the session restore has settled, or
-  after 2 seconds (`SPLASH_FALLBACK_MS`), whichever comes first. NativeWind drops the native
-  appearance event while the app is not active, so without the bound a lost
-  event would hold the splash screen until a force-quit. The cost: on a slow
-  device, the fallback can show one light frame before a stored dark theme
-  paints. That is the chosen trade against hanging on the splash screen.
+  NativeWind reports the stored scheme and the session restore has settled,
+  or after 2 seconds (`SPLASH_FALLBACK_MS`), whichever comes first.
+  NativeWind drops the native appearance event while the app is not active,
+  so without the bound a lost event would hold the splash screen until a
+  force-quit. The cost: on a slow device, the fallback can show one light
+  frame before a stored dark theme paints. That is the chosen trade against
+  hanging on the splash screen.
 - **No device has run the splash or the theme.** The tests model NativeWind's
   event.
 
@@ -243,6 +244,31 @@ candidate, and each has a reason. The files are listed in
   carries that string. The flag lets the interceptor parse the body and read
   the store again, because the refresh has rotated the token and the old one
   would end the session.
+- **A read deletes a stored value only when it fails to decrypt.**
+  expo-secure-store's Android `DecryptException` arrives as `ERR_DECRYPT`.
+  Any other read failure, such as a locked Keychain (`ERR_KEY_CHAIN`),
+  rejects with a plain `Error`, which is no verdict, so the shared core keeps
+  the session. The pending list never deletes on a read; a value that fails to
+  decrypt reads as empty, and the next save replaces it.
+- **A refresh in flight keeps nothing after a session change.** Sign-out,
+  the sign-in capture and the forced sign-out call `markSessionChange()`.
+  `src/http/session.ts` hands the shared core a store that refuses the write,
+  and undoes the core's sign-in, when a change came after the refresh read
+  the token. The refusal is a plain `Error`, so the core neither signs out
+  nor clears the store.
+- **The restore never waits for a revoke.** The reinstall check's steps are
+  local: the old token joins `pending_revoke`, `refresh_token` is cleared,
+  and the marker is written, all before the refresh. `retryPendingRevoke()`
+  runs without being awaited, because each revoke can take the client's
+  30-second timeout. The `(app)` guard shows "Signing you in" meanwhile.
+- **The passkey-setup flag lives only as long as its session.** Every
+  sign-out, forced or not, every sign-in capture and every return to the
+  foreground clears it. The forced sign-outs also empty the query cache,
+  which is why `src/lib/query-client.ts` holds the one client at module
+  scope.
+- **A failed request's error keeps no refresh token.** The body-token error
+  handler removes `refreshToken` from `error.config.data`, which holds the
+  serialized body.
 - **`pending_revoke` is a list capped at 5.** A single slot would drop an
   earlier token that the API has not revoked when a second sign-out happens
   offline. A sixth token drops the oldest.
@@ -309,8 +335,10 @@ These are react's bans. The shared core is written against the replacements:
 - `theme.store` with NativeWind's `colorScheme`, in place of `next-themes`;
 - `@/lib/toast`, a queue in a Zustand store, in place of `sonner`.
 
-Class-name merging has no replacement here yet. The plan that writes the UI
-kit adds a helper in `src/lib/` without `clsx` or `tailwind-merge`.
+Class names join through `cn` in `src/lib/cn.ts`, written without `clsx` or
+`tailwind-merge`. It keeps the truthy parts in order and does no conflict
+merging: `cn('p-2', 'p-4')` is `'p-2 p-4'`, so a caller never passes two
+classes for one property.
 
 Do not add shadcn, Base UI or any other web-only UI package either. They
 render DOM, and the app renders React Native views.

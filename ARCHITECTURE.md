@@ -58,15 +58,16 @@ a shared file imports.
    `Intl.RelativeTimeFormat` while they load.
    `tests/unit/entry-order.test.ts` holds it.
 2. Expo Router builds the route tree from `src/app/`. `src/app/_layout.tsx` is
-   the root layout: one `Stack` with no header. Each screen draws its own title
-   through `Screen`.
+   the root layout: one `Stack` with no header, inside a `QueryClientProvider`
+   for the app's one query client (`src/lib/query-client.ts`). Each screen
+   draws its own title through `Screen`.
 3. The layout imports `global.css` first, calls
    `SplashScreen.preventAutoHideAsync()` at module scope, and applies the stored
    theme ([The theme and the splash screen](#the-theme-and-the-splash-screen)).
 4. The layout calls `restoreSession()` and `installForegroundRefresh()`
    ([Sessions](#sessions)). Routes under `src/app/(app)/` render only for a
-   signed-in person: its layout shows nothing while the restore runs, sends a
-   signed-out person to `/login`, and sends an account that must add a passkey
+   signed-in person: its layout shows "Signing you in" with a spinner while the
+   restore runs, sends a signed-out person to `/login`, and sends an account that must add a passkey
    to `/passkey-required`. Home is `src/app/(app)/index.tsx`.
 
 ## Polyfills
@@ -132,14 +133,27 @@ event. These expo-owned modules hold the session:
 - `src/http/token-store.ts`: `refreshTokenStore` (SecureStore key
   `refresh_token`) and `pendingRevokeStore` (key `pending_revoke`, a capped
   list of tokens whose logout has not reached the API). Every call passes
-  `WHEN_UNLOCKED_THIS_DEVICE_ONLY`.
+  `WHEN_UNLOCKED_THIS_DEVICE_ONLY`. A read deletes a value only when it fails
+  to decrypt (`ERR_DECRYPT`); any other read failure, such as a locked
+  Keychain, rejects with a plain `Error` and keeps the item. It also counts
+  session changes (`markSessionChange`).
+- `src/http/session.ts`: the session port. It hands the shared refresh core a
+  store that notes when a refresh read the token. After a sign-out or a
+  sign-in, that refresh keeps nothing: its write throws a plain `Error`, its
+  rotated token is revoked, and a sign-in it already made is undone. The
+  core's `onSignedOut` and `onIdentityChanged` empty the query cache and the
+  passkey-setup flag.
+- `src/lib/query-client.ts`: the app's one `QueryClient`, at module scope so
+  a forced sign-out outside React can empty it.
 - `src/http/revoke.ts`: `revokeToken` saves a token to `pending_revoke`, then
   posts `/auth/logout`; `retryPendingRevoke` posts every pending token.
 - `src/http/body-token.ts`: the interceptors that add the stored token to the
-  body of the routes express reads it from, keep the token a sign-in returns,
-  and set the passkey-setup flag.
-- `src/http/session-lifecycle.ts`: `restoreSession` (reinstall check, pending
-  revokes, refresh), `useSessionStatus` and `installForegroundRefresh`.
+  body of the routes express reads it from, keep the token a sign-in returns
+  (a session change, and a clear of the passkey-setup flag), remove
+  `refreshToken` from a failed request's `error.config.data`, and set the
+  passkey-setup flag.
+- `src/http/session-lifecycle.ts`: `restoreSession` (reinstall check, then
+  the refresh, with the pending revokes beside it), `useSessionStatus` and `installForegroundRefresh`.
 - `src/hooks/use-sign-out.ts`: expo's sign-out, which replaces the shared
   `useLogout`.
 - `src/lib/app-links.ts`: `TOKEN_PATHS`, the paths whose query holds a one-time
@@ -153,19 +167,34 @@ The launch restore runs in this order:
 
 1. If MMKV has no `installed` key, this is the first launch of an install. A
    reinstalled iPhone keeps the previous install's Keychain items, so the
-   restore revokes and drops any token it finds, then writes `installed`.
-2. `retryPendingRevoke()` posts each token in `pending_revoke`.
+   restore adds any token it finds to `pending_revoke`, clears
+   `refresh_token`, then writes `installed`. These steps are local. When the
+   token cannot join the list, it is still cleared and its revoke posts
+   directly.
+2. `retryPendingRevoke()` starts posting each token in `pending_revoke`. The
+   restore does not wait for it: each revoke can take the client's 30-second
+   timeout, and the list keeps each token until its revoke settles.
 3. `ensureSession()` posts the stored token to `/auth/refresh`. A verdict (the
    API refuses the token, or no token exists) signs the store out. Any other
    failure leaves the token for the next foreground.
 
 `installForegroundRefresh()` repeats step 3 each time the app returns from the
-background, after the launch restore settles.
+background, after the launch restore settles. It also clears the
+passkey-setup flag, so a person who added a passkey on the website is let
+through, and the next refused request sets the flag again.
 
-Sign-out runs on the device first: the token joins `pending_revoke`, leaves
-`refresh_token`, the query cache and auth store clear, the app goes to
-`/login`, and only then does the API hear of it. A request that never answers
-cannot leave the person signed in.
+Sign-out runs on the device first: it marks a session change, the token joins
+`pending_revoke`, leaves `refresh_token`, the query cache, the auth store and
+the passkey-setup flag clear, the app goes to `/login`, and only then does the
+API hear of it. A request that never answers cannot leave the person signed
+in. A forced sign-out (`signOut` in `client.ts`, after a 401 that is not an
+expiry) clears the same state.
+
+App links: the Android intent filter claims only `/auth/link`, the one path
+with a screen. Each later plan adds its paths with its screens. iOS claims the
+paths in react's apple-app-site-association file. The passkey screen opens the
+website through `expo-web-browser`, since `Linking.openURL` would hand a
+verified app link back to the app.
 
 The body transport sends `refreshToken` in the body of these routes:
 `/auth/logout`, `/auth/sessions/revoke-others`, `/auth/link/verify`,
