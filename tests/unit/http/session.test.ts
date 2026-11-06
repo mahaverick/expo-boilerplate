@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals'
 import { QueryClient } from '@tanstack/react-query'
 import { AxiosError } from 'axios'
-import { router, type Href } from 'expo-router'
+import { router } from 'expo-router'
 import { isAuthVerdict, NoRefreshTokenError } from '@/http/auth-verdict'
 import { apiClient } from '@/http/client'
 import {
@@ -92,7 +92,7 @@ describe('session', () => {
   it('redirectToLogin replaces the route with /login', () => {
     const replace = jest.spyOn(router, 'replace')
     redirectToLogin()
-    expect(replace).toHaveBeenCalledWith('/login' as Href)
+    expect(replace).toHaveBeenCalledWith('/login')
   })
 
   it('clears the store and the cache when a different user signs in', () => {

@@ -2,7 +2,7 @@ import { jest } from '@jest/globals'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react-native'
 import { AxiosError, type AxiosAdapter } from 'axios'
-import { router, type Href } from 'expo-router'
+import { router } from 'expo-router'
 import type { ReactNode } from 'react'
 import { useSignOut } from '@/hooks/use-sign-out'
 import { apiClient } from '@/http/client'
@@ -74,7 +74,7 @@ describe('useSignOut', () => {
     answerWith(200)
     const { result } = await renderHook(() => useSignOut(), { wrapper })
     await act(() => result.current.signOut())
-    expect(router.replace).toHaveBeenCalledWith('/login' as Href)
+    expect(router.replace).toHaveBeenCalledWith('/login')
     jest.mocked(router.replace).mockClear()
     await refreshTokenStore.write('tok2')
     await act(() => result.current.signOut({ navigate: false }))
@@ -96,7 +96,7 @@ describe('useSignOut', () => {
     const { result } = await renderHook(() => useSignOut(), { wrapper })
     await act(() => result.current.signOut())
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
-    expect(router.replace).toHaveBeenCalledWith('/login' as Href)
+    expect(router.replace).toHaveBeenCalledWith('/login')
     expect(log).toContain('logout(stored=null)')
   })
 

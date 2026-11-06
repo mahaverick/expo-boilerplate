@@ -18,7 +18,7 @@ export interface A11yScreen {
 export const A11Y_SCREENS: A11yScreen[] = []
 
 /** Window metrics for `SafeAreaProvider`, with insets so safe-area code runs. */
-const METRICS = {
+export const METRICS = {
   frame: { x: 0, y: 0, width: 390, height: 844 },
   insets: { top: 47, left: 0, right: 0, bottom: 34 },
 }

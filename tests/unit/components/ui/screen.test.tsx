@@ -23,4 +23,22 @@ describe('Screen', () => {
       paddingBottom: 34,
     })
   })
+
+  it('scrolls its content, and keeps taps while the keyboard is up, when scroll is set', async () => {
+    await renderWithProviders(
+      <Screen title="Sign in" scroll>
+        <Text>Body</Text>
+      </Screen>
+    )
+    const scroller = screen.getByTestId('screen-scroll')
+    expect(scroller.props.keyboardShouldPersistTaps).toBe('handled')
+    expect(screen.getByText('Body')).toBeTruthy()
+    expect(screen.getAllByRole('header')).toHaveLength(1)
+    expect(() => assertAccessible()).not.toThrow()
+  })
+
+  it('does not scroll by default', async () => {
+    await renderWithProviders(<Screen title="Home">{null}</Screen>)
+    expect(screen.queryByTestId('screen-scroll')).toBeNull()
+  })
 })

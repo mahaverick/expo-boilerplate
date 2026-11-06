@@ -4,7 +4,7 @@
  * request that never answers cannot leave the person signed in.
  */
 import { useQueryClient } from '@tanstack/react-query'
-import { router, type Href } from 'expo-router'
+import { router } from 'expo-router'
 import { useCallback, useRef, useState } from 'react'
 import { retryPendingRevoke, revokeToken } from '@/http/revoke'
 import { pendingRevokeStore, refreshTokenStore } from '@/http/token-store'
@@ -49,8 +49,7 @@ export function useSignOut(): SignOut {
         queryClient.clear()
         useAuthStore.getState().logout()
         usePasskeySetupStore.getState().setRequired(false)
-        // `/login` is not a typed route yet, and the port takes any app path.
-        if (options?.navigate !== false) router.replace('/login' as Href)
+        if (options?.navigate !== false) router.replace('/login')
         // The direct revoke must not depend on the retry: a keychain that refused the save may refuse the read.
         await retryPendingRevoke().catch(() => {})
         if (token && !saved) await revokeToken(token)

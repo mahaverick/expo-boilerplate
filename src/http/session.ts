@@ -4,7 +4,7 @@
  * broadcast and the core takes no lock.
  */
 import type { QueryClient } from '@tanstack/react-query'
-import { router, type Href } from 'expo-router'
+import { router } from 'expo-router'
 import { apiClient } from '@/http/client'
 import { createRefreshCore, type RefreshCore } from '@/http/refresh-core'
 import { refreshTokenStore } from '@/http/token-store'
@@ -45,7 +45,7 @@ export const broadcastAuthMessage: (type: AuthMessageType) => void = () => {}
 
 /** Sends the app to the sign-in screen once a session has ended. */
 export function redirectToLogin(): void {
-  router.replace('/login' as Href)
+  router.replace('/login')
 }
 
 /**
