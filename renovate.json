@@ -1,0 +1,76 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits", "helpers:pinGitHubActionDigests"],
+  "schedule": ["before 6am on monday"],
+  "minimumReleaseAge": "3 days",
+  "internalChecksFilter": "strict",
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "minimumReleaseAge": null,
+    "schedule": ["at any time"]
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
+  },
+  "packageRules": [
+    {
+      "description": "tsc 6 and typescript-eslint's parser peer <6.1.0; Oxlint's type-aware engine bundles its own TS 7",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<6.1.0"
+    },
+    {
+      "description": "Stay on the Node 26 LTS line until the next LTS move is made on purpose. Covers every Node version pin: the docker `node` image (Dockerfile), `.node-version` and `actions/setup-node`'s `node-version:` (node-version datasource, depName `node`).",
+      "matchDepNames": ["node"],
+      "allowedVersions": "<27"
+    },
+    {
+      "groupName": "dev tooling",
+      "matchPackageNames": [
+        "eslint",
+        "eslint-*",
+        "@eslint/*",
+        "typescript-eslint",
+        "vite-plus",
+        "@voidzero-dev/*",
+        "oxlint",
+        "oxlint-tsgolint",
+        "oxfmt",
+        "jest",
+        "jest-*",
+        "@types/jest"
+      ]
+    },
+    {
+      "groupName": "tanstack",
+      "matchPackageNames": ["@tanstack/*"]
+    },
+    {
+      "groupName": "types",
+      "matchPackageNames": ["@types/*"]
+    },
+    {
+      "description": "Minor, patch and digest updates merge themselves once the required checks pass.",
+      "matchUpdateTypes": ["minor", "patch", "digest", "pinDigest"],
+      "automerge": true,
+      "platformAutomerge": true
+    },
+    {
+      "description": "Majors always wait for a human.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": "The pinned toolchain always waits for a human.",
+      "matchDepNames": ["node", "typescript"],
+      "automerge": false
+    },
+    {
+      "description": "expo, react-native and posthog-react-native move together with the Expo SDK; a minor or major waits for a person who runs `npx expo install --check` and reads the SDK's notes. After the automerge rule, which it overrides.",
+      "matchPackageNames": ["expo", "react-native", "posthog-react-native"],
+      "matchUpdateTypes": ["minor", "major"],
+      "automerge": false
+    }
+  ]
+}

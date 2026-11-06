@@ -1,0 +1,52 @@
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+pnpm-debug.log*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# testing
+/coverage
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# Agent tooling: per-machine files that must never be committed
+.claude/worktrees/
+.claude/settings.local.json
+.superpowers/
+# Implementation plans stay local; specs are tracked
+docs/superpowers/plans/
+# May hold credentials (e.g. a database DSN): commit an .mcp.json.example instead
+.mcp.json
