@@ -90,9 +90,18 @@ describe('Welcome', () => {
     expect(router.dismissTo).not.toHaveBeenCalled()
   })
 
-  it('a failed first read counts as no workspaces', async () => {
-    serve(() => ({ status: 500, data: { success: false, message: 'Boom.' } }))
+  it('a failed first read shows the error with Try again, never the form', async () => {
+    let fail = true
+    serve(() => (fail ? { status: 500, data: { success: false, message: 'Boom.' } } : page([])))
     await renderScreen(<Welcome />)
+    expect(
+      await screen.findByText(
+        'We couldn’t load your workspaces, so none are listed. Select Try again to load them.'
+      )
+    ).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Create workspace' })).toBeNull()
+    fail = false
+    await fireEvent.press(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByRole('button', { name: 'Create workspace' })).toBeTruthy()
     expect(router.dismissTo).not.toHaveBeenCalled()
   })

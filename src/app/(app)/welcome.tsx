@@ -1,6 +1,7 @@
 import { router } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Text } from 'react-native'
+import { LoadError } from '@/components/shared/load-error'
 import { Button } from '@/components/ui/button'
 import { Screen } from '@/components/ui/screen'
 import { CreateWorkspaceForm } from '@/components/workspaces/create-workspace-form'
@@ -10,13 +11,18 @@ import { isEligibleTenant, useTenants, type Tenant } from '@/queries/tenant.quer
 import { useAuthStore } from '@/states/auth.store'
 import { useCurrentTenantStore } from '@/states/current-tenant.store'
 
+/** What a failed list says: a claim about the request, not the account. */
+const TENANTS_ERROR =
+  'We couldn’t load your workspaces, so none are listed. Select Try again to load them.'
+
 /**
  * The first-workspace step, where a new account lands. A person who already
  * has a workspace goes Home. The check takes the first list this screen reads
  * and never a later one: creating refetches the list, which then holds the new
  * workspace, and a bounce Home would race the landing. A failed first read
- * counts as no workspaces and shows the form. Until the first read settles the
- * screen shows a spinner, so no create starts before the decision.
+ * shows the error with Try again and never the form: an invited account whose
+ * read failed would create a duplicate. Until a read succeeds the screen shows
+ * a spinner or the error, so no create starts before the decision.
  * @returns The screen.
  */
 export default function Welcome() {
@@ -25,13 +31,24 @@ export default function Welcome() {
   const userId = useAuthStore((state) => state.user?.id)
   const { signOut, isPending } = useSignOut()
   const [firstList, setFirstList] = useState(tenants.data)
-  if (firstList === undefined && (tenants.data !== undefined || tenants.isError)) {
-    setFirstList(tenants.data ?? [])
-  }
+  if (firstList === undefined && tenants.data !== undefined) setFirstList(tenants.data)
   const hasWorkspace = firstList?.some(isEligibleTenant) ?? false
   useEffect(() => {
     if (hasWorkspace) router.dismissTo('/')
   }, [hasWorkspace])
+
+  if (firstList === undefined && tenants.isError) {
+    return (
+      <Screen title="Create your workspace" topInset={false}>
+        <LoadError
+          message={TENANTS_ERROR}
+          onRetry={() => {
+            void tenants.refetch()
+          }}
+        />
+      </Screen>
+    )
+  }
 
   if (firstList === undefined || hasWorkspace) {
     return (
