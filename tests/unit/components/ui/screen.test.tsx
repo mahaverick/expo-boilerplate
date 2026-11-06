@@ -18,27 +18,22 @@ describe('Screen', () => {
 
   it('pads by the safe-area insets', async () => {
     await renderWithProviders(<Screen title="Sign in">{null}</Screen>)
-    expect(screen.getByTestId('screen').props.style).toMatchObject({
+    expect(screen.getByTestId('screen').props.contentContainerStyle).toMatchObject({
       paddingTop: 47,
       paddingBottom: 34,
     })
   })
 
-  it('scrolls its content, and keeps taps while the keyboard is up, when scroll is set', async () => {
+  it('scrolls its content, and keeps taps while the keyboard is up', async () => {
     await renderWithProviders(
-      <Screen title="Sign in" scroll>
+      <Screen title="Sign in">
         <Text>Body</Text>
       </Screen>
     )
-    const scroller = screen.getByTestId('screen-scroll')
+    const scroller = screen.getByTestId('screen')
+    expect(scroller.type).toBe('RCTScrollView')
     expect(scroller.props.keyboardShouldPersistTaps).toBe('handled')
-    expect(screen.getByText('Body')).toBeTruthy()
     expect(screen.getAllByRole('header')).toHaveLength(1)
     expect(() => assertAccessible()).not.toThrow()
-  })
-
-  it('does not scroll by default', async () => {
-    await renderWithProviders(<Screen title="Home">{null}</Screen>)
-    expect(screen.queryByTestId('screen-scroll')).toBeNull()
   })
 })

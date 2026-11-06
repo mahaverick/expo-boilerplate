@@ -72,7 +72,7 @@ export function SignInLinkScreen({
 
   if (sentTo !== null) {
     return (
-      <Screen title="Check your inbox" scroll>
+      <Screen title="Check your inbox">
         <Text className="text-base text-foreground">
           {`We sent a sign-in link to ${sentTo}. Open it on this phone. Each link works once.`}
         </Text>
@@ -89,7 +89,7 @@ export function SignInLinkScreen({
   }
 
   return (
-    <Screen title={title} scroll>
+    <Screen title={title}>
       {notice ? <InlineError message={notice} /> : null}
       <form.Field name="email">
         {(field) => (

@@ -49,6 +49,12 @@ describe('PasskeyRequired', () => {
     ).toBeTruthy()
   })
 
+  it('renders inside a scroll view, so Sign out stays reachable at large text sizes', async () => {
+    setWebUrl('https://app.example.com')
+    await renderScreen(<PasskeyRequired />)
+    expect(screen.getByTestId('screen').type).toBe('RCTScrollView')
+  })
+
   it('Open the website opens the security settings page', async () => {
     setWebUrl('https://app.example.com')
     const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined)
