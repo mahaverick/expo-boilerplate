@@ -41,8 +41,7 @@ export const ACCOUNT_SECTIONS: ReadonlyArray<AccountSection> = [
     key: 'security',
     title: 'Security',
     description: 'Your sign-in methods and signed-in devices.',
-    // Typed routes list this screen once its file exists.
-    href: '/settings/account/security' as Href,
+    href: '/settings/account/security',
   },
   {
     key: 'notifications',

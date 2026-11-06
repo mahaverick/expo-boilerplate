@@ -7,6 +7,7 @@ import Settings from '@/app/(app)/(tabs)/settings'
 import Workspace from '@/app/(app)/(tabs)/workspace'
 import NotificationPreferences from '@/app/(app)/settings/account/notifications'
 import Profile from '@/app/(app)/settings/account/profile'
+import Security from '@/app/(app)/settings/account/security'
 import Overview from '@/app/(app)/tenants/[slug]/index'
 import Tenants from '@/app/(app)/tenants/index'
 import Welcome from '@/app/(app)/welcome'
@@ -20,10 +21,13 @@ import { SettingsRow } from '@/components/settings/settings-row'
 import { MaintenanceScreen } from '@/components/shared/maintenance-screen'
 import { UpdateScreen } from '@/components/shared/update-screen'
 import { StepUpDialog } from '@/components/step-up/step-up-dialog'
+import { StepUpProvider } from '@/components/step-up/step-up-provider'
 import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
+import { authKeys } from '@/queries/auth.queries'
 import { billingKeys } from '@/queries/billing.queries'
 import { clientSettingsKeys } from '@/queries/client-settings.queries'
 import { notificationKeys, type NotificationPreference } from '@/queries/notification.queries'
+import { sessionKeys } from '@/queries/sessions.queries'
 import { tenantKeys, tenantsQueryOptions, type TenantWithRole } from '@/queries/tenant.queries'
 import { A11Y_SCREENS, assertAccessible, renderWithProviders } from '@/tests/support/a11y'
 import { describe, expect, it } from '@/tests/support/runner'
@@ -217,6 +221,46 @@ A11Y_SCREENS.push({
   element: (
     <QueryClientProvider client={stepUpClient}>
       <StepUpDialog onConfirmed={() => {}} onDismissed={() => {}} />
+    </QueryClientProvider>
+  ),
+})
+
+/** A client holding Security's reads, so the screen makes no request. */
+const securityClient = new QueryClient({
+  defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+})
+securityClient.setQueryData(clientSettingsKeys.all, null)
+securityClient.setQueryData(authKeys.providers, {
+  providers: [
+    { provider: 'email', linkedAt: '2026-01-01T00:00:00.000Z' },
+    { provider: 'google', linkedAt: '2026-01-02T00:00:00.000Z' },
+  ],
+})
+securityClient.setQueryData(sessionKeys.all, [
+  {
+    id: 'a',
+    client: 'native',
+    deviceName: 'Pixel 9',
+    createdAt: '2026-10-01T12:00:00.000Z',
+    lastUsedAt: '2026-11-05T12:00:00.000Z',
+    current: true,
+  },
+  {
+    id: 'b',
+    client: 'web',
+    deviceName: null,
+    createdAt: '2026-09-01T12:00:00.000Z',
+    lastUsedAt: '2026-09-02T12:00:00.000Z',
+    current: false,
+  },
+])
+A11Y_SCREENS.push({
+  name: 'Security',
+  element: (
+    <QueryClientProvider client={securityClient}>
+      <StepUpProvider>
+        <Security />
+      </StepUpProvider>
     </QueryClientProvider>
   ),
 })
