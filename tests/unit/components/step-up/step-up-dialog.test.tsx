@@ -291,7 +291,7 @@ describe('StepUpDialog', () => {
     expect(resend.props.accessibilityState).toMatchObject({ disabled: true })
   })
 
-  it('a resend refused by the cooldown toasts and pushes the resend out', async () => {
+  it('a resend refused by the cooldown says so in the dialog and pushes the resend out', async () => {
     let answer = linkSent(-1_000)
     serve((config) => (config.url === ACTION_PATH ? REAUTH_ANSWER : answer))
     await openDialog()
@@ -299,9 +299,12 @@ describe('StepUpDialog', () => {
     answer = COOLDOWN
     await fireEvent.press(screen.getByRole('button', { name: 'Resend link' }))
     await screen.findByRole('button', { name: /^Resend in 0:4[12]$/ })
-    expect(useToastQueueStore.getState().toasts.map((toast) => toast.title)).toEqual([
-      'We just sent a link. Wait a moment, then try again.',
-    ])
+    expect(screen.getByText('We just sent a link. Wait a moment, then try again.')).toBeTruthy()
+    expect(
+      screen.getByText('Check your email. Open the link on this phone to continue.')
+    ).toBeTruthy()
+    expect(useToastQueueStore.getState().toasts).toEqual([])
+    assertAccessible()
   })
 
   it('another failure on the start view shows the message in place', async () => {

@@ -11,7 +11,6 @@ import { codeFrom, messageFrom, retryAfterSecondsFrom, statusFrom } from '@/lib/
 import { formatClock } from '@/lib/countdown'
 import { useUpdateRequired } from '@/lib/minimum-version'
 import { authTimeOf, isNewConfirmation } from '@/lib/step-up'
-import { toast } from '@/lib/toast'
 import { useRequestStepUpLink } from '@/queries/step-up.queries'
 import { useAuthStore } from '@/states/auth.store'
 import { STEP_UP_LINK_COOLDOWN } from '@/types/passkey.types'
@@ -88,7 +87,8 @@ export function StepUpDialog({ onConfirmed, onDismissed }: StepUpDialogProps) {
   /**
    * Mails a link. From the start, a cooldown means one was just sent, so it
    * waits on that one. From the email view a link is already out, so a
-   * refusal is a toast and the wait stays.
+   * refusal shows in place and the wait stays. A toast would draw under the
+   * native modal, out of sight.
    * @param from - The view the request was made in.
    */
   const sendLink = (from: DialogView) => {
@@ -107,7 +107,7 @@ export function StepUpDialog({ onConfirmed, onDismissed }: StepUpDialogProps) {
         const wait = retryAfterSecondsFrom(error)
         if (from === 'email') {
           if (statusFrom(error) === 429 && wait !== null) holdResend(wait)
-          toast.error(messageFrom(error))
+          setNotice(messageFrom(error))
           return
         }
         if (codeFrom(error) === STEP_UP_LINK_COOLDOWN && wait !== null) {
@@ -200,6 +200,7 @@ export function StepUpDialog({ onConfirmed, onDismissed }: StepUpDialogProps) {
         <Text accessibilityLiveRegion="polite" className="text-base text-foreground">
           {isExpired ? 'That link expired. Send a new link to continue.' : sentLine}
         </Text>
+        {notice !== null && <InlineError message={notice} />}
         <Button
           variant={isExpired ? 'primary' : 'secondary'}
           label={resendLeft > 0 ? `Resend in ${formatClock(resendLeft)}` : 'Resend link'}
