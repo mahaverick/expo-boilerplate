@@ -2,6 +2,8 @@ import { jest } from '@jest/globals'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Pressable, Text, TextInput } from 'react-native'
 import Home from '@/app/(app)/index'
+import Tenants from '@/app/(app)/tenants/index'
+import Welcome from '@/app/(app)/welcome'
 import NotFound from '@/app/+not-found'
 import Link from '@/app/auth/link'
 import Login from '@/app/login'
@@ -14,7 +16,7 @@ import { A11Y_SCREENS, assertAccessible, renderWithProviders } from '@/tests/sup
 import { describe, expect, it } from '@/tests/support/runner'
 
 jest.mock('expo-router', () => ({
-  router: { replace: jest.fn(), setParams: jest.fn() },
+  router: { replace: jest.fn(), push: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: () => ({}),
   Stack: { Screen: () => null },
 }))
@@ -32,6 +34,8 @@ const SCREENS: Array<[string, () => React.JSX.Element]> = [
   ['Login', () => <Login />],
   ['Link (dead link)', () => <Link />],
   ['Home', () => <Home />],
+  ['Welcome', () => <Welcome />],
+  ['Workspaces', () => <Tenants />],
   ['Passkey required', () => <PasskeyRequired />],
   ['Not found', () => <NotFound />],
   ['Signing you in', () => <SigningInScreen />],

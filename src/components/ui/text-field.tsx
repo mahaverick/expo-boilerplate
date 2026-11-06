@@ -9,25 +9,28 @@ interface TextFieldProps extends Omit<TextInputProps, 'accessibilityLabel'> {
   value: string
   onChangeText: (text: string) => void
   error?: string
+  hint?: string
 }
 
 /**
  * A labelled text input. The label shows above the input and names it for
- * screen readers. An error shows below and is the input's hint.
+ * screen readers. A hint shows below in muted text. An error shows below and
+ * is the input's accessibility hint, ahead of `hint`.
  * @param props - The label, value, change handler, error and any `TextInput` prop.
  * @param props.label - The visible label.
  * @param props.error - The error to show, if any.
+ * @param props.hint - Help text under the input.
  * @param props.className - Extra classes for the input.
  * @returns The field.
  */
-export function TextField({ label, error, className, ...input }: TextFieldProps) {
+export function TextField({ label, error, hint, className, ...input }: TextFieldProps) {
   return (
     <View className="gap-1">
       <Text className="text-sm font-medium text-foreground">{label}</Text>
       <TextInput
         {...input}
         accessibilityLabel={label}
-        accessibilityHint={error}
+        accessibilityHint={error ?? hint}
         className={cn(
           TOUCH_TARGET,
           'rounded-md border border-input px-3 text-base text-foreground',
@@ -35,6 +38,7 @@ export function TextField({ label, error, className, ...input }: TextFieldProps)
           className
         )}
       />
+      {hint ? <Text className="text-sm text-muted-foreground">{hint}</Text> : null}
       {error ? <InlineError message={error} /> : null}
     </View>
   )
