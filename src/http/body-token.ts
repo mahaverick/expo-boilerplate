@@ -9,6 +9,14 @@ import { refreshTokenStore } from '@/http/token-store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 import { isPasskeySetupRequired } from '@/types/passkey.types'
 
+declare module 'axios' {
+  /** Adds the body-token flag to the request config. */
+  interface AxiosRequestConfig {
+    /** Set when the body-token interceptor added `refreshToken` to the body. */
+    _bodyToken?: boolean
+  }
+}
+
 /** Routes (after the API prefix) whose POST body carries the stored refresh token. */
 const INJECT = new Set([
   '/auth/logout',
@@ -56,17 +64,25 @@ function isPostTo(config: InternalAxiosRequestConfig, paths: Set<string>): boole
 /**
  * Merges the stored token into the body of an allow-listed request. A body
  * that already names `refreshToken` stays as it is; with no stored token the
- * body is untouched.
+ * body is untouched. A request this function filled in before is replayed
+ * with a serialized body: the token is read again, since a refresh between
+ * the attempts has rotated it.
  * @param config - The request.
  */
 async function addToken(config: InternalAxiosRequestConfig): Promise<InternalAxiosRequestConfig> {
   if (!isPostTo(config, INJECT)) return config
   const token = await refreshTokenStore.read()
   if (token === null) return config
-  // Request transforms run after the interceptors, so `data` is still the caller's object.
+  if (config._bodyToken && typeof config.data === 'string') {
+    const sent = JSON.parse(config.data) as Record<string, unknown>
+    config.data = { ...sent, refreshToken: token }
+    return config
+  }
+  // Request transforms run after the interceptors, so on a first attempt `data` is still the caller's object.
   const current: unknown = config.data ?? {}
   if (typeof current !== 'object' || current === null || 'refreshToken' in current) return config
   config.data = { ...current, refreshToken: token }
+  config._bodyToken = true
   return config
 }
 

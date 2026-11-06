@@ -4,9 +4,11 @@ import { SignInNotKeptError } from '@/http/body-token'
 import { apiClient } from '@/http/client'
 import { ensureSession, resetSessionForTests } from '@/http/session'
 import { pendingRevokeStore, refreshTokenStore } from '@/http/token-store'
+import { useAuthStore } from '@/states/auth.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 import { resetSecureStore, setItemAsync } from '@/tests/mocks/expo-secure-store'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
+import type { User } from '@/types/api.types'
 
 jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }))
 
@@ -72,6 +74,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  useAuthStore.getState().logout()
   usePasskeySetupStore.getState().setRequired(false)
 })
 
@@ -118,14 +121,50 @@ describe('request body token', () => {
     expect(bodyOf(sent[0])).toEqual({ x: 1 })
   })
 
-  it('re-reads the store on each attempt, so a replay carries the current token', async () => {
+  it('sends the rotated token when the shared chain replays after a refresh', async () => {
     await refreshTokenStore.write('first')
-    const sent = serve(() => ({ status: 200, data: { success: true, data: {} } }))
-    await apiClient.post('/auth/logout', {}, { skipAuthRetry: true })
-    await refreshTokenStore.write('second')
-    await apiClient.post('/auth/logout', {}, { skipAuthRetry: true })
-    expect(bodyOf(sent[0])).toEqual({ refreshToken: 'first' })
-    expect(bodyOf(sent[1])).toEqual({ refreshToken: 'second' })
+    useAuthStore.getState().login('expired', { id: 'u1' } as User)
+    let logouts = 0
+    const sent = serve((config) => {
+      if (config.url === '/auth/refresh')
+        return {
+          status: 200,
+          data: { success: true, data: { accessToken: 'a2', refreshToken: 'rotated' } },
+        }
+      if (config.url === '/profile')
+        return { status: 200, data: { success: true, data: { id: 'u1' } } }
+      logouts += 1
+      return logouts === 1
+        ? { status: 401, data: { success: false, code: 'ACCESS_TOKEN_EXPIRED', message: 'x' } }
+        : { status: 200, data: { success: true, data: {} } }
+    })
+    await apiClient.post('/auth/sessions/revoke-others', {})
+    const attempts = sent.filter((c) => c.url === '/auth/sessions/revoke-others')
+    expect(attempts).toHaveLength(2)
+    expect(bodyOf(attempts[0])).toEqual({ refreshToken: 'first' })
+    expect(bodyOf(attempts[1])).toEqual({ refreshToken: 'rotated' })
+  })
+
+  it('keeps a refreshToken the caller set across a replay', async () => {
+    await refreshTokenStore.write('first')
+    useAuthStore.getState().login('expired', { id: 'u1' } as User)
+    let calls = 0
+    const sent = serve((config) => {
+      if (config.url === '/auth/refresh')
+        return {
+          status: 200,
+          data: { success: true, data: { accessToken: 'a2', refreshToken: 'rotated' } },
+        }
+      if (config.url === '/profile')
+        return { status: 200, data: { success: true, data: { id: 'u1' } } }
+      calls += 1
+      return calls === 1
+        ? { status: 401, data: { success: false, code: 'ACCESS_TOKEN_EXPIRED', message: 'x' } }
+        : { status: 200, data: { success: true, data: {} } }
+    })
+    await apiClient.post('/auth/sessions/revoke-others', { refreshToken: 'mine' })
+    const attempts = sent.filter((c) => c.url === '/auth/sessions/revoke-others')
+    expect(bodyOf(attempts[1])).toEqual({ refreshToken: 'mine' })
   })
 })
 
