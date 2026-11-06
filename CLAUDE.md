@@ -388,7 +388,8 @@ The files are listed in [ARCHITECTURE.md](ARCHITECTURE.md#workspaces-and-the-she
   out, and the `(app)` guard then sends the person to plain `/login`. The guard
   can redirect before `useSignOut` navigates, and the next person on the
   device would land on the previous person's path. `/login` clears the mark
-  once it shows, and the guard clears it once a session is signed in. An
+  once it shows, the link screen clears it when a sign-in starts, and the
+  guard clears it once a session is signed in. An
   expired session never sets it, so its redirect survives.
 - **Toasts sit above the tab bar.** The toaster renders at the root, so it
   would cover the tab bar, and error toasts stay until dismissed. Each tab

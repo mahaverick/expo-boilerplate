@@ -14,6 +14,7 @@ import { landingFor } from '@/lib/safe-path'
 import { useVerifySignInLink } from '@/queries/auth.queries'
 import { tenantsQueryOptions } from '@/queries/tenant.queries'
 import { useAuthStore } from '@/states/auth.store'
+import { useOwnSignOutStore } from '@/states/own-sign-out.store'
 
 /** What the screen says when a verify failed for a reason that may pass. */
 const SIGN_IN_FAILED = 'We couldn’t sign you in. Check your connection and try again.'
@@ -73,10 +74,11 @@ export default function Link() {
   /** Set while a post is in flight, and after a success, so a second press in the same frame posts nothing. */
   const posting = useRef(false)
 
-  /** Posts the token, once at a time. The outcome decides what shows next. */
+  /** Posts the token, once at a time. The outcome decides what shows next. A sign-in starting ends any sign-out of the person's own. */
   const post = () => {
     if (posting.current) return
     posting.current = true
+    useOwnSignOutStore.setState({ isOwn: false })
     setMode('verifying')
     verify.mutate(
       { token: link.token ?? '', email: link.email },

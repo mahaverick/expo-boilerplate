@@ -29,7 +29,7 @@ screens that follow is in
 ```
 src/
   app/              Expo Router routes (see "The route tree"), +native-intent
-  components/       auth/ (the sign-in form), shared/ (banners, update and maintenance screens, load error, empty state), ui/ (the UI kit: Screen, Button, TextField, InlineError, Toaster, TOUCH_TARGET), workspaces/ (switcher, gate, overview, getting started, create form)
+  components/       auth/ (the sign-in form), shared/ (banners, update and maintenance screens, load error, empty state, tab-bar height), ui/ (the UI kit: Screen, Button, TextField, InlineError, Toaster, TOUCH_TARGET), workspaces/ (switcher, gate, overview, getting started, create form)
   constants/        shared: routes, roles, audit actions; frontend-app.ts is a port
   hooks/            shared hooks; use-sign-out, use-current-tenant, use-is-online and use-top-banner are expo's own
   http/             shared: interceptors, refresh core; client.ts and session.ts are ports; token-store, revoke, body-token, session-lifecycle and maintenance are expo's

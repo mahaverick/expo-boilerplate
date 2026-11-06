@@ -10,6 +10,7 @@ import type { SessionStatus } from '@/http/session-lifecycle'
 import { refreshTokenStore } from '@/http/token-store'
 import { queryClient } from '@/lib/query-client'
 import { useAuthStore } from '@/states/auth.store'
+import { useOwnSignOutStore } from '@/states/own-sign-out.store'
 import { resetSecureStore, setItemAsync } from '@/tests/mocks/expo-secure-store'
 import { bodyOf, renderScreen, restoreApi, screenTree, serve } from '@/tests/support/api'
 import type { FakeAnswer, FakeHandler } from '@/tests/support/api'
@@ -163,6 +164,14 @@ describe('Link', () => {
       onlineManager.setOnline(true)
       queryClient.clear()
     }
+  })
+
+  it('forgets a sign-out of the person’s own once a sign-in starts, even if it fails', async () => {
+    useOwnSignOutStore.setState({ isOwn: true })
+    serveLink(() => 'network-error')
+    await renderScreen(<Link />)
+    expect(await screen.findByRole('button', { name: 'Try again' })).toBeTruthy()
+    expect(useOwnSignOutStore.getState().isOwn).toBe(false)
   })
 
   it('posts once under StrictMode', async () => {
