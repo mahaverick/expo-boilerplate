@@ -50,13 +50,16 @@ export function minimumFor(settings: unknown, os: StoreOs): string | null {
 /**
  * Whether the installed build is older than the server's minimum. It is false
  * while the settings load, after a failure, and when either version is
- * missing or unreadable, so the app never blocks on a guess.
+ * missing or unreadable, so the app never blocks on a guess. It reads the
+ * settings again every 5 minutes while the app is in the foreground, which
+ * matches the server's `max-age=300`, so a raised minimum reaches a running app.
  * @returns True when the person must update.
  */
 export function useUpdateRequired(): boolean {
   const { data } = useQuery({
     ...clientSettingsQueryOptions(),
     staleTime: 5 * 60_000,
+    refetchInterval: 5 * 60_000,
   })
   if (Platform.OS !== 'ios' && Platform.OS !== 'android') return false
   const minimum = minimumFor(data, Platform.OS)

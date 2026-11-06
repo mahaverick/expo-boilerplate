@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { renderHook, waitFor } from '@testing-library/react-native'
+import { act, renderHook, waitFor } from '@testing-library/react-native'
 import * as Application from 'expo-application'
 import type { ReactNode } from 'react'
 import { Platform } from 'react-native'
@@ -195,7 +195,27 @@ describe('useUpdateRequired', () => {
     expect(result.current).toBe(false)
   })
 
-  it('the query refetches after 5 minutes', async () => {
+  it('reads the settings again every 5 minutes while the app is open', async () => {
+    jest.useFakeTimers()
+    const sent = serve(() => ({
+      status: 200,
+      data: { success: true, data: { ...BASE, minimumAppVersion: { ios: null, android: null } } },
+    }))
+    await renderRequired()
+    await waitFor(() => {
+      expect(sent.length).toBe(1)
+    })
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5 * 60_000 - 1_000)
+    })
+    expect(sent.length).toBe(1)
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1_000)
+    })
+    expect(sent.length).toBe(2)
+  })
+
+  it('the query is stale after 5 minutes', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     serveMinimum({ ios: null, android: null })
     await renderRequired(client)
