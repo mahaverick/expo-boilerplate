@@ -1,9 +1,15 @@
 /**
  * @file Carries the refresh token in request bodies, since a native app sends
  * no cookie. Adds the stored token to the routes express reads it from, keeps
- * the token that the sign-in routes return, and sets the passkey-setup flag.
+ * the token that the sign-in routes return, removes the token from a failed
+ * request's error, and sets the passkey-setup flag.
  */
-import type { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
+import {
+  isAxiosError,
+  type AxiosInstance,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from 'axios'
 import { revokeToken } from '@/http/revoke'
 import { markSessionChange, refreshTokenStore } from '@/http/token-store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
@@ -120,21 +126,58 @@ async function keepToken(response: AxiosResponse): Promise<AxiosResponse> {
 }
 
 /**
- * Sets the passkey-setup flag when `error` is a refusal for a missing passkey,
- * then rethrows it.
+ * Whether `value` is a plain object.
+ * @param value - Anything.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Removes `refreshToken` from the body a failed request's config still holds.
+ * Axios keeps the serialized body on the error, and a query or mutation error
+ * state would otherwise hold a live token. Other keys stay.
  * @param error - The rejection.
  */
-function flagPasskeySetup(error: unknown): never {
+function dropSentToken(error: unknown): void {
+  if (!isAxiosError(error) || !error.config) return
+  const data: unknown = error.config.data
+  if (typeof data === 'string') {
+    let body: unknown
+    try {
+      body = JSON.parse(data)
+    } catch {
+      return
+    }
+    if (!isRecord(body) || !('refreshToken' in body)) return
+    delete body.refreshToken
+    error.config.data = JSON.stringify(body)
+  } else if (isRecord(data) && 'refreshToken' in data) {
+    const rest = { ...data }
+    delete rest.refreshToken
+    error.config.data = rest
+  }
+}
+
+/**
+ * Removes the sent token from the error, sets the passkey-setup flag when
+ * `error` is a refusal for a missing passkey, then rethrows it.
+ * @param error - The rejection.
+ */
+function onFailure(error: unknown): never {
+  dropSentToken(error)
   if (isPasskeySetupRequired(error)) usePasskeySetupStore.getState().setRequired(true)
   throw error
 }
 
 /**
- * Installs the three interceptors on `client`. Axios runs request interceptors
- * in reverse order of registration and response interceptors in registration
- * order, so register this after the shared chain: the request interceptor then
- * runs first on every attempt, a replay included, and the response
- * interceptors run before the caller's promise settles.
+ * Installs the three interceptors on `client`. Axios runs request
+ * interceptors in reverse order of registration and response interceptors in
+ * registration order, so register this after the shared chain: the request
+ * interceptor then runs first on every attempt, a replay included, and the
+ * response interceptors run before the caller's promise settles. The error
+ * handler runs after the shared chain's, whose replay reads the body before it
+ * is removed.
  * @param client - The axios instance.
  * @param isApiRequest - Whether a request goes to this app's API.
  */
@@ -145,6 +188,6 @@ export function installBodyToken(
   client.interceptors.request.use((config) => (isApiRequest(config) ? addToken(config) : config))
   client.interceptors.response.use(
     (response) => (isApiRequest(response.config) ? keepToken(response) : response),
-    flagPasskeySetup
+    onFailure
   )
 }

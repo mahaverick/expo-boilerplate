@@ -344,6 +344,44 @@ describe('refresh', () => {
   })
 })
 
+describe('a failed request', () => {
+  /**
+   * The body an error's config still holds.
+   * @param error - The rejection.
+   */
+  function sentBody(error: unknown): unknown {
+    const data = (error as AxiosError).config?.data as unknown
+    return typeof data === 'string' ? JSON.parse(data) : data
+  }
+
+  it('keeps no refresh token in the error of an injected route', async () => {
+    await refreshTokenStore.write('tok')
+    serve(() => ({ status: 500, data: { success: false } }))
+    const failure = await apiClient
+      .post('/auth/logout', { x: 1 }, { skipAuthRetry: true })
+      .catch((error: unknown) => error)
+    expect(sentBody(failure)).toEqual({ x: 1 })
+  })
+
+  it('keeps no refresh token in the error of a failed /auth/refresh', async () => {
+    await refreshTokenStore.write('tok')
+    serve(() => ({ status: 503, data: { success: false } }))
+    const failure = await ensureSession().catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(AxiosError)
+    expect(sentBody(failure)).toEqual({})
+    await expect(refreshTokenStore.read()).resolves.toBe('tok')
+  })
+
+  it('keeps no refresh token in the error of a request with no response', async () => {
+    apiClient.defaults.adapter = (config) =>
+      Promise.reject(new AxiosError('offline', 'ERR_NETWORK', config))
+    const failure = await apiClient
+      .post('/auth/logout', { refreshToken: 'mine' }, { skipAuthRetry: true })
+      .catch((error: unknown) => error)
+    expect(sentBody(failure)).toEqual({})
+  })
+})
+
 describe('passkey setup flag', () => {
   it('a 403 PASSKEY_SETUP_REQUIRED sets the flag and the error still rejects', async () => {
     serve(() => ({
