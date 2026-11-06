@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Button } from '@/components/ui/button'
 import { TOUCH_TARGET } from '@/components/ui/touch-target'
 import { cn } from '@/lib/cn'
+import { useTabBarStore } from '@/states/tab-bar.store'
 import { type ToastType, useToastQueueStore } from '@/states/toast-queue.store'
 
 /** How long a success or warning toast shows, in milliseconds. */
@@ -85,21 +86,24 @@ function ToastItem({ item }: { item: QueuedToast }) {
 }
 
 /**
- * Renders the toast queue at the bottom of the screen, above the bottom
- * inset: the newest 3, newest last. The container passes touches through
+ * Renders the toast queue at the bottom of the screen, 8 points above the tab
+ * bar while a tab shows, else above the bottom inset: the newest 3, newest
+ * last. The tab bar's height already holds the bottom inset. The container passes touches through
  * everywhere but the toasts.
  * @returns The toasts, or nothing while the queue is empty.
  */
 export function Toaster() {
   const toasts = useToastQueueStore((state) => state.toasts)
   const insets = useSafeAreaInsets()
+  const tabBarHeight = useTabBarStore((state) => state.height)
   if (toasts.length === 0) return null
   return (
     <View
+      testID="toaster"
       pointerEvents="box-none"
       className="absolute inset-x-0 bottom-0 gap-2 px-4"
       style={{
-        paddingBottom: insets.bottom + 8,
+        paddingBottom: (tabBarHeight > 0 ? tabBarHeight : insets.bottom) + 8,
         paddingLeft: insets.left + 16,
         paddingRight: insets.right + 16,
       }}

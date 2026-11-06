@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, screen } from '@testing-library/react-native'
 import { Text } from 'react-native'
 import { Toaster } from '@/components/ui/toaster'
 import { toast } from '@/lib/toast'
+import { useTabBarStore } from '@/states/tab-bar.store'
 import { useToastQueueStore } from '@/states/toast-queue.store'
 import { assertAccessible, renderWithProviders } from '@/tests/support/a11y'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
@@ -16,6 +17,27 @@ describe('Toaster', () => {
     await cleanup()
     useToastQueueStore.setState({ toasts: [] })
     jest.useRealTimers()
+  })
+
+  it('sits 8 points above the bottom inset with no tab bar', async () => {
+    useTabBarStore.setState({ height: 0 })
+    await renderWithProviders(<Toaster />)
+    await act(() => {
+      toast.error('Failed')
+    })
+    const container = screen.getByTestId('toaster')
+    expect(container.props.style).toMatchObject({ paddingBottom: 34 + 8 })
+  })
+
+  it('sits 8 points above the tab bar while a tab shows', async () => {
+    useTabBarStore.setState({ height: 83 })
+    await renderWithProviders(<Toaster />)
+    await act(() => {
+      toast.error('Failed')
+    })
+    const container = screen.getByTestId('toaster')
+    expect(container.props.style).toMatchObject({ paddingBottom: 83 + 8 })
+    useTabBarStore.setState({ height: 0 })
   })
 
   it('shows a success toast and hides it after 4 seconds', async () => {
