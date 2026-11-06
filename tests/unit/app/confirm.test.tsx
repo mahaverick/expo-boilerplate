@@ -413,7 +413,83 @@ function MailedLink() {
   )
 }
 
+/**
+ * Serves the action, the link request and the refresh, with `verify` answering the confirmation.
+ * @param verify - What the verify post answers.
+ * @returns The requests seen.
+ */
+function serveWithDialog(verify: () => FakeAnswer | 'network-error') {
+  return serve((config) => {
+    if (config.url === ACTION_PATH) {
+      const bearer = String(config.headers.get('Authorization'))
+      return bearer === `Bearer ${tokenWith(OLD_AUTH_TIME)}` ? REAUTH_ANSWER : DONE_ANSWER
+    }
+    if (config.url === '/auth/step-up/link/request') {
+      return {
+        status: 202,
+        data: {
+          success: true,
+          data: { resendAvailableAt: new Date(Date.now() - 1_000).toISOString() },
+        },
+      }
+    }
+    if (config.url === VERIFY_PATH) return verify()
+    return refreshedOld(config)
+  })
+}
+
+/**
+ * Opens the dialog through the caller, mails a link, then opens the mailed link.
+ * @returns The caller's outcomes.
+ */
+async function openLinkWhileWaiting() {
+  const outcomes = await renderCaller(<MailedLink />)
+  await fireEvent.press(screen.getByRole('button', { name: 'Act' }))
+  await fireEvent.press(await screen.findByRole('button', { name: 'Email me a link' }))
+  await screen.findByText('Check your email. Open the link on this phone to continue.')
+  await fireEvent.press(screen.getByRole('button', { name: 'Open the link' }))
+  return outcomes
+}
+
 describe('Confirm with the step-up dialog', () => {
+  it('a dead link says so in the dialog, keeps Resend, and goes back', async () => {
+    serveWithDialog(() => LINK_INVALID)
+    const outcomes = await openLinkWhileWaiting()
+    expect(
+      await screen.findByText(
+        'This link didn’t confirm it’s you. Open the link on the phone where you asked for it.'
+      )
+    ).toBeTruthy()
+    expect(router.back).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Resend link' })).toBeTruthy()
+    expect(screen.getByText('Confirm it’s you')).toBeTruthy()
+    expect(outcomes).toEqual([])
+  })
+
+  it('an ended session says so in the dialog and goes back', async () => {
+    serveWithDialog(() => SESSION_ENDED)
+    await openLinkWhileWaiting()
+    expect(
+      await screen.findByText('Your session ended. Sign in again, then repeat the action.')
+    ).toBeTruthy()
+    expect(router.back).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Resend link' })).toBeTruthy()
+  })
+
+  it('a network failure says so in the dialog and, with nowhere to go back, replaces with Home', async () => {
+    jest.mocked(router.canGoBack).mockReturnValue(false)
+    serveWithDialog(() => 'network-error')
+    await openLinkWhileWaiting()
+    expect(
+      await screen.findByText(
+        'Confirmation didn’t go through. We couldn’t reach the server. Check your connection, then try again.'
+      )
+    ).toBeTruthy()
+    expect(router.replace).toHaveBeenCalledWith('/')
+    expect(router.back).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Resend link' })).toBeTruthy()
+  })
+
   it('a link opened while waiting retries the action once', async () => {
     const sent = serve((config) => {
       if (config.url === ACTION_PATH) {

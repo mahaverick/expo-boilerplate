@@ -180,6 +180,32 @@ export function subscribeAuthMessage(type: AuthMessageType, handler: () => void)
   }
 }
 
+/** The handlers waiting to hear that an emailed step-up link failed to confirm, in this process. */
+const linkFailedHandlers = new Set<(message: string) => void>()
+
+/**
+ * Tells this process's "Confirm it’s you" dialog that `/auth/confirm` could not
+ * confirm, with the copy to show. Expo's own channel beside
+ * `broadcastAuthMessage`, whose signature is react's port: the screen opens
+ * beneath the full-screen dialog, so its own failure states are out of sight.
+ * @param message - What the dialog shows inline.
+ */
+export function broadcastStepUpLinkFailed(message: string): void {
+  for (const handler of linkFailedHandlers) handler(message)
+}
+
+/**
+ * Calls `handler` with the message each time `broadcastStepUpLinkFailed` runs.
+ * @param handler - Called with the copy to show.
+ * @returns Unsubscribes the handler.
+ */
+export function subscribeStepUpLinkFailed(handler: (message: string) => void): () => void {
+  linkFailedHandlers.add(handler)
+  return () => {
+    linkFailedHandlers.delete(handler)
+  }
+}
+
 /** Sends the app to the sign-in screen once a session has ended. */
 export function redirectToLogin(): void {
   router.replace('/login')

@@ -6,7 +6,7 @@ import { Screen } from '@/components/ui/screen'
 import { useSecondsLeft } from '@/hooks/use-seconds-left'
 import { isAuthVerdict } from '@/http/auth-verdict'
 import { useMaintenanceMode } from '@/http/maintenance'
-import { ensureSession, subscribeAuthMessage } from '@/http/session'
+import { ensureSession, subscribeAuthMessage, subscribeStepUpLinkFailed } from '@/http/session'
 import { codeFrom, messageFrom, retryAfterSecondsFrom, statusFrom } from '@/lib/api-error'
 import { formatClock } from '@/lib/countdown'
 import { useUpdateRequired } from '@/lib/minimum-version'
@@ -45,7 +45,9 @@ function expiryTime(expiresAt: number): string {
  * step-up waits, so each one starts at the start view, with the `auth_time`
  * of the token held then as the confirmation to beat. It hides, keeping its
  * place, while the update or maintenance screen covers the app, because a
- * React Native `Modal` draws over everything. Android's back button cancels
+ * React Native `Modal` draws over everything. A link that `/auth/confirm`
+ * could not confirm shows its reason inline on the current view. Android's
+ * back button cancels
  * from the start and from a failed resume; while it waits on a link, or
  * resumes, only Cancel leaves.
  * @param props - The handlers the provider settles the waiters with.
@@ -167,6 +169,12 @@ export function StepUpDialog({ onConfirmed, onDismissed }: StepUpDialogProps) {
     return subscribeAuthMessage('step_up_confirmed', onConfirmedHere)
   }, [isWaiting])
 
+  /** `/auth/confirm` could not confirm beneath the dialog: its reason shows inline on the current view. */
+  const onLinkFailed = useEffectEvent((message: string) => {
+    setNotice(message)
+  })
+  useEffect(() => subscribeStepUpLinkFailed(onLinkFailed), [])
+
   const cancel = <Button variant="ghost" label="Cancel" onPress={onDismissed} />
 
   let body
@@ -183,6 +191,7 @@ export function StepUpDialog({ onConfirmed, onDismissed }: StepUpDialogProps) {
           You confirmed, but we couldn’t reach the server. Check your connection, then select Try
           again.
         </Text>
+        {notice !== null && <InlineError message={notice} />}
         <Button
           variant="primary"
           label="Try again"

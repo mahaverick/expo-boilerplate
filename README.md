@@ -326,10 +326,22 @@ date, the device and the OS version beside each.
       link didn’t confirm it’s you", and phone A's dialog keeps waiting. A
       link requested on phone A confirms there and nowhere else.
 - [ ] **Android back on each dialog view.** Press Back on the start view and on
-      the resume-failed view (turn on airplane mode as the link opens): the
-      dialog cancels, and the action reports its refusal. Press Back on the
-      email view and on "Confirmed. Continuing…": nothing happens, and only
-      Cancel leaves.
+      the resume-failed view: the dialog cancels, and the action reports its
+      refusal. Resume-failed needs a verify that succeeds, then a refresh
+      that fails. The dialog refreshes only when the stored token is no newer
+      than the one it opened with, so use a debugging proxy: let the verify
+      through, rewrite its `accessToken` to the bearer token the request
+      carried, and fail the next `/auth/refresh`. Press Back on the email view and on "Confirmed. Continuing…":
+      nothing happens, and only Cancel leaves.
+- [ ] **A failed link shows in the dialog.** With the dialog open on the email
+      view, open a used or expired link, then turn on airplane mode and open a
+      live one. Each time the app returns to the dialog, which shows the
+      reason inline and keeps Resend link.
+- [ ] **A late foreground refresh keeps the confirmation.** With the dialog on
+      the email view, send the app to the background, then open the mailed
+      link from the mail app. After the action goes through, run a second
+      step-up action, such as Sign out other devices, within 10 minutes. It
+      goes through with no prompt.
 - [ ] **The dialog hides under full maintenance and comes back.** With the
       dialog open, set the API's maintenance mode to `full`. The maintenance
       screen shows with no dialog above it. Set the mode to `off`. The dialog

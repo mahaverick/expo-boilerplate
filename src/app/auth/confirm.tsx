@@ -6,7 +6,7 @@ import { InlineError } from '@/components/ui/inline-error'
 import { Screen } from '@/components/ui/screen'
 import { useSignOut } from '@/hooks/use-sign-out'
 import { useStepUpWaiting } from '@/hooks/use-step-up'
-import { refreshSettled } from '@/http/session'
+import { broadcastStepUpLinkFailed, refreshSettled } from '@/http/session'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import { messageFrom, statusFrom } from '@/lib/api-error'
 import { useClientSettings } from '@/queries/client-settings.queries'
@@ -36,6 +36,33 @@ function inMinutes(seconds: number): string {
 }
 
 /**
+ * What a waiting dialog shows when the verify fails: the screen's title and
+ * reason for that failure, without its own next step, since the dialog offers
+ * Resend.
+ * @param error - The verify's failure.
+ * @param stepUpTtl - The link's lifetime in seconds, when known.
+ * @returns The inline notice.
+ */
+function dialogNotice(error: unknown, stepUpTtl: number | undefined): string {
+  const failed = statusFrom(error)
+  if (failed === 400) {
+    const within = stepUpTtl === undefined ? '' : `, within ${inMinutes(stepUpTtl)}`
+    return `This link didn’t confirm it’s you. Open the link on the phone where you asked for it${within}.`
+  }
+  if (failed === 401) return 'Your session ended. Sign in again, then repeat the action.'
+  return `Confirmation didn’t go through. ${messageFrom(error)}`
+}
+
+/**
+ * Leaves the screen once the dialog it opened beneath has its answer: back,
+ * or Home when there is nowhere to go back to.
+ */
+function leave(): void {
+  if (router.canGoBack()) router.back()
+  else router.replace('/')
+}
+
+/**
  * Where the emailed "Confirm it’s you" link opens: `/auth/confirm?token=…`.
  *
  * The screen reads `token` once and clears it from the route; the mail's
@@ -49,7 +76,10 @@ function inMinutes(seconds: number): string {
  *
  * It often opens beneath the full-screen dialog, which shows "Confirmed.
  * Continuing…" itself. When a dialog was waiting, the screen goes back, or
- * replaces itself with Home when there is nowhere to go back to. A 400 is a
+ * replaces itself with Home when there is nowhere to go back to. A failure
+ * with a dialog still open goes to the dialog (`broadcastStepUpLinkFailed`),
+ * which shows it inline, and the screen leaves the same way. Without a
+ * dialog the screen shows the failure itself. A 400 is a
  * dead link and a 401 the session's end; neither offers Try again. Any other
  * failure leaves the link usable, so Try again posts it again on purpose.
  */
@@ -94,11 +124,15 @@ export default function Confirm() {
         onSuccess: () => {
           const waited = waitedAtStart || dialogWaiting.current
           setOutcome({ confirmed: true, waited })
-          if (!waited) return
-          if (router.canGoBack()) router.back()
-          else router.replace('/')
+          if (waited) leave()
         },
         onError: (error) => {
+          // A failure leaves the dialog open, so only one still open hears it.
+          if (dialogWaiting.current) {
+            broadcastStepUpLinkFailed(dialogNotice(error, stepUpTtl))
+            leave()
+            return
+          }
           setOutcome({ confirmed: false, error })
         },
         onSettled: () => {
