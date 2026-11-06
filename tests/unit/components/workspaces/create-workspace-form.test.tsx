@@ -192,4 +192,51 @@ describe('CreateWorkspaceForm', () => {
       )
     ).toBeTruthy()
   })
+
+  it('clears the taken-address message when the web address changes', async () => {
+    serve(() => ({
+      status: 409,
+      data: { success: false, code: 'slug_taken', message: 'Taken.' },
+    }))
+    await renderScreen(<CreateWorkspaceForm onCreated={() => {}} />)
+    await fill('Acme', 'acme')
+    await fireEvent.press(screen.getByRole('button', { name: 'Create workspace' }))
+    expect(await screen.findByText('Taken.')).toBeTruthy()
+    await fireEvent.changeText(screen.getByLabelText('Web address'), 'acme-2')
+    expect(screen.queryByText('Taken.')).toBeNull()
+  })
+
+  it('clears a 400 field error on Name when the name changes', async () => {
+    serve(() => ({
+      status: 400,
+      data: { success: false, message: 'Invalid.', errors: { name: ['Bad name.'] } },
+    }))
+    await renderScreen(<CreateWorkspaceForm onCreated={() => {}} />)
+    await fill('Acme', 'acme')
+    await fireEvent.press(screen.getByRole('button', { name: 'Create workspace' }))
+    expect(await screen.findByText('Bad name.')).toBeTruthy()
+    await fireEvent.changeText(screen.getByLabelText('Name'), 'Acme Inc')
+    expect(screen.queryByText('Bad name.')).toBeNull()
+  })
+
+  it('updates a submit-time schema error on Name once the person types', async () => {
+    await renderScreen(<CreateWorkspaceForm onCreated={() => {}} />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Create workspace' }))
+    expect(await screen.findByText('Name is required.')).toBeTruthy()
+    await fireEvent.changeText(screen.getByLabelText('Name'), 'Acme')
+    await waitFor(() => {
+      expect(screen.queryByText('Name is required.')).toBeNull()
+    })
+  })
+
+  it('updates a Description length error once the person shortens it', async () => {
+    await renderScreen(<CreateWorkspaceForm onCreated={() => {}} />)
+    await fill('Acme', 'acme', 'x'.repeat(1001))
+    await fireEvent.press(screen.getByRole('button', { name: 'Create workspace' }))
+    expect(await screen.findByText(/Description must be at most 1000/)).toBeTruthy()
+    await fireEvent.changeText(screen.getByLabelText('Description'), 'short')
+    await waitFor(() => {
+      expect(screen.queryByText(/Description must be at most 1000/)).toBeNull()
+    })
+  })
 })

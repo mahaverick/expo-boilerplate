@@ -127,6 +127,21 @@ export function CreateWorkspaceForm({ onCreated }: CreateWorkspaceFormProps) {
     },
   })
 
+  /**
+   * Builds a change handler that drops the server's message for a field, then
+   * passes the text on.
+   * @param name - The field.
+   * @param handleChange - The field's TanStack handler.
+   * @returns The handler for `onChangeText`.
+   */
+  const clearing = (name: FieldName, handleChange: (text: string) => void) => (text: string) => {
+    setServerFields((current) => {
+      if (current[name] === undefined) return current
+      return { ...current, [name]: undefined }
+    })
+    handleChange(text)
+  }
+
   return (
     <>
       <form.Field name="name">
@@ -134,7 +149,7 @@ export function CreateWorkspaceForm({ onCreated }: CreateWorkspaceFormProps) {
           <TextField
             label="Name"
             value={field.state.value}
-            onChangeText={field.handleChange}
+            onChangeText={clearing(field.name, field.handleChange)}
             onBlur={field.handleBlur}
             error={firstMessage(field.state.meta.errors) ?? serverFields.name}
             autoCapitalize="words"
@@ -148,7 +163,7 @@ export function CreateWorkspaceForm({ onCreated }: CreateWorkspaceFormProps) {
             label="Web address"
             hint={SLUG_HINT}
             value={field.state.value}
-            onChangeText={field.handleChange}
+            onChangeText={clearing(field.name, field.handleChange)}
             onBlur={field.handleBlur}
             error={firstMessage(field.state.meta.errors) ?? serverFields.slug}
             autoCapitalize="none"
@@ -163,7 +178,7 @@ export function CreateWorkspaceForm({ onCreated }: CreateWorkspaceFormProps) {
             label="Description"
             hint="Optional."
             value={field.state.value ?? ''}
-            onChangeText={field.handleChange}
+            onChangeText={clearing(field.name, field.handleChange)}
             onBlur={field.handleBlur}
             error={firstMessage(field.state.meta.errors) ?? serverFields.description}
             multiline
