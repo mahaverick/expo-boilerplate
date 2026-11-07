@@ -25,22 +25,23 @@ interface ListPages<T> {
 }
 
 /** The cursors of the pages asked for, for one request. `undefined` is page 1. */
-interface PagerState<T> {
+interface PagerState {
   signature: string
   cursors: (string | undefined)[]
-  /** Page 1's data when page 2 was asked for; the later cursors come from it. */
-  base: ListPage<T> | undefined
+  /** The key of page 1's last row when page 2 was asked for; the later cursors seek after it. */
+  boundary: string | undefined
 }
 
 /**
  * Pages a list with "Load more". Each page is its own query from the shared
  * `listQueryOptions`, keyed by its cursor; the rows join in order, each key
- * once. A changed request (compared by value) starts again at page 1. So does
- * a page 1 whose rows changed after page 2 was asked for (an invalidation or a
- * refocus that brought new rows): express's cursors seek after a boundary row
- * (`list-page.utilities.ts`), so cursors taken from page 1's old rows would
- * skip or repeat rows. A refetch that brings the same rows keeps the pages:
- * structural sharing keeps page 1's data object, and its boundary row holds.
+ * once. A changed request (compared by value) starts again at page 1. So does a
+ * page 1 whose last row changed after page 2 was asked for (an invalidation or
+ * a refocus that brought rows in or took rows out): express's cursors seek after
+ * a boundary row (`list-page.utilities.ts`), so cursors taken from the old
+ * boundary would skip or repeat rows. While the last row of page 1 holds, the
+ * later pages stay valid, so an edit that leaves it (a total or a read mark
+ * changing, a row removed from a later page) keeps them.
  * It never uses `useInfiniteQuery`, because the shared options serve one page.
  * @param options - Builds the list's query options from a request with a cursor.
  * @param request - The list's request, without a cursor.
@@ -53,15 +54,15 @@ export function useListPages<T, K extends QueryKey>(
   keyOf: (item: T) => string
 ): ListPages<T> {
   const signature = JSON.stringify(request)
-  const [state, setState] = useState<PagerState<T>>({
+  const [state, setState] = useState<PagerState>({
     signature,
     cursors: [undefined],
-    base: undefined,
+    boundary: undefined,
   })
   let cursors = state.cursors
   if (state.signature !== signature) {
     cursors = [undefined]
-    setState({ signature, cursors, base: undefined })
+    setState({ signature, cursors, boundary: undefined })
   }
 
   const all = useQueries({
@@ -70,10 +71,13 @@ export function useListPages<T, K extends QueryKey>(
     ),
   })
   // Page 1's data is a subscribed field, so new rows re-render at once and this render shows page 1 alone.
-  const refolded = cursors.length > 1 && all[0]?.data !== state.base
+  const firstItems = all[0]?.data?.items
+  const lastOfFirst = firstItems?.at(-1)
+  const boundaryNow = lastOfFirst === undefined ? undefined : keyOf(lastOfFirst)
+  const refolded = cursors.length > 1 && boundaryNow !== state.boundary
   if (refolded) {
     cursors = [undefined]
-    setState({ signature, cursors, base: undefined })
+    setState({ signature, cursors, boundary: undefined })
   }
   const results = refolded ? all.slice(0, 1) : all
 
@@ -107,7 +111,7 @@ export function useListPages<T, K extends QueryKey>(
       setState({
         signature,
         cursors: [...cursors, next],
-        base: cursors.length === 1 ? first?.data : state.base,
+        boundary: cursors.length === 1 ? boundaryNow : state.boundary,
       })
     },
     retry: () => {

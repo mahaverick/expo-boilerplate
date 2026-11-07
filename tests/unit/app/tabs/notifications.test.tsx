@@ -3,6 +3,8 @@ import { QueryClient } from '@tanstack/react-query'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react-native'
 import { router } from 'expo-router'
 import Notifications from '@/app/(app)/(tabs)/notifications'
+import { notificationsListOptions } from '@/queries/notification.queries'
+import { useToastQueueStore } from '@/states/toast-queue.store'
 import { renderScreen, restoreApi, serve, type FakeAnswer } from '@/tests/support/api'
 import { afterEach, describe, expect, it } from '@/tests/support/runner'
 import { envelope, membership } from '@/tests/support/workspace-api'
@@ -12,6 +14,7 @@ jest.mock('expo-router', () => ({
 }))
 
 afterEach(() => {
+  useToastQueueStore.getState().remove()
   restoreApi()
   jest.clearAllMocks()
 })
@@ -54,7 +57,11 @@ function page(items: unknown[], next: string | null = null, total?: number) {
 /** What a test changes in the served API. */
 interface Serving {
   list?: (params: Record<string, unknown> | undefined) => FakeAnswer
-  unread?: number
+  unread?: number | (() => number)
+  /** Called for every write that reaches the server. */
+  onWrite?: (method: string, url: string) => void
+  /** Answers every write with a 500. */
+  failWrites?: boolean
   /** Holds every write's answer until this settles. */
   hold?: Promise<void>
 }
@@ -74,14 +81,26 @@ function serveInbox(serving: Serving = {}) {
         page: { hasNext: false, nextCursor: null },
       })
     }
-    if (method !== 'GET') await serving.hold
+    if (method !== 'GET') {
+      await serving.hold
+      serving.onWrite?.(method, url)
+      if (serving.failWrites) {
+        return { status: 500, data: { success: false, message: 'Write failed' } }
+      }
+    }
     if (method === 'PATCH' && url === '/notifications/read-all') return envelope({ count: 2 })
     if (method === 'PATCH') return envelope(note('x', { readAt: '2026-11-02T00:00:00.000Z' }))
     if (method === 'DELETE') return envelope(null)
     if (url === '/notifications') {
       const params = config.params as Record<string, unknown> | undefined
       if (params?.unread === true && params.limit === 1) {
-        return envelope(page([], null, serving.unread ?? 2))
+        return envelope(
+          page(
+            [],
+            null,
+            typeof serving.unread === 'function' ? serving.unread() : (serving.unread ?? 2)
+          )
+        )
       }
       return serving.list ? serving.list(params) : envelope(page([note('n1')]))
     }
@@ -355,5 +374,93 @@ describe('Notifications tab', () => {
     ).toBeTruthy()
     expect(screen.queryByText('You have no notifications.')).toBeNull()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
+  })
+})
+
+describe('Notifications tab writes that fail', () => {
+  it('toasts a failed Delete, though the row left at once', async () => {
+    const gate = deferred()
+    serveInbox({ failWrites: true, hold: gate.promise })
+    await renderTab()
+    await fireEvent.press(await screen.findByRole('button', { name: 'Delete "Title n1"' }))
+    await waitFor(() => expect(screen.queryByText('Title n1')).toBeNull())
+    gate.release()
+    await waitFor(() =>
+      expect(useToastQueueStore.getState().toasts.map((toast) => toast.title)).toEqual([
+        'Write failed',
+      ])
+    )
+    expect(await screen.findByText('Title n1')).toBeTruthy()
+  })
+
+  it('toasts a failed Mark read in the Unread view', async () => {
+    const gate = deferred()
+    serveInbox({ failWrites: true, hold: gate.promise })
+    await renderTab()
+    await screen.findByText('Title n1')
+    await fireEvent.press(screen.getByRole('radio', { name: 'Unread' }))
+    await fireEvent.press(await screen.findByRole('button', { name: 'Mark "Title n1" as read' }))
+    await waitFor(() => expect(screen.queryByText('Title n1')).toBeNull())
+    gate.release()
+    await waitFor(() =>
+      expect(useToastQueueStore.getState().toasts.map((toast) => toast.title)).toEqual([
+        'Write failed',
+      ])
+    )
+  })
+
+  it('toasts a failed Mark all read', async () => {
+    serveInbox({ failWrites: true })
+    await renderTab()
+    await screen.findByText('Title n1')
+    const all = screen.getByRole('button', { name: 'Mark all read' })
+    await waitFor(() => expect(all).toBeEnabled())
+    await fireEvent.press(all)
+    await waitFor(() =>
+      expect(useToastQueueStore.getState().toasts.map((toast) => toast.title)).toEqual([
+        'Write failed',
+      ])
+    )
+  })
+})
+
+describe('Notifications tab with two pages', () => {
+  it('marks a page-2 row read in the Unread view without dropping page 2', async () => {
+    const unread = ['u1', 'u2', 'u3', 'u4']
+    serveInbox({
+      unread: () => unread.length,
+      onWrite: (method, url) => {
+        if (method === 'PATCH') unread.splice(unread.indexOf(url.split('/')[2] ?? ''), 1)
+      },
+      list: (params) => {
+        const start = params?.cursor === 'u2' ? 2 : 0
+        const ids = unread.slice(start, start + 2)
+        return envelope(
+          page(
+            ids.map((id) => note(id)),
+            start === 0 && unread.length > 2 ? 'u2' : null
+          )
+        )
+      },
+    })
+    const client = await renderTab()
+    await screen.findByText('Title u1')
+    await fireEvent.press(screen.getByRole('radio', { name: 'Unread' }))
+    await screen.findByRole('button', { name: 'Load more' })
+    await fireEvent.press(screen.getByRole('button', { name: 'Load more' }))
+    expect(await screen.findByText('Title u4')).toBeTruthy()
+    await fireEvent.press(screen.getByRole('button', { name: 'Mark "Title u3" as read' }))
+    await waitFor(() => expect(screen.queryByText('Title u3')).toBeNull())
+    await waitFor(() =>
+      expect(
+        (
+          client.getQueryData(notificationsListOptions({ unread: true, limit: 1 }).queryKey) as {
+            total: { count: number }
+          }
+        ).total.count
+      ).toBe(3)
+    )
+    expect(screen.getByText('Title u1')).toBeTruthy()
+    expect(screen.getByText('Title u4')).toBeTruthy()
   })
 })

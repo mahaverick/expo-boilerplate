@@ -10,9 +10,8 @@ import { TextField } from '@/components/ui/text-field'
 import { TOUCH_TARGET } from '@/components/ui/touch-target'
 import { NOTIFICATIONS_ERROR, NOTIFICATIONS_MORE_ERROR } from '@/copy/notifications'
 import { useListPages } from '@/hooks/use-list-pages'
+import { useNotificationWriteToasts } from '@/hooks/use-notification-write-toasts'
 import { cn } from '@/lib/cn'
-import { toast } from '@/lib/toast'
-import { writeFailureMessage } from '@/lib/write-failure'
 import {
   notificationsListOptions,
   useMarkAllRead,
@@ -64,6 +63,7 @@ export default function Notifications() {
   )
   const count = useUnreadCount().data
   const markAll = useMarkAllRead()
+  useNotificationWriteToasts()
   const markingAll = useRef(false)
 
   let body
@@ -138,9 +138,6 @@ export default function Notifications() {
           if (markingAll.current) return
           markingAll.current = true
           markAll.mutate(undefined, {
-            onError: (error) => {
-              toast.error(writeFailureMessage(error))
-            },
             onSettled: () => {
               markingAll.current = false
             },

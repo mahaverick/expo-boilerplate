@@ -8,8 +8,6 @@ import { cn } from '@/lib/cn'
 import { formatDateTime } from '@/lib/format'
 import { notificationHref } from '@/lib/notification-href'
 import { humanizeNotificationType } from '@/lib/notification-type'
-import { toast } from '@/lib/toast'
-import { writeFailureMessage } from '@/lib/write-failure'
 import {
   useDeleteNotification,
   useMarkRead,
@@ -60,17 +58,13 @@ export function NotificationRow({ notification }: { notification: Notification }
   /**
    * Starts a request unless one from this row is still running. The query
    * state updates a tick after a press, so the flag closes that gap.
-   * @param start - Sends the request with these callbacks.
+   * The failure toast is the screen's: this row may be gone by then.
+   * @param start - Sends the request with this callback.
    */
-  const send = (
-    start: (callbacks: { onError: (error: Error) => void; onSettled: () => void }) => void
-  ) => {
+  const send = (start: (callbacks: { onSettled: () => void }) => void) => {
     if (inFlight.current) return
     inFlight.current = true
     start({
-      onError: (error) => {
-        toast.error(writeFailureMessage(error))
-      },
       onSettled: () => {
         inFlight.current = false
       },

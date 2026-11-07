@@ -278,6 +278,40 @@ describe('useListPages', () => {
     expect(result.current.items.map((r) => r.id)).toEqual(['e', 'd', 'c', 'b'])
   })
 
+  it('keeps page 2 when page 1 changes only in its total and its rows’ fields', async () => {
+    const rows = ['e', 'd', 'c', 'b', 'a']
+    const { result } = await loadTwoPages(rows)
+    serve((config) => {
+      const cursor = (config.params as ListRequest).cursor
+      const start = cursor === undefined ? 0 : rows.indexOf(cursor) + 1
+      const ids = rows.slice(start, start + 2)
+      const answer = pageOf(ids, start + 2 < rows.length ? (ids.at(-1) ?? null) : null)
+      const data = answer.data.data as Record<string, unknown>
+      data.items = ids.map((id) => ({ id, readAt: 'now' }))
+      if (cursor === undefined) data.total = { count: 4, capped: false }
+      return answer
+    })
+    await act(() => client.invalidateQueries({ queryKey: ['things'] }))
+    await waitFor(() => expect(result.current.items[0]).toEqual({ id: 'e', readAt: 'now' }))
+    expect(result.current.items.map((r) => r.id)).toEqual(['e', 'd', 'c', 'b'])
+  })
+
+  it('starts again at page 1 when a new row pushes out its last row', async () => {
+    const rows = ['e', 'd', 'c', 'b', 'a']
+    const { result } = await loadTwoPages(rows)
+    rows.unshift('f')
+    await act(() => client.invalidateQueries({ queryKey: ['things'] }))
+    await waitFor(() => expect(result.current.items.map((r) => r.id)).toEqual(['f', 'e']))
+  })
+
+  it('starts again at page 1 when its last row is removed', async () => {
+    const rows = ['e', 'd', 'c', 'b', 'a']
+    const { result } = await loadTwoPages(rows)
+    rows.splice(1, 1)
+    await act(() => client.invalidateQueries({ queryKey: ['things'] }))
+    await waitFor(() => expect(result.current.items.map((r) => r.id)).toEqual(['e', 'c']))
+  })
+
   it('shows a row that two pages hold only once', async () => {
     serve((config) =>
       (config.params as ListRequest).cursor === 'c2'
