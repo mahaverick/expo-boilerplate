@@ -1,4 +1,4 @@
-import { Redirect, type Href, useGlobalSearchParams, useLocalSearchParams } from 'expo-router'
+import { Redirect, useGlobalSearchParams, useLocalSearchParams } from 'expo-router'
 import type { WorkspaceSection } from '@/constants/settings'
 
 /**
@@ -16,7 +16,7 @@ export function WorkspaceSettingsRedirect({ to }: { to: WorkspaceSection['key'] 
     if (key === 'token' || key === 'slug' || key === 'rest' || value === undefined) continue
     for (const item of Array.isArray(value) ? value : [value]) query.append(key, item)
   }
-  const path = `/settings/workspace/${slug}/${to}`
+  const path = `/settings/workspace/${slug}/${to}` as const
   const text = query.toString()
-  return <Redirect href={(text ? `${path}?${text}` : path) as Href} />
+  return <Redirect href={text ? (`${path}?${text}` as const) : path} />
 }

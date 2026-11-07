@@ -10,6 +10,8 @@ interface ListPages<T> {
   isPending: boolean
   /** True only when the first page failed and there is no data. */
   isError: boolean
+  /** The first page's error, for a caller that reads its status. */
+  error: Error | null
   /** True when the last loaded page has a page after it. */
   hasNext: boolean
   /** Loads the page after the last loaded one. Does nothing while one loads or fails. */
@@ -67,6 +69,7 @@ export function useListPages<T, K extends QueryKey>(
     items,
     isPending: first?.isPending ?? true,
     isError: first?.isError === true && first.data === undefined,
+    error: first?.error ?? null,
     hasNext,
     isLoadingMore: later && last?.data === undefined && last?.isError !== true,
     loadMoreFailed,

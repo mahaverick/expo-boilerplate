@@ -69,18 +69,18 @@ export const WORKSPACE_SECTIONS: ReadonlyArray<WorkspaceSection> = [
     key: 'general',
     title: 'General',
     description: 'The workspace’s details, time zone, and language and region.',
-    path: (slug) => `/settings/workspace/${slug}/general` as Href,
+    path: (slug) => `/settings/workspace/${slug}/general`,
   },
   {
     key: 'members',
     title: 'Members',
     description: 'Members, roles and pending invitations.',
-    path: (slug) => `/settings/workspace/${slug}/members` as Href,
+    path: (slug) => `/settings/workspace/${slug}/members`,
   },
   {
     key: 'activity',
     title: 'Activity',
     description: 'Every change made in this workspace, newest first.',
-    path: (slug) => `/settings/workspace/${slug}/activity` as Href,
+    path: (slug) => `/settings/workspace/${slug}/activity`,
   },
 ]

@@ -8,6 +8,7 @@ import Workspace from '@/app/(app)/(tabs)/workspace'
 import NotificationPreferences from '@/app/(app)/settings/account/notifications'
 import Profile from '@/app/(app)/settings/account/profile'
 import Security from '@/app/(app)/settings/account/security'
+import WorkspaceActivity from '@/app/(app)/settings/workspace/[slug]/activity'
 import WorkspaceGeneral from '@/app/(app)/settings/workspace/[slug]/general'
 import WorkspaceMembers from '@/app/(app)/settings/workspace/[slug]/members'
 import Overview from '@/app/(app)/tenants/[slug]/index'
@@ -26,6 +27,7 @@ import { StepUpDialog } from '@/components/step-up/step-up-dialog'
 import { StepUpProvider } from '@/components/step-up/step-up-provider'
 import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
 import type { MembershipRole } from '@/constants/roles'
+import { tenantAuditListOptions } from '@/queries/audit.queries'
 import { authKeys } from '@/queries/auth.queries'
 import { billingKeys } from '@/queries/billing.queries'
 import { clientSettingsKeys } from '@/queries/client-settings.queries'
@@ -284,6 +286,40 @@ for (const [name, tenant] of MEMBERS_SCREENS) {
         <StepUpProvider>
           <WorkspaceMembers />
         </StepUpProvider>
+      </QueryClientProvider>
+    ),
+  })
+}
+
+/** The Activity screen as an owner and a viewer sees it. */
+const ACTIVITY_SCREENS: Array<[string, Record<string, unknown>]> = [
+  ['Workspace Activity (owner)', ACME],
+  ['Workspace Activity (viewer)', { ...ACME, role: 'viewer' }],
+]
+for (const [name, tenant] of ACTIVITY_SCREENS) {
+  const activityClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  activityClient.setQueryData(tenantKeys.detail('acme'), tenant)
+  activityClient.setQueryData(tenantAuditListOptions('acme', {}).queryKey, {
+    items: [
+      {
+        id: 'e1',
+        occurredAt: '2026-11-01T10:00:00.000Z',
+        action: 'tenant.updated',
+        access: 'platform',
+        actor: { id: 'u1', name: 'Ada Lovelace', email: 'ada@example.com' },
+        target: { type: 'tenant', id: 't-acme' },
+        metadata: {},
+      },
+    ],
+    page: { hasNext: false, nextCursor: null, prevCursor: null, hasPrev: false, limit: 20 },
+  })
+  A11Y_SCREENS.push({
+    name,
+    element: (
+      <QueryClientProvider client={activityClient}>
+        <WorkspaceActivity />
       </QueryClientProvider>
     ),
   })
