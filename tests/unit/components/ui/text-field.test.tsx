@@ -28,4 +28,16 @@ describe('TextField', () => {
     )
     expect(screen.getByLabelText('Email').props.keyboardType).toBe('email-address')
   })
+
+  it('grows to about four lines and starts at the top when multiline', async () => {
+    await renderWithProviders(
+      <TextField label="About" value="" onChangeText={() => {}} multiline hint="Optional." />
+    )
+    const input = screen.getByLabelText('About')
+    expect(input.props.multiline).toBe(true)
+    expect(input.props.textAlignVertical).toBe('top')
+    expect(input.props.className).toContain('min-h-32')
+    expect(input.props.accessibilityHint).toBe('Optional.')
+    expect(screen.getByText('About')).toBeTruthy()
+  })
 })
