@@ -5,6 +5,7 @@ import Home from '@/app/(app)/(tabs)/index'
 import Notifications from '@/app/(app)/(tabs)/notifications'
 import Settings from '@/app/(app)/(tabs)/settings'
 import Workspace from '@/app/(app)/(tabs)/workspace'
+import DeleteAccount from '@/app/(app)/settings/account/delete'
 import NotificationPreferences from '@/app/(app)/settings/account/notifications'
 import Profile from '@/app/(app)/settings/account/profile'
 import Security from '@/app/(app)/settings/account/security'
@@ -33,6 +34,7 @@ import { StepUpDialog } from '@/components/step-up/step-up-dialog'
 import { StepUpProvider } from '@/components/step-up/step-up-provider'
 import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
 import type { MembershipRole } from '@/constants/roles'
+import { accountDeletionKeys } from '@/queries/account-deletion.queries'
 import { tenantAuditListOptions } from '@/queries/audit.queries'
 import { authKeys } from '@/queries/auth.queries'
 import { billingKeys } from '@/queries/billing.queries'
@@ -628,6 +630,23 @@ A11Y_SCREENS.push({
     <QueryClientProvider client={securityClient}>
       <StepUpProvider>
         <Security />
+      </StepUpProvider>
+    </QueryClientProvider>
+  ),
+})
+
+/** A client holding the deletion read, so the screen makes no request. */
+const deleteClient = new QueryClient({
+  defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+})
+deleteClient.setQueryData(clientSettingsKeys.all, null)
+deleteClient.setQueryData(accountDeletionKeys.request, null)
+A11Y_SCREENS.push({
+  name: 'Delete account',
+  element: (
+    <QueryClientProvider client={deleteClient}>
+      <StepUpProvider>
+        <DeleteAccount />
       </StepUpProvider>
     </QueryClientProvider>
   ),

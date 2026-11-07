@@ -9,7 +9,7 @@ export interface SettingsGroup {
 
 /** An Account row: the screen it opens and the words that describe it. */
 export interface AccountSection {
-  key: 'profile' | 'security' | 'notifications'
+  key: 'profile' | 'security' | 'notifications' | 'delete'
   title: string
   description: string
   href: Href
@@ -48,6 +48,12 @@ export const ACCOUNT_SECTIONS: ReadonlyArray<AccountSection> = [
     title: 'Notifications',
     description: 'How each kind of notification reaches you.',
     href: '/settings/account/notifications',
+  },
+  {
+    key: 'delete',
+    title: 'Delete account',
+    description: 'Ask us to delete your account.',
+    href: '/settings/account/delete',
   },
 ]
 

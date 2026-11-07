@@ -58,11 +58,18 @@ describe('Settings', () => {
       'How each kind of notification reaches you.',
       '/settings/account/notifications',
     ],
+    ['Delete account', 'Ask us to delete your account.', '/settings/account/delete'],
   ])('the %s row shows %s and pushes %s', async (title, description, href) => {
     await renderScreen(<Settings />)
     expect(screen.getByText(description)).toBeTruthy()
     await fireEvent.press(screen.getByRole('link', { name: title }))
     expect(router.push).toHaveBeenCalledWith(href as Href)
+  })
+
+  it('lists Delete account last in the Account group', async () => {
+    await renderScreen(<Settings />)
+    const titles = screen.getAllByRole('link').map((link) => String(link.props.accessibilityLabel))
+    expect(titles.slice(0, 4)).toEqual(['Profile', 'Security', 'Notifications', 'Delete account'])
   })
 
   it('says to choose a workspace first when none is current', async () => {

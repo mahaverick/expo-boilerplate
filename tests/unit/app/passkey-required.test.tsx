@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals'
+import { QueryClient } from '@tanstack/react-query'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import Constants from 'expo-constants'
 import { router } from 'expo-router'
@@ -6,6 +7,7 @@ import * as WebBrowser from 'expo-web-browser'
 import { BackHandler, Linking } from 'react-native'
 import PasskeyRequired from '@/app/passkey-required'
 import { refreshTokenStore } from '@/http/token-store'
+import { clientSettingsKeys } from '@/queries/client-settings.queries'
 import { useAuthStore } from '@/states/auth.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 import { resetSecureStore } from '@/tests/mocks/expo-secure-store'
@@ -49,6 +51,26 @@ describe('PasskeyRequired', () => {
       screen.getByText(
         'Your account needs a passkey. This app can’t add one yet. Add one on the website under Settings, then Security, then come back.'
       )
+    ).toBeTruthy()
+  })
+
+  it('says how to ask for deletion by email, with a support address', async () => {
+    setWebUrl(undefined)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(clientSettingsKeys.all, { supportEmail: 'help@example.com' })
+    await renderScreen(<PasskeyRequired />, client)
+    expect(
+      screen.getByText('To ask us to delete your account instead, write to help@example.com.')
+    ).toBeTruthy()
+  })
+
+  it('says how to ask for deletion by email, without a support address', async () => {
+    setWebUrl(undefined)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(clientSettingsKeys.all, null)
+    await renderScreen(<PasskeyRequired />, client)
+    expect(
+      screen.getByText('To ask us to delete your account instead, write to our support team.')
     ).toBeTruthy()
   })
 
