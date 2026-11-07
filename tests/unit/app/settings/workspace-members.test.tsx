@@ -131,6 +131,7 @@ function serveMembers(serving: Serving = {}) {
     }
     const written = serving.write?.(method, url)
     if (written) return written
+    if (method === 'GET' && url === '/tenants/acme/invitations') return envelope(page([]))
     if (method === 'GET') return { status: 404, data: { success: false, message: 'Not found' } }
     return envelope(null)
   })
@@ -194,7 +195,7 @@ describe('Members screen', () => {
     expect(screen.getByText('u2@example.com')).toBeTruthy()
     expect(screen.getByText('Bob Stone')).toBeTruthy()
     expect(screen.getByText('—')).toBeTruthy()
-    expect(screen.getByText('Viewer')).toBeTruthy()
+    expect(within(screen.getByTestId('member-m-u2')).getByText('Viewer')).toBeTruthy()
     expect(screen.getByText('Editor')).toBeTruthy()
   })
 
@@ -528,5 +529,56 @@ describe('Members screen', () => {
       .map((button) => button.props.accessibilityLabel as string)
     expect(names).toContain('Remove Carol Ng')
     expect(within(screen.getByTestId('member-m-u2')).getByText('Bob Stone')).toBeTruthy()
+  })
+
+  describe('invitations', () => {
+    /** Serves one pending invitation to the invitations route. */
+    const withInvitation = (method: string, url: string) =>
+      method === 'GET' && url === '/tenants/acme/invitations'
+        ? envelope(
+            page([
+              {
+                id: 'i1',
+                email: 'new@example.com',
+                role: 'viewer',
+                invitedBy: null,
+                expiresAt: '2030-01-10T10:00:00.000Z',
+                createdAt: '2030-01-01T10:00:00.000Z',
+                lastSentAt: null,
+                resendAvailableAt: null,
+              },
+            ])
+          )
+        : undefined
+
+    it('shows an owner the invite form and the pending list below the members', async () => {
+      serveMembers({ write: withInvitation })
+      await renderMembers()
+      expect(await screen.findByText('Invite a member')).toBeTruthy()
+      expect(await screen.findByText('new@example.com')).toBeTruthy()
+      expect(screen.getByText('Pending invitations')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Invite member' })).toBeTruthy()
+    })
+
+    it('shows a viewer neither the form nor the list', async () => {
+      const sent = serveMembers({
+        tenant: acme({ role: 'viewer' }),
+        members: [BOB, member('u1', 'viewer', ['Ada', 'L'])],
+        write: withInvitation,
+      })
+      await renderMembers()
+      await screen.findByText('Bob Stone')
+      expect(screen.queryByText('Invite a member')).toBeNull()
+      expect(screen.queryByText('Pending invitations')).toBeNull()
+      expect(sent.some((config) => config.url === '/tenants/acme/invitations')).toBe(false)
+    })
+
+    it('shows staff the list read-only and no form', async () => {
+      serveMembers({ tenant: acme({ access: 'platform' }), write: withInvitation })
+      await renderMembers()
+      expect(await screen.findByText('new@example.com')).toBeTruthy()
+      expect(screen.queryByText('Invite a member')).toBeNull()
+      expect(screen.queryByRole('button', { name: /Resend/ })).toBeNull()
+    })
   })
 })

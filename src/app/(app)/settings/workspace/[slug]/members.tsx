@@ -5,7 +5,9 @@ import { ReadOnlyNote } from '@/components/settings/read-only-note'
 import { LoadError } from '@/components/shared/load-error'
 import { Button } from '@/components/ui/button'
 import { Screen } from '@/components/ui/screen'
+import { InviteForm } from '@/components/workspace-settings/invite-form'
 import { MemberRow } from '@/components/workspace-settings/member-row'
+import { PendingInvitations } from '@/components/workspace-settings/pending-invitations'
 import { canManageTenant, type MembershipRole } from '@/constants/roles'
 import { PLATFORM_TENANT_SLUG } from '@/constants/routes'
 import { useListPages } from '@/hooks/use-list-pages'
@@ -140,13 +142,23 @@ export default function WorkspaceMembers() {
     body = <ActivityIndicator accessibilityLabel="Loading workspace" />
   } else {
     const readOnly = access === 'platform'
+    const manager = canManageTenant(role)
     body = (
-      <View className="gap-3 rounded-lg border border-border p-4">
-        <Text className="text-base text-muted-foreground">
-          Everyone with access to this workspace.
-        </Text>
-        {readOnly && canManageTenant(role) ? <ReadOnlyNote text={STAFF_VIEW} /> : null}
-        <MembersList slug={slug} tenantName={tenant.data.name} myRole={role} readOnly={readOnly} />
+      <View className="gap-4">
+        <View className="gap-3 rounded-lg border border-border p-4">
+          <Text className="text-base text-muted-foreground">
+            Everyone with access to this workspace.
+          </Text>
+          {readOnly && manager ? <ReadOnlyNote text={STAFF_VIEW} /> : null}
+          <MembersList
+            slug={slug}
+            tenantName={tenant.data.name}
+            myRole={role}
+            readOnly={readOnly}
+          />
+        </View>
+        {manager && !readOnly ? <InviteForm slug={slug} myRole={role} /> : null}
+        {manager ? <PendingInvitations slug={slug} myRole={role} readOnly={readOnly} /> : null}
       </View>
     )
   }

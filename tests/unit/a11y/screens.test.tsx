@@ -32,6 +32,7 @@ import { clientSettingsKeys } from '@/queries/client-settings.queries'
 import { notificationKeys, type NotificationPreference } from '@/queries/notification.queries'
 import { sessionKeys } from '@/queries/sessions.queries'
 import {
+  invitationsListOptions,
   membersListOptions,
   ownersQueryOptions,
   tenantKeys,
@@ -41,6 +42,7 @@ import {
 } from '@/queries/tenant.queries'
 import { A11Y_SCREENS, assertAccessible, renderWithProviders } from '@/tests/support/a11y'
 import { describe, expect, it } from '@/tests/support/runner'
+import type { TenantInvitation } from '@/types/api.types'
 import type { ListPage } from '@/types/list.types'
 
 jest.mock('expo-router', () => ({
@@ -240,6 +242,21 @@ const MEMBERS_PAGE: ListPage<TenantMember> = {
   page: { hasNext: true, nextCursor: 'c2', prevCursor: null, hasPrev: false, limit: 20 },
 }
 
+/** One page of pending invitations: one the viewer may act on, one for an admin role. */
+const INVITATIONS_PAGE: ListPage<TenantInvitation> = {
+  items: ['viewer', 'admin'].map((role, index) => ({
+    id: `i${String(index)}`,
+    email: `${role}-invite@example.com`,
+    role: role as MembershipRole,
+    invitedBy: { id: 'u1', firstName: 'Ada', lastName: null },
+    expiresAt: '2030-01-10T10:00:00.000Z',
+    createdAt: '2030-01-01T10:00:00.000Z',
+    lastSentAt: null,
+    resendAvailableAt: null,
+  })),
+  page: { hasNext: true, nextCursor: 'c2', prevCursor: null, hasPrev: false, limit: 20 },
+}
+
 /** The Members screen as a manager, a viewer and staff with platform access sees it. */
 const MEMBERS_SCREENS: Array<[string, Record<string, unknown>]> = [
   ['Workspace Members (manager)', ACME],
@@ -254,6 +271,12 @@ for (const [name, tenant] of MEMBERS_SCREENS) {
   membersClient.setQueryData(membersListOptions('acme', {}).queryKey, MEMBERS_PAGE)
   membersClient.setQueryData(ownersQueryOptions('acme').queryKey, MEMBERS_PAGE)
   membersClient.setQueryData(clientSettingsKeys.all, null)
+  membersClient.setQueryData(invitationsListOptions('acme', {}).queryKey, INVITATIONS_PAGE)
+  membersClient.setQueryData(billingKeys.entitlements('acme'), {
+    plan: { key: 'free', name: 'Free' },
+    features: {},
+    limits: { members: { limit: 3, used: 3, approaching: false } },
+  })
   A11Y_SCREENS.push({
     name,
     element: (
