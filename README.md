@@ -416,6 +416,11 @@ date, the device and the OS version beside each.
       an in-app invitation notification for an existing account with a verified
       email. It appears in the Notifications tab within a few seconds, with no
       pull to refresh.
+- [ ] **The stream opens after an iOS cold launch.** Force-quit the app on
+      iOS, launch it, and at once send the test account a notification from
+      another account. It appears with no pull to refresh. At a cold launch
+      `AppState.currentState` can read `unknown`, and the stream waits for the
+      first `active`; record whether the notification arrives.
 - [ ] **The stream survives 15 minutes in the foreground.** Leave the app open
       on the Notifications tab for more than 15 minutes, past the access token's
       expiry. Express ends the stream, and the app reopens it. A notification

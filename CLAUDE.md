@@ -694,13 +694,17 @@ listed in [ARCHITECTURE.md](ARCHITECTURE.md#notifications-plan-and-deletion).
   system sheet) keeps the last answer, so a sheet does not close it. The token
   travels in the `Authorization` header, never the URL.
 - **Express ends every stream at access-token expiry, so an end is not a
-  failure.** An end, or a 401, refreshes the session with `ensureSession` and
-  reopens at once with `Last-Event-ID`, so no missed notification is lost. Two
-  quick ends in a row (under 1 second, with no frame) fall back to the backoff,
-  so a server that ends streams at once cannot cause a tight loop. Each connect
-  also refetches the notification list and every cached workspace's billing
-  reads, because `entitlements_changed` frames carry no `id:` line and are never
-  replayed.
+  failure.** An end, or a 401, waits up to 1 second of jitter
+  (`reopenJitter` in `src/lib/stream-backoff.ts`), then refreshes the session
+  with `ensureSession` and reopens with `Last-Event-ID`, so no missed
+  notification is lost. A deploy ends every stream at once, and without the
+  jitter every client would call `/auth/refresh` in the same moment. The wait
+  runs through the stream's one timer, so background and sign-out clear it.
+  Two quick ends in a row (under 1 second, with no frame) fall back to the
+  backoff, so a server that ends streams at once cannot cause a tight loop.
+  Each connect also refetches the notification list and every cached
+  workspace's billing reads, because `entitlements_changed` frames carry no
+  `id:` line and are never replayed.
 - **A 429 `too_many_streams` stops the stream until the next foreground.** The
   spec says so. React retries it with backoff, but its message names
   browser tabs, so the app never shows it. Other refusals wait the backoff or
@@ -712,13 +716,23 @@ listed in [ARCHITECTURE.md](ARCHITECTURE.md#notifications-plan-and-deletion).
   the user id, so an in-place sign-in as another person drops the last event
   id, the backoff and the 429 stop. The new person never receives the old
   person's cursor.
-- **Billing notifications show the app's text, never the server's.** For the
-  five `billing_*` kinds and `workspace_full`, the row's title is
-  `humanizeNotificationType(type)` and its body comes from
-  `src/copy/notifications.ts`. Express's bodies carry prices ("Your payment of
-  ₹999 failed") and "upgrade from Billing", and the app sells nothing and shows
-  no prices (spec section 6). Other kinds show the server's text. The owner
-  chose this on 7 November 2026.
+- **Billing notifications show the app's text, never the server's.**
+  `isNeutralKind` in `src/copy/notifications.ts` marks every type that starts
+  with `billing_`, known or not, and `workspace_full`. For those the row's
+  title is the type's label and its body is the app's line; a neutral kind
+  with no line of its own reads "There’s an update about the plan for
+  {workspace}. Open Plan for details." Express's bodies carry prices ("Your
+  payment of ₹999 failed") and "upgrade from Billing", and the app sells
+  nothing and shows no prices (spec section 6). A billing kind express adds
+  later is neutral without a change here. Other kinds show the server's text.
+  The owner chose this on 7 November 2026.
+- **Labels come from `notificationTypeLabel`, never the shared humanizer
+  alone.** The shared `humanizeNotificationType` labels
+  `billing_upgrade_requested` "Upgrade request", and the app shows no upgrade
+  wording. `notificationTypeLabel` gives "Plan request" for it and the shared
+  label for every other type. The inbox row (its title, its kind line and its
+  button labels) and the notification preferences screen (each row and its
+  switch label) both call it, so the two screens agree.
 - **The Plan screen reads the entitlements and the catalog's labels only.**
   `GET /tenants/:slug/entitlements` and the `/plans` catalog supply the plan,
   its state, its limits and its features. The screen never reads
@@ -727,6 +741,15 @@ listed in [ARCHITECTURE.md](ARCHITECTURE.md#notifications-plan-and-deletion).
   `notificationLink` target maps one to one. The path is not an app link, so
   an emailed billing link opens the website. A `402` shows the app's copy,
   never the server's message.
+- **A `402` on an invitation screen shows the app's copy.** Express refuses a
+  join into a full workspace with a `402` whose message asks an owner to
+  upgrade, and that answer carries no `details`, so the shared
+  `planRefusalFrom` does not match it. `joinFailureMessage` in
+  `src/copy/invitations.ts` maps any `402` on `/invitations/accept` and
+  `/invitations/confirm` to "This workspace is at its members limit, so you
+  can’t join it yet. Ask an owner of the workspace." The invite form and
+  Resend map any `402` to "Not sent. You’re at the members limit." for the
+  same reason, with or without counts.
 - **A write that removes its row reports failure through the mutation cache.**
   A notification write removes its row at once, so the row's observer is gone
   before the answer, and TanStack skips an observer's `onError` when it has no

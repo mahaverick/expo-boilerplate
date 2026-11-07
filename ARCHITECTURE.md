@@ -437,8 +437,11 @@ src/app/
   mutation cache. The tab's badge reads the unread count in
   `(tabs)/_layout.tsx`.
 - **`src/copy/`.** `billing.ts` words the Plan screen, `members-limit.ts` the
-  members-limit note, and `notifications.ts` the neutral lines for the billing
-  kinds and the tab's badge. No file there holds a price or a purchase prompt.
+  members-limit note, `invitations.ts` the invitation screens' answer to a
+  `402`, and `notifications.ts` the neutral kinds (`isNeutralKind`), their
+  lines, the type labels both notification screens use
+  (`notificationTypeLabel`) and the tab's badge. No file there holds a price
+  or a purchase prompt.
 - **Plan.** `billing.tsx` reads `useEntitlements` and the `/plans` catalog's
   labels. It never reads `/tenants/:slug/billing`.
 - **Delete account.** `delete.tsx` reads the open request, posts a new one
