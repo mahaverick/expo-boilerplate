@@ -6,6 +6,7 @@ import { Screen } from '@/components/ui/screen'
 import { ACCOUNT_SECTIONS, SETTINGS_GROUPS, WORKSPACE_SECTIONS } from '@/constants/settings'
 import { useCurrentTenant, type CurrentTenant } from '@/hooks/use-current-tenant'
 import { useSignOut } from '@/hooks/use-sign-out'
+import { hasPrivacyContent } from '@/lib/privacy-policy'
 import { TENANTS_ERROR } from '@/lib/tenants-error'
 
 /**
@@ -51,7 +52,9 @@ export default function Settings() {
           <Text className="text-lg font-semibold text-foreground">{group.title}</Text>
           <Text className="text-base text-muted-foreground">{group.description}</Text>
           {group.key === 'account'
-            ? ACCOUNT_SECTIONS.map((section) => (
+            ? ACCOUNT_SECTIONS.filter(
+                (section) => section.key !== 'privacy' || hasPrivacyContent()
+              ).map((section) => (
                 <SettingsRow
                   key={section.key}
                   title={section.title}

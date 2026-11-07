@@ -49,10 +49,35 @@ function iosAppStoreId(): string | undefined {
   return id
 }
 
+/**
+ * The privacy policy address from `PRIVACY_POLICY_URL`, or undefined when
+ * unset or empty.
+ * @returns An https URL.
+ * @throws When the value is not an https URL.
+ */
+function privacyPolicyUrl(): string | undefined {
+  const url = process.env.PRIVACY_POLICY_URL?.trim()
+  if (!url) return undefined
+  let valid: boolean
+  try {
+    const parsed = new URL(url)
+    valid = parsed.protocol === 'https:' && parsed.hostname !== ''
+  } catch {
+    valid = false
+  }
+  if (!valid) {
+    throw new Error(
+      `PRIVACY_POLICY_URL must be an https URL such as https://example.com/privacy. Got "${url}".`
+    )
+  }
+  return url
+}
+
 /** The app's Expo config. The version comes from package.json, which release tooling bumps. */
 export default ({ config }: ConfigContext): ExpoConfig => {
   const host = appLinkHost()
   const storeId = iosAppStoreId()
+  const policyUrl = privacyPolicyUrl()
   return {
     ...config,
     name: 'expo-boilerplate',
@@ -74,6 +99,48 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           NSAllowsArbitraryLoads: false,
           NSAllowsLocalNetworking: true,
         },
+        // The app uses only the operating system's exempt encryption (HTTPS).
+        ITSAppUsesNonExemptEncryption: false,
+      },
+      privacyManifests: {
+        NSPrivacyAccessedAPITypes: [
+          {
+            NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryUserDefaults',
+            NSPrivacyAccessedAPITypeReasons: ['CA92.1'],
+          },
+          {
+            NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryFileTimestamp',
+            NSPrivacyAccessedAPITypeReasons: ['C617.1'],
+          },
+          {
+            NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategorySystemBootTime',
+            NSPrivacyAccessedAPITypeReasons: ['35F9.1'],
+          },
+        ],
+        NSPrivacyCollectedDataTypes: [
+          {
+            NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeProductInteraction',
+            NSPrivacyCollectedDataTypeLinked: true,
+            NSPrivacyCollectedDataTypeTracking: false,
+            NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAnalytics'],
+          },
+          {
+            NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeUserID',
+            NSPrivacyCollectedDataTypeLinked: true,
+            NSPrivacyCollectedDataTypeTracking: false,
+            NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAnalytics'],
+          },
+          {
+            NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeCrashData',
+            NSPrivacyCollectedDataTypeLinked: false,
+            NSPrivacyCollectedDataTypeTracking: false,
+            NSPrivacyCollectedDataTypePurposes: [
+              'NSPrivacyCollectedDataTypePurposeAppFunctionality',
+            ],
+          },
+        ],
+        NSPrivacyTracking: false,
+        NSPrivacyTrackingDomains: [],
       },
     },
     android: {
@@ -102,10 +169,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ],
     },
     plugins: ['expo-router', 'expo-web-browser', './plugins/with-backup-rules'],
-    ...((host || storeId) && {
+    ...((host || storeId || policyUrl) && {
       extra: {
         ...(host && { webUrl: `https://${host}` }),
         ...(storeId && { iosAppStoreId: storeId }),
+        ...(policyUrl && { privacyPolicyUrl: policyUrl }),
       },
     }),
     experiments: {

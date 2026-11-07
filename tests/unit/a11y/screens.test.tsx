@@ -7,6 +7,7 @@ import Settings from '@/app/(app)/(tabs)/settings'
 import Workspace from '@/app/(app)/(tabs)/workspace'
 import DeleteAccount from '@/app/(app)/settings/account/delete'
 import NotificationPreferences from '@/app/(app)/settings/account/notifications'
+import Privacy from '@/app/(app)/settings/account/privacy'
 import Profile from '@/app/(app)/settings/account/profile'
 import Security from '@/app/(app)/settings/account/security'
 import WorkspaceActivity from '@/app/(app)/settings/workspace/[slug]/activity'
@@ -658,6 +659,15 @@ A11Y_SCREENS.push({
       <StepUpProvider>
         <DeleteAccount />
       </StepUpProvider>
+    </QueryClientProvider>
+  ),
+})
+
+A11Y_SCREENS.push({
+  name: 'Privacy',
+  element: (
+    <QueryClientProvider client={deleteClient}>
+      <Privacy />
     </QueryClientProvider>
   ),
 })

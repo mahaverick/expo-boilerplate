@@ -19,16 +19,20 @@ function configFor(host: string | undefined): ExpoConfig {
 
 const saved = process.env.APP_LINK_HOST
 const savedStoreId = process.env.IOS_APP_STORE_ID
+const savedPolicy = process.env.PRIVACY_POLICY_URL
 
 beforeEach(() => {
   delete process.env.APP_LINK_HOST
   delete process.env.IOS_APP_STORE_ID
+  delete process.env.PRIVACY_POLICY_URL
 })
 afterEach(() => {
   if (saved === undefined) delete process.env.APP_LINK_HOST
   else process.env.APP_LINK_HOST = saved
   if (savedStoreId === undefined) delete process.env.IOS_APP_STORE_ID
   else process.env.IOS_APP_STORE_ID = savedStoreId
+  if (savedPolicy === undefined) delete process.env.PRIVACY_POLICY_URL
+  else process.env.PRIVACY_POLICY_URL = savedPolicy
 })
 
 describe('app.config', () => {
@@ -114,5 +118,83 @@ describe('app.config iosAppStoreId', () => {
   it.each(['id123', '12 3', '12.3', '-1'])('rejects %s as a store ID', (id) => {
     process.env.IOS_APP_STORE_ID = id
     expect(() => configFor(undefined)).toThrow(/IOS_APP_STORE_ID/)
+  })
+})
+
+describe('app.config privacyPolicyUrl', () => {
+  it('puts PRIVACY_POLICY_URL in extra', () => {
+    process.env.PRIVACY_POLICY_URL = 'https://example.com/privacy'
+    expect(configFor(undefined).extra?.privacyPolicyUrl).toBe('https://example.com/privacy')
+  })
+
+  it('leaves it out when unset or empty', () => {
+    for (const url of [undefined, '']) {
+      if (url === undefined) delete process.env.PRIVACY_POLICY_URL
+      else process.env.PRIVACY_POLICY_URL = url
+      expect(configFor(undefined).extra?.privacyPolicyUrl).toBeUndefined()
+    }
+  })
+
+  it.each(['http://example.com/privacy', 'example.com/privacy', 'ftp://example.com', 'https://'])(
+    'rejects %s',
+    (url) => {
+      process.env.PRIVACY_POLICY_URL = url
+      expect(() => configFor(undefined)).toThrow(/PRIVACY_POLICY_URL/)
+    }
+  )
+})
+
+describe('app.config store declarations', () => {
+  it('declares no non-exempt encryption and keeps the transport-security settings', () => {
+    const plist = configFor(undefined).ios?.infoPlist
+    expect(plist?.ITSAppUsesNonExemptEncryption).toBe(false)
+    expect(plist?.NSAppTransportSecurity).toEqual({
+      NSAllowsArbitraryLoads: false,
+      NSAllowsLocalNetworking: true,
+    })
+  })
+
+  it('declares the required-reason APIs', () => {
+    const types = configFor(undefined).ios?.privacyManifests?.NSPrivacyAccessedAPITypes
+    expect(types).toEqual([
+      {
+        NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryUserDefaults',
+        NSPrivacyAccessedAPITypeReasons: ['CA92.1'],
+      },
+      {
+        NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryFileTimestamp',
+        NSPrivacyAccessedAPITypeReasons: ['C617.1'],
+      },
+      {
+        NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategorySystemBootTime',
+        NSPrivacyAccessedAPITypeReasons: ['35F9.1'],
+      },
+    ])
+  })
+
+  it('declares product interaction, user ID and crash data, and no tracking', () => {
+    const manifest = configFor(undefined).ios?.privacyManifests
+    expect(manifest?.NSPrivacyCollectedDataTypes).toEqual([
+      {
+        NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeProductInteraction',
+        NSPrivacyCollectedDataTypeLinked: true,
+        NSPrivacyCollectedDataTypeTracking: false,
+        NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAnalytics'],
+      },
+      {
+        NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeUserID',
+        NSPrivacyCollectedDataTypeLinked: true,
+        NSPrivacyCollectedDataTypeTracking: false,
+        NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAnalytics'],
+      },
+      {
+        NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeCrashData',
+        NSPrivacyCollectedDataTypeLinked: false,
+        NSPrivacyCollectedDataTypeTracking: false,
+        NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'],
+      },
+    ])
+    expect(manifest?.NSPrivacyTracking).toBe(false)
+    expect(manifest?.NSPrivacyTrackingDomains).toEqual([])
   })
 })
