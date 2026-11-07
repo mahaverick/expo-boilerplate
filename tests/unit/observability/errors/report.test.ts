@@ -251,12 +251,56 @@ describe('scrubbing', () => {
     expect(body).not.toContain('token=leak')
     expect(body).not.toContain('eyJiIjoyfQ')
     expect(body).toContain('[email]')
-    expect(body).toContain('?[query]')
+    // An app frame's filename leaves as its base name, so the query never leaves at all.
+    expect(body).toContain('"filename":"index.bundle"')
     expect(body).toContain('[jwt]')
   })
 })
 
 describe('the fields sent', () => {
+  it.each([
+    [
+      '/data/app/~~Xk3jQ9s2LmN4pQ==/com.example.app-Ab3dEf9GhIjKlMnO==/base.apk!/assets/index.android.bundle',
+      'index.android.bundle',
+    ],
+    ['/var/containers/Bundle/Application/ABC-123/App.app/main.jsbundle', 'main.jsbundle'],
+    ['http://10.0.2.2:8081/index.bundle?platform=android&token=leak', 'index.bundle'],
+    ['http://localhost:8081/index.bundle//&platform=ios&dev=true', 'index.bundle'],
+    ['http://localhost:8081/src/app/index.tsx', 'index.tsx'],
+  ])('sends only the base name of the in-app file %s', (filename, expected) => {
+    const [exception] = prepareExceptionList([
+      {
+        type: 'TypeError',
+        value: 'v',
+        stacktrace: { type: 'raw', frames: [{ platform: 'hermes', filename, lineno: 1 }] },
+      },
+    ])
+    expect(exception?.stacktrace?.frames?.[0]).toMatchObject({ filename: expected, in_app: true })
+  })
+
+  it('keeps the scrubbed filename of a frame that is not the app’s', () => {
+    const [exception] = prepareExceptionList([
+      {
+        type: 'TypeError',
+        value: 'v',
+        stacktrace: {
+          type: 'raw',
+          frames: [
+            {
+              platform: 'hermes',
+              filename: 'http://localhost:8081/node_modules/react/cjs/react.development.js',
+              lineno: 1,
+            },
+          ],
+        },
+      },
+    ])
+    expect(exception?.stacktrace?.frames?.[0]).toMatchObject({
+      filename: 'http://localhost:8081/node_modules/react/cjs/react.development.js',
+      in_app: false,
+    })
+  })
+
   it('sends only the fields it knows, so a field the builder adds later never leaves unscrubbed', () => {
     const [exception] = prepareExceptionList([
       {
@@ -370,6 +414,12 @@ describe('Hermes frames', () => {
 })
 
 describe('the event', () => {
+  it('turns off PostHog’s IP geolocation', async () => {
+    report(appError('geo'), 'global', false)
+    await drain()
+    expect(sentEvents()[0]?.properties.$geoip_disable).toBe(true)
+  })
+
   it('carries app, origin, release, environment and route_id', async () => {
     report(appError('x.trim is not a function'), 'react', false)
     await drain()
@@ -732,6 +782,27 @@ describe('the next launch', () => {
     await jest.advanceTimersByTimeAsync(0)
     const left = JSON.parse(mockStored.get(PENDING_REPORTS_KEY) ?? '[]') as ExceptionEvent[]
     expect(left).toHaveLength(1)
+  })
+
+  it('sends a kept crash with IP geolocation off', async () => {
+    reportFatal(appError('saved'), 'global')
+    sendPendingReports()
+    await jest.advanceTimersByTimeAsync(0)
+    expect(sentEvents()[0]?.properties.$geoip_disable).toBe(true)
+  })
+
+  it('drops a kept entry that is not an event with a uuid, so it cannot block the list', async () => {
+    reportFatal(appError('the one real crash'), 'global')
+    const [real] = JSON.parse(mockStored.get(PENDING_REPORTS_KEY) ?? '[]') as ExceptionEvent[]
+    mockStored.set(
+      PENDING_REPORTS_KEY,
+      JSON.stringify([null, 3, 'text', [], {}, { uuid: 5 }, real])
+    )
+    sendPendingReports()
+    await jest.advanceTimersByTimeAsync(0)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(sentEvents().map((event) => event.uuid)).toEqual([real?.uuid])
+    expect(mockStored.has(PENDING_REPORTS_KEY)).toBe(false)
   })
 
   it('sends nothing when nothing is kept, or with no key', async () => {

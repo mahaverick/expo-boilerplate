@@ -191,15 +191,36 @@ export function isAppFrame(filename: string | undefined): boolean {
 }
 
 /**
+ * The base name of an app frame's file. An installed Android app lives under
+ * random directories (`/data/app/~~…==/com.example.app-…==/base.apk!/assets/`)
+ * and an iOS one under its container's id, so only the bundle's name leaves.
+ * A development server's URL loses its query and the options Metro puts after
+ * `//`.
+ * @param filename - An app frame's file, as the stack parser read it.
+ * @returns The file's base name.
+ */
+function baseName(filename: string): string {
+  // `isAppFrame` has already parsed an http(s) filename it calls the app's.
+  const path = /^https?:\/\//i.test(filename)
+    ? (new URL(filename).pathname.split('//')[0] ?? '')
+    : filename
+  return path.slice(path.lastIndexOf('/') + 1)
+}
+
+/**
  * The fields of a frame that are sent: `in_app` recomputed from the raw
- * filename, the filename and function scrubbed, and the position. Any other
- * field, such as a source line or variables, is never sent.
+ * filename, the filename scrubbed (an app frame's cut to its base name), the
+ * function scrubbed, and the position. Any other field, such as a source line
+ * or variables, is never sent.
  */
 function scrubFrame(frame: StackFrame): StackFrame {
+  const inApp = isAppFrame(frame.filename)
+  const filename =
+    frame.filename === undefined || !inApp ? frame.filename : baseName(frame.filename)
   return {
     platform: frame.platform,
-    in_app: isAppFrame(frame.filename),
-    ...(frame.filename === undefined ? {} : { filename: scrubText(frame.filename) }),
+    in_app: inApp,
+    ...(filename === undefined ? {} : { filename: scrubText(filename) }),
     ...(frame.function === undefined ? {} : { function: scrubText(frame.function) }),
     ...(frame.lineno === undefined ? {} : { lineno: frame.lineno }),
     ...(frame.colno === undefined ? {} : { colno: frame.colno }),
@@ -491,17 +512,32 @@ function buildEvent(
       origin,
       release: release(),
       environment,
+      // Express forwards the client's IP address, and PostHog would resolve it to a place.
+      $geoip_disable: true,
       ...(routeId === undefined ? {} : { route_id: routeId }),
     },
   }
 }
 
-/** The fatal crashes kept by this launch or an earlier one. */
+/** Whether a kept entry is an event the transport can send and later remove by its uuid. */
+function isKeptEvent(entry: unknown): entry is ExceptionEvent {
+  return (
+    typeof entry === 'object' &&
+    entry !== null &&
+    typeof (entry as { uuid?: unknown }).uuid === 'string'
+  )
+}
+
+/**
+ * The fatal crashes kept by this launch or an earlier one. An entry that is
+ * not an object with a string uuid is dropped, so a corrupt list cannot block
+ * sending.
+ */
 function readPending(): ExceptionEvent[] {
   try {
     const stored = storage.getString(PENDING_REPORTS_KEY)
     const parsed: unknown = stored ? JSON.parse(stored) : []
-    return Array.isArray(parsed) ? (parsed as ExceptionEvent[]) : []
+    return Array.isArray(parsed) ? parsed.filter(isKeptEvent) : []
   } catch {
     return []
   }
