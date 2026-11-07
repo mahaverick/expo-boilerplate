@@ -82,7 +82,8 @@ function SettingsBody({ slug, manages }: { slug: string; manages: boolean }) {
  * Settings, Workspace, General: the workspace's details and settings. Owner
  * and admin members get the forms. Everyone else, staff with platform access
  * included, gets read-only rows. A role still loading shows a spinner, never
- * the read-only view, and a failed role read shows `ROLE_ERROR`.
+ * the read-only view. A failed role read with nothing loaded shows `ROLE_ERROR`;
+ * a failed background refetch keeps the loaded cards and their edits.
  * @returns The screen.
  */
 export default function WorkspaceGeneral() {
@@ -90,7 +91,7 @@ export default function WorkspaceGeneral() {
   const tenant = useTenant(slug)
   const { role, access, isPending, isError, retry } = useMyRole(slug)
   let body
-  if (isError || (!isPending && (role === undefined || tenant.data == null))) {
+  if (tenant.data == null && (isError || !isPending)) {
     body = <LoadError message={ROLE_ERROR} onRetry={retry} />
   } else if (isPending || role === undefined || tenant.data == null) {
     body = <ActivityIndicator accessibilityLabel="Loading workspace" />

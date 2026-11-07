@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals'
 import { QueryClient } from '@tanstack/react-query'
-import { fireEvent, screen, waitFor } from '@testing-library/react-native'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import General from '@/app/(app)/settings/workspace/[slug]/general'
 import { formatDate } from '@/lib/format'
 import { ROLE_ERROR } from '@/lib/role-error'
@@ -341,6 +341,22 @@ describe('Workspace General screen', () => {
     expect(screen.queryByText('Overview')).toBeNull()
     await fireEvent.press(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByLabelText('Name')).toBeTruthy()
+  })
+
+  it('keeps the forms and their edits when a background refetch fails', async () => {
+    serveEcho()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = await renderScreen(<General />, client)
+    await fireEvent.changeText(await screen.findByLabelText('Name'), 'Acme Ltd')
+    serve(() => ({ status: 500, data: { success: false, message: 'Boom' } }))
+    await act(async () => {
+      await client.refetchQueries({ queryKey: tenantKeys.detail('acme'), exact: true })
+    })
+    await view.rerender(screenTree(<General />, client))
+    expect(client.getQueryState(tenantKeys.detail('acme'))?.status).toBe('error')
+    expect(screen.queryByText(ROLE_ERROR)).toBeNull()
+    expect(screen.getByLabelText('Name').props.value).toBe('Acme Ltd')
+    expect(screen.getByLabelText('Time zone')).toBeTruthy()
   })
 
   it('shows read-only rows to a viewer, with a dash for an empty value', async () => {
