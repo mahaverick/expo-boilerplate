@@ -96,7 +96,8 @@ a shared file imports.
    `src/app/(app)/` render only for a signed-in person: its layout shows
    "Signing you in" with a spinner while the restore runs, sends a signed-out
    person to `/login` with the path they asked for as `redirect`, and sends an
-   account that must add a passkey to `/passkey-required`. Home is `src/app/(app)/(tabs)/index.tsx`.
+   account that must add a passkey to `/passkey-required`. Home is
+   `src/app/(app)/(tabs)/index.tsx`.
 5. The same layout also installs `installQueryManagers()` and
    `installMaintenanceRecovery()`
    ([Workspaces and the shell](#workspaces-and-the-shell)).
