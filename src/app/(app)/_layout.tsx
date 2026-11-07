@@ -95,6 +95,10 @@ export default function AppLayout() {
     <Stack screenOptions={STACK_SCREEN_OPTIONS}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="tenants/[slug]/[...rest]" options={{ headerShown: false }} />
+      <Stack.Screen name="tenants/[slug]/settings" options={{ headerShown: false }} />
+      <Stack.Screen name="tenants/[slug]/members" options={{ headerShown: false }} />
+      <Stack.Screen name="tenants/[slug]/activity" options={{ headerShown: false }} />
+      <Stack.Screen name="settings/workspace/[slug]/index" options={{ headerShown: false }} />
     </Stack>
   )
 }

@@ -1,7 +1,9 @@
+import { router } from 'expo-router'
 import { Alert, ActivityIndicator, Text, View } from 'react-native'
 import { LoadError } from '@/components/shared/load-error'
 import { Button } from '@/components/ui/button'
 import { canManageTenant, type MembershipRole } from '@/constants/roles'
+import { WORKSPACE_SECTIONS } from '@/constants/settings'
 import { useNow } from '@/hooks/use-now'
 import { messageFrom, statusFrom } from '@/lib/api-error'
 import { toast } from '@/lib/toast'
@@ -31,6 +33,12 @@ interface Viewer {
   /** Owner by membership: dismiss and show. */
   isOwner: boolean
 }
+
+/** The auto steps that link to a settings screen: the label and the section. */
+const STEP_LINKS: ReadonlyMap<string, { label: string; section: 'general' | 'members' }> = new Map([
+  ['configure_settings', { label: 'Open settings', section: 'general' }],
+  ['invite_teammate', { label: 'Open members', section: 'members' }],
+])
 
 /**
  * Derives what a viewer may do from their role and how they reached the workspace.
@@ -88,8 +96,8 @@ function MarkDone({ slug, step }: { slug: string; step: OnboardingStepView }) {
 }
 
 /**
- * The one thing a pending step offers this viewer. The steps that link to
- * Settings or Members show no link until those screens exist.
+ * The one thing a pending step offers this viewer: Mark done for a manual
+ * step, or a link to workspace settings for the steps that need them.
  * @param props - The workspace, the step and the viewer.
  * @param props.slug - The workspace's web address.
  * @param props.step - The step.
@@ -105,7 +113,23 @@ function StepAction({
   step: OnboardingStepView
   viewer: Viewer
 }) {
-  if (step.completedAt !== null || !viewer.isMember || step.kind !== 'manual') return null
+  if (step.completedAt !== null || !viewer.isMember) return null
+  if (step.kind !== 'manual') {
+    const link = STEP_LINKS.get(step.key)
+    if (link === undefined) return null
+    if (!viewer.canManage)
+      return <Text className="text-sm text-muted-foreground">{OWNER_OR_ADMIN}</Text>
+    const target = WORKSPACE_SECTIONS.find((s) => s.key === link.section)
+    return (
+      <Button
+        variant="secondary"
+        label={link.label}
+        onPress={() => {
+          if (target !== undefined) router.push(target.path(slug))
+        }}
+      />
+    )
+  }
   // A workspace-scoped manual step changes the workspace for everyone, so the API wants an owner or admin.
   if (step.scope === 'tenant' && !viewer.canManage) {
     return <Text className="text-sm text-muted-foreground">{OWNER_OR_ADMIN}</Text>
