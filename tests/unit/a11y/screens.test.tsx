@@ -29,6 +29,7 @@ import { SigningInScreen } from '@/components/auth/signing-in-screen'
 import { InvitationInbox } from '@/components/invitations/invitation-inbox'
 import { SettingsRow } from '@/components/settings/settings-row'
 import { MaintenanceScreen } from '@/components/shared/maintenance-screen'
+import { RootErrorBoundary } from '@/components/shared/root-error-boundary'
 import { UpdateScreen } from '@/components/shared/update-screen'
 import { StepUpDialog } from '@/components/step-up/step-up-dialog'
 import { StepUpProvider } from '@/components/step-up/step-up-provider'
@@ -123,6 +124,10 @@ const SCREENS: Array<[string, () => React.JSX.Element]> = [
   ['Signing you in', () => <SigningInScreen />],
   ['Maintenance', () => <MaintenanceScreen message={null} since={null} />],
   ['Update the app', () => <UpdateScreen url="market://details?id=x" />],
+  [
+    'The app hit a problem',
+    () => <RootErrorBoundary error={new Error('boom')} retry={() => Promise.resolve()} />,
+  ],
 ]
 for (const [name, screenElement] of SCREENS) {
   A11Y_SCREENS.push({

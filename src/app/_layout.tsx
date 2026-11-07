@@ -17,6 +17,7 @@ import {
 } from '@/http/session-lifecycle'
 import { queryClient } from '@/lib/query-client'
 import { installQueryManagers } from '@/lib/query-managers'
+import { installErrorListeners } from '@/observability/errors/listen'
 import {
   forgetStaleIdentityWithoutUser,
   installAnalyticsIdentity,
@@ -24,6 +25,8 @@ import {
 import { initAnalytics } from '@/observability/telemetry/telemetry'
 import { useScreenViews } from '@/observability/telemetry/use-screen-views'
 import { resolvedScheme, useThemeStore } from '@/states/theme.store'
+
+export { RootErrorBoundary as ErrorBoundary } from '@/components/shared/root-error-boundary'
 
 /**
  * How long the splash screen waits for NativeWind to report the stored scheme.
@@ -44,6 +47,9 @@ void SplashScreen.preventAutoHideAsync()
 
 // Before the first render, so the session restore's identity and a sign-in's first event find the SDK started.
 initAnalytics()
+
+// Before the first render, so a crash in the first frame is reported.
+installErrorListeners()
 
 /**
  * Hides the splash screen, once, and cancels the pending fallback.

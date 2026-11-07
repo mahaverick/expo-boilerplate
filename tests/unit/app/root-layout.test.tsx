@@ -3,7 +3,8 @@ import { act, render, waitFor } from '@testing-library/react-native'
 import * as SplashScreen from 'expo-splash-screen'
 import { colorScheme } from 'nativewind'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
-import RootLayout from '@/app/_layout'
+import RootLayout, { ErrorBoundary } from '@/app/_layout'
+import { RootErrorBoundary } from '@/components/shared/root-error-boundary'
 import * as maintenance from '@/http/maintenance'
 import {
   installForegroundRefresh,
@@ -13,6 +14,7 @@ import {
 import type { SessionStatus } from '@/http/session-lifecycle'
 import { queryClient } from '@/lib/query-client'
 import * as queryManagers from '@/lib/query-managers'
+import { installErrorListeners } from '@/observability/errors/listen'
 import {
   captureScreen,
   forgetStaleIdentity,
@@ -42,6 +44,10 @@ jest.mock('@/http/maintenance', () => ({
   installMaintenanceRecovery: jest.fn(() => jest.fn()),
 }))
 jest.mock('@/lib/query-managers', () => ({ installQueryManagers: jest.fn(() => jest.fn()) }))
+jest.mock('@/observability/errors/listen', () => ({
+  installErrorListeners: jest.fn(),
+  noteError: jest.fn(),
+}))
 jest.mock('@/observability/telemetry/telemetry', () => ({
   ...jest.requireActual<typeof import('@/observability/telemetry/telemetry')>(
     '@/observability/telemetry/telemetry'
@@ -102,6 +108,9 @@ function setStatus(status: SessionStatus): void {
 
 /** How often importing the layout started analytics, read before any case clears the mocks. */
 const initCallsAtImport = jest.mocked(initAnalytics).mock.calls.length
+
+/** How often importing the layout installed the error listeners. */
+const listenCallsAtImport = jest.mocked(installErrorListeners).mock.calls.length
 
 beforeEach(() => {
   jest.useFakeTimers()
@@ -275,6 +284,16 @@ describe('RootLayout', () => {
     expect(initCallsAtImport).toBe(1)
     await render(<Root />)
     expect(initAnalytics).not.toHaveBeenCalled()
+  })
+
+  it('installs the error listeners once, when the layout loads', async () => {
+    expect(listenCallsAtImport).toBe(1)
+    await render(<Root />)
+    expect(installErrorListeners).not.toHaveBeenCalled()
+  })
+
+  it('exports the root error boundary for Expo Router', () => {
+    expect(ErrorBoundary).toBe(RootErrorBoundary)
   })
 })
 

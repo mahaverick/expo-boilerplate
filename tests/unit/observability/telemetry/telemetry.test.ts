@@ -94,7 +94,11 @@ describe('analytics with no key', () => {
   })
 
   it('settles at once as anonymous, even before init', async () => {
-    await expect(whenAnalyticsSettled()).resolves.toEqual({ distinctId: null, capturing: false })
+    await expect(whenAnalyticsSettled()).resolves.toEqual({
+      distinctId: null,
+      capturing: false,
+      identified: false,
+    })
   })
 
   it('builds no client and sends nothing', async () => {
@@ -109,7 +113,11 @@ describe('analytics with no key', () => {
     resetAnalytics()
     expect(clients).toHaveLength(0)
     expect(getAnalyticsSessionIdFor('user-1')).toBeNull()
-    await expect(whenAnalyticsSettled()).resolves.toEqual({ distinctId: null, capturing: false })
+    await expect(whenAnalyticsSettled()).resolves.toEqual({
+      distinctId: null,
+      capturing: false,
+      identified: false,
+    })
   })
 })
 
@@ -436,7 +444,11 @@ describe('analytics with a key', () => {
     initAnalytics()
     track('sign_in_link_requested')
     expect(clients).toHaveLength(0)
-    await expect(whenAnalyticsSettled()).resolves.toEqual({ distinctId: null, capturing: false })
+    await expect(whenAnalyticsSettled()).resolves.toEqual({
+      distinctId: null,
+      capturing: false,
+      identified: false,
+    })
   })
 
   it('queues calls made before init and replays them in order', () => {
@@ -469,11 +481,31 @@ describe('analytics with a key', () => {
     identifyUser('user-1')
     const settled = whenAnalyticsSettled()
     initAnalytics()
-    await expect(settled).resolves.toEqual({ distinctId: 'user-1', capturing: true })
+    await expect(settled).resolves.toEqual({
+      distinctId: 'user-1',
+      capturing: true,
+      identified: true,
+    })
     setAnalyticsOptOut(true)
     await expect(whenAnalyticsSettled()).resolves.toEqual({
       distinctId: 'user-1',
       capturing: false,
+      identified: false,
     })
+  })
+
+  it('says identified only while capture is on and the facade identified that distinct id', async () => {
+    initAnalytics()
+    const anonymous = await whenAnalyticsSettled()
+    expect(anonymous.distinctId).not.toBeNull()
+    expect(anonymous).toMatchObject({ capturing: true, identified: false })
+    identifyUser('user-1')
+    await expect(whenAnalyticsSettled()).resolves.toEqual({
+      distinctId: 'user-1',
+      capturing: true,
+      identified: true,
+    })
+    resetAnalytics()
+    await expect(whenAnalyticsSettled()).resolves.toMatchObject({ identified: false })
   })
 })

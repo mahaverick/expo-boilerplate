@@ -33,11 +33,17 @@ interface AnalyticsTenant {
 }
 
 /** Who an exception may name, once analytics has settled. */
-interface AnalyticsSettled {
+export interface AnalyticsSettled {
   /** The SDK's distinct id, or null when analytics is inert. */
   distinctId: string | null
   /** Whether capture is on. */
   capturing: boolean
+  /**
+   * Whether capture is on and the distinct id is the person this facade
+   * identified. The SDK's anonymous id never counts, so a signed-out
+   * exception never names it.
+   */
+  identified: boolean
 }
 
 /** A call on the SDK, deferred until it has started. */
@@ -436,17 +442,22 @@ export function getAnalyticsSessionIdFor(userId: string | null): string | null {
 
 /** The identity and capture state now. */
 function currentSettled(): AnalyticsSettled {
-  if (status !== 'ready' || !client) return { distinctId: null, capturing: false }
+  const none = { distinctId: null, capturing: false, identified: false }
+  if (status !== 'ready' || !client) return none
   try {
-    return { distinctId: client.getDistinctId(), capturing: !client.optedOut }
+    const distinctId = client.getDistinctId()
+    const capturing = !client.optedOut
+    const identified = capturing && signedInUserId !== null && signedInUserId === distinctId
+    return { distinctId, capturing, identified }
   } catch {
-    return { distinctId: null, capturing: false }
+    return none
   }
 }
 
 /**
  * Resolves once analytics has started or become inert, with the SDK's
- * distinct id and whether capture is on. With no key it resolves at once,
+ * distinct id, whether capture is on, and whether that id is the person this
+ * facade identified. With no key it resolves at once,
  * even before `initAnalytics`. It never rejects.
  * @returns The distinct id, or null when inert, and the capture state.
  */

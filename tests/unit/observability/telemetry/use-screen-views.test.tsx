@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals'
 import { renderHook } from '@testing-library/react-native'
-import { useScreenViews } from '@/observability/telemetry/use-screen-views'
+import { currentRoutePattern, useScreenViews } from '@/observability/telemetry/use-screen-views'
 import { beforeEach, describe, expect, it } from '@/tests/support/runner'
 
 /** What the mocked router reports. */
@@ -49,6 +49,19 @@ describe('useScreenViews', () => {
       useScreenViews()
     })
     expect(mockScreens).toEqual([['/']])
+  })
+
+  it('exposes the current route pattern for the exception reporter', async () => {
+    mockRoute.segments = ['(app)', 'tenants', '[slug]']
+    mockRoute.pathname = '/tenants/acme'
+    const { rerender } = await renderHook(() => {
+      useScreenViews()
+    })
+    expect(currentRoutePattern()).toBe('/tenants/[slug]')
+    mockRoute.segments = ['(app)', 'settings']
+    mockRoute.pathname = '/settings'
+    await rerender({})
+    expect(currentRoutePattern()).toBe('/settings')
   })
 
   it('sends a screen once per path change', async () => {
