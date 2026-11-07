@@ -14,6 +14,7 @@ import {
   INITIAL_BACKOFF_MS,
   MAX_RETRY_AFTER_MS,
   nextBackoff,
+  reopenJitter,
   withJitter,
 } from '@/lib/stream-backoff'
 import { invalidateBilling } from '@/queries/billing.queries'
@@ -116,8 +117,9 @@ function useForeground(onBackground: () => void): boolean {
  *   when there is none. A token the foreground refresh swaps in leaves the open
  *   stream alone until it ends.
  * - Express ends each stream when its access token expires, so an end or a 401
- *   refreshes and reopens at once with `Last-Event-ID`. Two quick ends in a row
- *   with no frame fall back to the backoff.
+ *   refreshes and reopens with `Last-Event-ID` after up to 1 second of jitter,
+ *   so a deploy that ends every stream does not send every refresh at once.
+ *   Two quick ends in a row with no frame fall back to the backoff.
  * - A 429 `too_many_streams` stops until the next return from the background,
  *   and a 403 `PASSKEY_SETUP_REQUIRED` raises the passkey flag and stops.
  * - Any other refusal waits the backoff or `Retry-After`, whichever is longer,
@@ -231,7 +233,7 @@ function useNotificationStream(): void {
       }
       quickEnds.current = quick ? quickEnds.current + 1 : 0
       if (quickEnds.current >= QUICK_ENDS_FOR_BACKOFF) afterBackoff(renewThenConnect)
-      else renewThenConnect()
+      else schedule(reopenJitter(), renewThenConnect)
     }
 
     /**

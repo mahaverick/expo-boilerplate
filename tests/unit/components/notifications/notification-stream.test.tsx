@@ -334,6 +334,48 @@ describe('NotificationStream', () => {
     expect(latest().headers.Authorization).toBe('Bearer t2')
   })
 
+  it.each([
+    ['an end', 'end'],
+    ['a 401', '401'],
+  ])('waits up to 1 second of jitter before it refreshes after %s', async (_name, how) => {
+    jest.spyOn(Math, 'random').mockReturnValue(0.999)
+    await mount()
+    if (how === 'end') {
+      await step(() => {
+        latest().accept()
+      })
+      await step(() => {
+        latest().end()
+      })
+    } else {
+      await step(() => {
+        latest().refuse(401, { code: 'ACCESS_TOKEN_EXPIRED' })
+      })
+    }
+    await advance(998)
+    expect(ensureSession).not.toHaveBeenCalled()
+    expect(mockStreams).toHaveLength(1)
+    await advance(1)
+    expect(ensureSession).toHaveBeenCalledTimes(1)
+    expect(mockStreams).toHaveLength(2)
+    expect(latest().headers.Authorization).toBe('Bearer t2')
+  })
+
+  it('drops a jittered reopen in the background', async () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0.5)
+    await mount()
+    await step(() => {
+      latest().accept()
+    })
+    await step(() => {
+      latest().end()
+    })
+    await emit('background')
+    await advance(1_000)
+    expect(ensureSession).not.toHaveBeenCalled()
+    expect(mockStreams).toHaveLength(1)
+  })
+
   it('falls back to the backoff when two connects in a row end at once with no frame', async () => {
     await mount()
     await step(() => {

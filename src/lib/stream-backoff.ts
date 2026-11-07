@@ -1,7 +1,7 @@
 /**
  * @file The notification stream's reconnect timing: a doubling backoff, the
- * cap on a server's `Retry-After`, and jitter so clients a server refused
- * together do not all return in the same second.
+ * cap on a server's `Retry-After`, and jitter so clients a server refused or
+ * ended together do not all return in the same second.
  */
 
 /** The first reconnect wait, and the wait after each notification frame. */
@@ -36,4 +36,16 @@ export function nextBackoff(previousMs: number): number {
  */
 export function withJitter(ms: number, random: () => number = Math.random): number {
   return ms * (1 + JITTER * random())
+}
+
+/** The most a reopen after an end or a 401 waits, so a deploy that ends every stream does not send every refresh at once. */
+const REOPEN_JITTER_MS = 1000
+
+/**
+ * The wait before a reopen after an end or a 401.
+ * @param random - A source in [0, 1); `Math.random` by default.
+ * @returns Up to `REOPEN_JITTER_MS`, in milliseconds.
+ */
+export function reopenJitter(random: () => number = Math.random): number {
+  return REOPEN_JITTER_MS * random()
 }

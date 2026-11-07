@@ -3,6 +3,7 @@ import {
   MAX_BACKOFF_MS,
   MAX_RETRY_AFTER_MS,
   nextBackoff,
+  reopenJitter,
   withJitter,
 } from '@/lib/stream-backoff'
 import { describe, expect, it } from '@/tests/support/runner'
@@ -36,5 +37,15 @@ describe('withJitter', () => {
 describe('MAX_RETRY_AFTER_MS', () => {
   it('is 5 minutes', () => {
     expect(MAX_RETRY_AFTER_MS).toBe(300_000)
+  })
+})
+
+describe('reopenJitter', () => {
+  it('waits from 0 up to 1 second', () => {
+    expect(reopenJitter(() => 0)).toBe(0)
+    expect(reopenJitter(() => 0.5)).toBe(500)
+    const value = reopenJitter()
+    expect(value).toBeGreaterThanOrEqual(0)
+    expect(value).toBeLessThan(1000)
   })
 })
