@@ -9,6 +9,7 @@ import NotificationPreferences from '@/app/(app)/settings/account/notifications'
 import Profile from '@/app/(app)/settings/account/profile'
 import Security from '@/app/(app)/settings/account/security'
 import WorkspaceGeneral from '@/app/(app)/settings/workspace/[slug]/general'
+import WorkspaceMembers from '@/app/(app)/settings/workspace/[slug]/members'
 import Overview from '@/app/(app)/tenants/[slug]/index'
 import Tenants from '@/app/(app)/tenants/index'
 import Welcome from '@/app/(app)/welcome'
@@ -24,14 +25,23 @@ import { UpdateScreen } from '@/components/shared/update-screen'
 import { StepUpDialog } from '@/components/step-up/step-up-dialog'
 import { StepUpProvider } from '@/components/step-up/step-up-provider'
 import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
+import type { MembershipRole } from '@/constants/roles'
 import { authKeys } from '@/queries/auth.queries'
 import { billingKeys } from '@/queries/billing.queries'
 import { clientSettingsKeys } from '@/queries/client-settings.queries'
 import { notificationKeys, type NotificationPreference } from '@/queries/notification.queries'
 import { sessionKeys } from '@/queries/sessions.queries'
-import { tenantKeys, tenantsQueryOptions, type TenantWithRole } from '@/queries/tenant.queries'
+import {
+  membersListOptions,
+  ownersQueryOptions,
+  tenantKeys,
+  tenantsQueryOptions,
+  type TenantMember,
+  type TenantWithRole,
+} from '@/queries/tenant.queries'
 import { A11Y_SCREENS, assertAccessible, renderWithProviders } from '@/tests/support/a11y'
 import { describe, expect, it } from '@/tests/support/runner'
+import type { ListPage } from '@/types/list.types'
 
 jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), push: jest.fn(), setParams: jest.fn() },
@@ -194,6 +204,63 @@ for (const [name, tenant] of GENERAL_SCREENS) {
     element: (
       <QueryClientProvider client={generalClient}>
         <WorkspaceGeneral />
+      </QueryClientProvider>
+    ),
+  })
+}
+
+/**
+ * One member row of the API.
+ * @param id - The user's id.
+ * @param role - The membership role.
+ * @param firstName - The first name, or null.
+ * @returns The row.
+ */
+function memberRow(id: string, role: MembershipRole, firstName: string | null): TenantMember {
+  return {
+    membership: {
+      id: `m-${id}`,
+      userId: id,
+      tenantId: 't-acme',
+      role,
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01',
+    },
+    user: { id, email: `${id}@example.com`, firstName, lastName: null },
+  }
+}
+
+/** One page of members: two with names, one without. */
+const MEMBERS_PAGE: ListPage<TenantMember> = {
+  items: [
+    memberRow('u1', 'owner', 'Ada'),
+    memberRow('u2', 'viewer', 'Bob'),
+    memberRow('u3', 'admin', null),
+  ],
+  page: { hasNext: true, nextCursor: 'c2', prevCursor: null, hasPrev: false, limit: 20 },
+}
+
+/** The Members screen as a manager, a viewer and staff with platform access sees it. */
+const MEMBERS_SCREENS: Array<[string, Record<string, unknown>]> = [
+  ['Workspace Members (manager)', ACME],
+  ['Workspace Members (viewer)', { ...ACME, role: 'viewer' }],
+  ['Workspace Members (staff)', { ...ACME, access: 'platform' }],
+]
+for (const [name, tenant] of MEMBERS_SCREENS) {
+  const membersClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  membersClient.setQueryData(tenantKeys.detail('acme'), tenant)
+  membersClient.setQueryData(membersListOptions('acme', {}).queryKey, MEMBERS_PAGE)
+  membersClient.setQueryData(ownersQueryOptions('acme').queryKey, MEMBERS_PAGE)
+  membersClient.setQueryData(clientSettingsKeys.all, null)
+  A11Y_SCREENS.push({
+    name,
+    element: (
+      <QueryClientProvider client={membersClient}>
+        <StepUpProvider>
+          <WorkspaceMembers />
+        </StepUpProvider>
       </QueryClientProvider>
     ),
   })
