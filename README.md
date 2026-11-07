@@ -209,7 +209,7 @@ The app sells nothing, as the spec's section 6 requires, so Apple's guideline
 
 - The app shows no prices and has no upgrade button, checkout link or text that
   asks the person to buy. The Plan screen (Settings, Workspace, Plan) shows the
-  plan's name, its limits and its features, and nothing else.
+  plan's name, its state, its limits and its features, and nothing else.
 - Billing notifications show the app's neutral text, not the server's.
 - Account deletion is in Settings, Account, Delete account. A person in
   passkey-required mode cannot use it yet; the blocking screen says to ask by
@@ -411,20 +411,22 @@ date, the device and the OS version beside each.
       "You’re viewing ... as platform staff", and Members and General show no
       write controls.
 - [ ] **The notification stream works on both platforms, in a release build.**
-      Express's stream must pass through a release build with no development
-      tool buffering it (Flipper buffers a streamed body). Create a
-      notification for the signed-in person from the API. It appears in the Notifications tab within a few seconds, with no
+      Check it in a release build, not the development client. From another
+      account, invite the test account's address to a workspace. Express creates
+      an in-app invitation notification for an existing account with a verified
+      email. It appears in the Notifications tab within a few seconds, with no
       pull to refresh.
 - [ ] **The stream survives 15 minutes in the foreground.** Leave the app open
       on the Notifications tab for more than 15 minutes, past the access token's
       expiry. Express ends the stream, and the app reopens it. A notification
       created afterwards still appears with no refresh.
 - [ ] **The stream stops in the background and resumes.** Send the app to the
-      background and create a notification. Return to the app: the list and the
-      badge include it, and the stream is open again.
+      background, then invite the test account's address to a workspace from
+      another account. Return to the app: the list and the badge include the
+      invitation, and the stream is open again.
 - [ ] **The badge counts.** With unread notifications, the Notifications tab
-      shows the count (with a plus sign when the server capped the count). Mark one read: the count drops. Mark
-      all read: the badge disappears.
+      shows the count, with a plus sign when the server capped it. Mark one
+      read: the count drops. Mark all read: the badge disappears.
 - [ ] **A leave from Members opened through Getting started lands on the
       workspace list.** On a customer workspace's overview, select Open members
       in Getting started, then Leave. The app lands on `/tenants`. Back reaches

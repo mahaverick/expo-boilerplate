@@ -464,16 +464,16 @@ it’s you" flow. The files are listed in
 [ARCHITECTURE.md](ARCHITECTURE.md#account-settings-and-step-up).
 
 - **The Settings tab lists rows; the screens sit in the `(app)` stack.**
-  Account holds Profile, Security and Notifications
+  Account holds Profile, Security, Notifications and Delete account
   (`ACCOUNT_SECTIONS` in `src/constants/settings.ts`), and each row opens
   `/settings/account/{name}` under the stack's empty-titled header with Back.
-  The Workspace group lists General, Members and Activity
+  The Workspace group lists General, Members, Activity and Plan
   (`WORKSPACE_SECTIONS`) for the current workspace, and says "Choose a
   workspace first." when the person has none. While the list loads it shows a
-  spinner, and a failed read shows the load error with Try again. `/profile` and `/settings/account`
-  redirect to Profile. Section headings inside a screen are plain text, not
-  headings, because a screen has one header role and the accessibility
-  harness rejects a second.
+  spinner, and a failed read shows the load error with Try again. `/profile`
+  and `/settings/account` redirect to Profile. Section headings inside a
+  screen are plain text, not headings, because a screen has one header role
+  and the accessibility harness rejects a second.
 - **The step-up provider sits in the root layout, not in `(app)`.**
   `StepUpProvider` wraps the stack inside the update and maintenance gates.
   `/auth/confirm` is a root route, so a provider under `(app)` would unmount
@@ -576,9 +576,10 @@ screens, Insights and Beta. They are plan 3c3's. The files are listed in
   platform access on a customer workspace must give a recent sign-in and a
   reason for each write except leaving
   (`requireRecentAuthAndReasonOnPlatformAccess`), revokes included; expo shows
-  them no write control. A customer workspace asks its members for none. One path for every write
-  means a write that can be refused gets the dialog, never a bare
-  `REAUTH_REQUIRED`, and a write that cannot be refused costs nothing extra.
+  them no write control. A customer workspace asks its members for none. One
+  path for every write means a write that can be refused gets the dialog,
+  never a bare `REAUTH_REQUIRED`, and a write that cannot be refused costs
+  nothing extra.
 - **A refused invite shows inline in the invite form.** The invite form is a
   form, and an error that blocks a form renders inline. A refused step-up
   there is a form-level error, as in react. The Security screen keeps its
@@ -605,18 +606,19 @@ screens, Insights and Beta. They are plan 3c3's. The files are listed in
   each page its own query, keyed by its cursor, and joins the rows, each key
   once (`keyOf`). It never uses `useInfiniteQuery`, and phones have no table.
   A request that changes by value starts again at page 1. So does a page 1
-  whose rows change after page 2 was asked for, through a write's
-  invalidation or a refocus. Express's cursors seek after the boundary row
+  whose boundary row changes after page 2 was asked for, through a write's
+  invalidation or a refocus. Express's cursors seek after page 1's last row
   (`list-page.utilities.ts`), so later pages fetched with the old cursors
-  would drop or repeat rows. The signal is page 1's data object, a field
-  the hook subscribes to. Structural sharing keeps that object when a
-  refetch brings the same rows, and then the pages stay, because the boundary
-  row holds. `dataUpdatedAt` moves on every refetch and is shared by two
-  fetches in one millisecond, and a count read from the cache during render
-  re-renders nothing. The cost: any change to page 1's data folds the list
-  back to page 1. Members' first page carries the total, so an add or a
-  removal on any page folds it. A failed later page keeps the loaded rows and offers Try again
-  beside them.
+  would drop or repeat rows once that row changes. The signal is the key of
+  page 1's last row. While it holds, the pages stay, even when an optimistic
+  edit, a refetch or a changed total replaces page 1's data object, because
+  the cursors still seek after the same row. `dataUpdatedAt` is no signal: it
+  moves on every refetch and is shared by two fetches in one millisecond. The
+  cost: a list keeps a page whose rows shifted until the next fold, such as an
+  insert or a removal on page 1 that leaves its last row in place. Load more is
+  hidden while page 1 shows placeholder data, because the previous request's
+  cursor does not belong to the new one. A failed later page keeps the loaded
+  rows and offers Try again beside them.
 - **Legacy workspace paths redirect to the new screens.**
   `/tenants/{slug}/settings`, `/members` and `/activity` go to General,
   Members and Activity under `/settings/workspace/{slug}/`, and
@@ -661,9 +663,10 @@ screens, Insights and Beta. They are plan 3c3's. The files are listed in
   overview drops its Beta row.
 - **Insights shows a failed entitlements read as a `LoadError`**, never as the
   locked card. A locked state reads "Included in Paid." with no action,
-  because billing actions wait for the billing plan.
+  because the app never sells or steers to a purchase (spec section 6).
 - **The members-limit note shows its counts only.** It has no Upgrade or
-  Request action; see the follow-ups.
+  Request action, for the same reason. Its words are in
+  `src/copy/members-limit.ts`.
 
 ## Notifications, plan and deletion
 

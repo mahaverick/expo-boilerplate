@@ -35,9 +35,10 @@ src/
   app/              Expo Router routes (see "The route tree"), +native-intent
   components/       auth/ (the sign-in form), invitations/ (the signed-in
                     person's inbox), account/ (what deletion removes),
-                    notifications/ (the stream and the row), settings/ (rows, the read-only note, the
-                    legacy redirect), shared/ (banners, update and maintenance
-                    screens, load error, empty state, tab-bar height), ui/ (the
+                    notifications/ (the stream and the row), settings/ (rows,
+                    the read-only note, the legacy redirect), shared/ (banners,
+                    update and maintenance screens, load error, empty state,
+                    tab-bar height), ui/ (the
                     UI kit: Screen, Button, TextField, InlineError, Toaster,
                     ChoiceSheet, TOUCH_TARGET), workspace-settings/ (the
                     General, Members and invite pieces), workspaces/ (switcher,
@@ -361,9 +362,9 @@ src/app/
 ## Workspace settings and invitations
 
 - **The Workspace rows.** `WORKSPACE_SECTIONS` in `src/constants/settings.ts`
-  lists General, Members, Activity and Plan, each with a typed path for a slug. The
-  legacy `/tenants/{slug}/settings`, `/members` and `/activity` routes and
-  `/settings/workspace/{slug}` render `WorkspaceSettingsRedirect`
+  lists General, Members, Activity and Plan, each with a typed path for a slug.
+  The legacy `/tenants/{slug}/settings`, `/members` and `/activity` routes
+  and `/settings/workspace/{slug}` render `WorkspaceSettingsRedirect`
   (`src/components/settings/workspace-settings-redirect.tsx`), which keeps the
   query and drops `token`.
 - **General.** `src/components/workspace-settings/` holds `DetailsForm` (the
@@ -422,8 +423,8 @@ src/app/
   an `AbortController`, and ships in `expo`, so the app uses it. The spec stays
   as written; [CLAUDE.md](CLAUDE.md#notifications-plan-and-deletion) holds the
   reasons.
-- **`NotificationStream`.** `src/components/notifications/notification-stream.tsx`
-  renders once in the `(app)` layout's signed-in branch and returns `null`. It
+- **`NotificationStream`.**
+  `src/components/notifications/notification-stream.tsx` renders once in the `(app)` layout's signed-in branch and returns `null`. It
   owns the stream's lifetime, its reconnects (`src/lib/stream-backoff.ts` holds
   the backoff, the `Retry-After` cap and the jitter) and what each frame does to
   the query cache: a `notification` frame invalidates the list, and an
