@@ -814,7 +814,8 @@ collect proxy at `apiUrl('/collect')`, and the app never holds a PostHog host.
   `sanitizeUrl` keeps an https link's path, and `/tenants/acme-corp` names a
   workspace. So for `Application Installed`, `Updated`, `Opened`, `Became
   Active` and `Backgrounded`, the guard cuts every https URL to its scheme and
-  host and drops an app path.
+  host and drops an app path. It keeps `$screen_name`, which the SDK stamps on
+  every event of a session and which is always a route pattern.
 - **Every event and every exception carries `$geoip_disable: true`.** Express's
   collect proxy sets `x-forwarded-for` to the client's IP address, and PostHog
   would resolve it to a city and a country that the privacy manifest and the
