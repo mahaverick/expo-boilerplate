@@ -13,7 +13,7 @@ import { useAuthStore } from '@/states/auth.store'
 
 /** What the switch does, in the person's words. */
 const ANALYTICS_DESCRIPTION =
-  'Which screens you open and what you tap, with names and email addresses masked, so we can improve this app. Turning it off stops this on this device; the actions you take are still recorded on our servers.'
+  'Which screens you open and what you tap, with names and email addresses masked, so we can improve this app. Turning it off stops this in this app; the actions you take are still recorded on our servers.'
 
 /**
  * Settings, Privacy: the "Share usage analytics" switch and the link to the

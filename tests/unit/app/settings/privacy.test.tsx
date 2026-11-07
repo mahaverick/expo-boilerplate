@@ -81,7 +81,7 @@ describe('Privacy screen', () => {
     expect(screen.getByLabelText('Share usage analytics').props.value).toBe(true)
     expect(
       screen.getByText(
-        'Which screens you open and what you tap, with names and email addresses masked, so we can improve this app. Turning it off stops this on this device; the actions you take are still recorded on our servers.'
+        'Which screens you open and what you tap, with names and email addresses masked, so we can improve this app. Turning it off stops this in this app; the actions you take are still recorded on our servers.'
       )
     ).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Read our privacy policy' })).toBeTruthy()
