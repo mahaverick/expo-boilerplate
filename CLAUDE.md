@@ -827,8 +827,10 @@ collect proxy at `apiUrl('/collect')`, and the app never holds a PostHog host.
   A flush already in flight can still send its one batch.
 - **Before the session restore applies the stored choice, a cold start can
   capture under the last opt-in.** React has the same window. The facade queues
-  calls made before `initAnalytics` (100 captures at most) and replays them in
-  order, so identity reaches the SDK before any event.
+  calls made before `initAnalytics` (100 at most; past that the oldest queued
+  capture is dropped, and identity, reset, group, flag and opt-out calls are
+  kept) and replays them in order, so identity reaches the SDK before any
+  event.
 - **`forgetStaleIdentity` runs after a failed restore.** The SDK stores its
   person in MMKV. When the restore leaves nobody signed in, that person is
   stale, and `forgetStaleIdentityWithoutUser` resets it, keeping the opt-out
@@ -931,9 +933,11 @@ collect proxy at `apiUrl('/collect')`, and the app never holds a PostHog host.
   URL. Each store build must set it, because a store listing needs a policy
   address.
 - **The privacy manifest matches what the app sends.** Product interaction
-  and user ID (both linked, for analytics) and crash data (not linked, for app
+  and user ID (both linked, for analytics) and crash data (linked, for app
   functionality), with no tracking. The user ID is declared because an
-  identified event carries the user's id. The README holds the store answers.
+  identified event carries the user's id, and crash data is declared linked
+  because an exception carries that id when the person is identified and
+  sharing. The README holds the store answers.
 - **The remote-config request is not opt-out aware.** The SDK reads
   `/collect/array/<key>/config` on every launch with a key, opted out or not,
   and no option turns it off.

@@ -256,7 +256,7 @@ src/app/
   +native-intent.tsx, +not-found.tsx
   (app)/                       the session guard
     _layout.tsx                restore, sign-in redirect, passkey redirect, NotificationStream,
-                               workspace group and feature properties for analytics;
+                               analytics workspace group and feature properties;
                                anchored on (tabs), so the tabs sit beneath every screen above them
     welcome.tsx                create a first workspace (header with Back)
     (tabs)/
@@ -271,7 +271,7 @@ src/app/
       profile.tsx              edit the name (header with Back)
       security.tsx             sign-in methods, signed-in devices, Sign out other devices
       notifications.tsx        how each kind of notification reaches you
-      privacy.tsx              the usage analytics switch and the privacy policy link
+      privacy.tsx              analytics switch and privacy policy link
       delete.tsx               ask for the account to be deleted, through step-up
     settings/workspace/[slug]/
       index.tsx                redirects to General

@@ -182,7 +182,7 @@ track people across other companies' apps or websites.
 | ------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
 | Product interaction | Collected. Linked to the person. Used for analytics.               | App activity, "App interactions". Collected. Used for analytics. Optional.     |
 | User ID             | Collected. Linked to the person. Used for analytics.               | "User IDs" under personal info. Collected. Used for analytics. Optional.       |
-| Crash data          | Collected. Not linked to the person. Used for app functionality.   | App info and performance, "Crash logs". Collected. Used for app functionality. |
+| Crash data          | Collected. Linked to the person. Used for app functionality.       | App info and performance, "Crash logs". Collected. Used for app functionality. |
 | Tracking            | No. `NSPrivacyTracking` is false and no tracking domain is listed. | Nothing is shared with third parties for their own purposes.                   |
 
 - **Product interaction** is the screens the person opens and the actions they
@@ -191,9 +191,9 @@ track people across other companies' apps or websites.
   Play's "Optional" means the person can turn the collection off.
 - **Crash data** is an exception report: the scrubbed error text, the stack
   frames, the app version and build, the route pattern and the environment. It
-  names the person only when they are identified and sharing analytics, and
-  the User ID row covers that case. A crash saved for the next launch is
-  anonymous.
+  names the person (their user id) only when they are identified and sharing
+  analytics, so crash data is declared as linked. Otherwise it is anonymous,
+  and a crash saved for the next launch always is.
 - **PostHog processes the data for the app.** On Google Play, mark the data as
   encrypted in transit (HTTPS), and declare the account deletion path (Settings,
   Account, Delete account).
@@ -518,7 +518,7 @@ date, the device and the OS version beside each.
       scrubber might keep it.
 - [ ] **The privacy report of an archive matches the manifest.** Archive an iOS
       build in Xcode, then choose Generate Privacy Report. It lists product
-      interaction and user ID (linked, analytics) and crash data (not linked,
+      interaction and user ID (linked, analytics) and crash data (linked,
       app functionality), no tracking, and no tracking domain.
 - [ ] **The Privacy screen reads and writes the choice.** With a key and
       `PRIVACY_POLICY_URL` set, open Settings, Account, Privacy. The switch

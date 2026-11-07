@@ -189,7 +189,7 @@ describe('app.config store declarations', () => {
       },
       {
         NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeCrashData',
-        NSPrivacyCollectedDataTypeLinked: false,
+        NSPrivacyCollectedDataTypeLinked: true,
         NSPrivacyCollectedDataTypeTracking: false,
         NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'],
       },

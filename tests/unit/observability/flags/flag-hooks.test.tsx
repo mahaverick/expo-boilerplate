@@ -32,11 +32,14 @@ let client: QueryClient
 /** Each request as `METHOD url`, in order. */
 let sent: string[]
 let answers: Record<string, ReturnType<typeof envelope>>
+/** When set, every answer waits for it, so a test sees the state before the answer. */
+let gate: Promise<void> | null = null
 
 /** Serves the answers by `METHOD url`; unlisted exposure posts answer 204. */
 function serveFlags(more: typeof answers) {
   answers = more
-  serve((config) => {
+  serve(async (config) => {
+    if (gate) await gate
     const key = `${(config.method ?? 'get').toUpperCase()} ${config.url ?? ''}`
     sent.push(key)
     return answers[key] ?? (key.startsWith('POST') ? { status: 204, data: null } : NOT_FOUND)
@@ -57,6 +60,7 @@ beforeEach(() => {
   jest.useFakeTimers({ advanceTimers: true })
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   sent = []
+  gate = null
   mockParams = {}
   mockRegister.mockClear()
   mockUnregister.mockClear()
@@ -165,9 +169,12 @@ describe('useVariant', () => {
   })
 
   it('returns the fallback variant until loaded, then reports one exposure', async () => {
+    const deferred = Promise.withResolvers<void>()
+    gate = deferred.promise
     serveFlags({ 'GET /flags': flags({ example_cta_experiment: 'bold' }) })
     const { result } = await renderHook(() => useVariant('example_cta_experiment'), { wrapper })
     expect(result.current).toBe('control')
+    deferred.resolve()
     await waitFor(() => {
       expect(result.current).toBe('bold')
     })
