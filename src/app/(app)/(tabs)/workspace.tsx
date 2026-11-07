@@ -6,11 +6,8 @@ import { Screen } from '@/components/ui/screen'
 import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
 import { WorkspaceSwitcher } from '@/components/workspaces/workspace-switcher'
 import { useCurrentTenant } from '@/hooks/use-current-tenant'
+import { TENANTS_ERROR } from '@/lib/tenants-error'
 import { useAuthStore } from '@/states/auth.store'
-
-/** What a failed list says: a claim about the request, not the account. */
-const TENANTS_ERROR =
-  'We couldn’t load your workspaces, so none are listed. Select Try again to load them.'
 
 /**
  * The workspace tab. It has no web address of its own, so it resolves the

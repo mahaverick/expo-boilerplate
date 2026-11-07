@@ -6,12 +6,9 @@ import { Screen } from '@/components/ui/screen'
 import { TOUCH_TARGET } from '@/components/ui/touch-target'
 import { CreateWorkspaceForm } from '@/components/workspaces/create-workspace-form'
 import { cn } from '@/lib/cn'
+import { TENANTS_ERROR } from '@/lib/tenants-error'
 import { toast } from '@/lib/toast'
 import { useTenants, type Tenant, type TenantWithRole } from '@/queries/tenant.queries'
-
-/** What the list says when it did not load: a claim about the request, not the account. */
-const TENANTS_ERROR =
-  'We couldn’t load your workspaces, so none are listed. Select Try again to load them.'
 
 /**
  * Opens a workspace.

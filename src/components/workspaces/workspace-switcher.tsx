@@ -6,6 +6,7 @@ import { LoadError } from '@/components/shared/load-error'
 import { Button } from '@/components/ui/button'
 import { TOUCH_TARGET } from '@/components/ui/touch-target'
 import { cn } from '@/lib/cn'
+import { TENANTS_ERROR } from '@/lib/tenants-error'
 import { useTenants, type TenantWithRole } from '@/queries/tenant.queries'
 import { useAuthStore } from '@/states/auth.store'
 import { useCurrentTenantStore } from '@/states/current-tenant.store'
@@ -21,10 +22,6 @@ interface WorkspaceSwitcherProps {
    */
   inPlace?: boolean
 }
-
-/** What a failed list says: a claim about the request, not the account. */
-const TENANTS_ERROR =
-  'We couldn’t load your workspaces, so none are listed. Select Try again to load them.'
 
 /**
  * One row of the sheet. A suspended workspace is listed, tagged and disabled.

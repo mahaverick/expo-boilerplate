@@ -1,10 +1,40 @@
-import { Text, View } from 'react-native'
+import { ActivityIndicator, Text, View } from 'react-native'
 import { SettingsRow } from '@/components/settings/settings-row'
+import { LoadError } from '@/components/shared/load-error'
 import { Button } from '@/components/ui/button'
 import { Screen } from '@/components/ui/screen'
 import { ACCOUNT_SECTIONS, SETTINGS_GROUPS, WORKSPACE_SECTIONS } from '@/constants/settings'
-import { useCurrentTenant } from '@/hooks/use-current-tenant'
+import { useCurrentTenant, type CurrentTenant } from '@/hooks/use-current-tenant'
 import { useSignOut } from '@/hooks/use-sign-out'
+import { TENANTS_ERROR } from '@/lib/tenants-error'
+
+/**
+ * The Workspace group's body: the rows for the current workspace, a spinner
+ * while the list loads, the load error with Try again when it failed, and
+ * "Choose a workspace first." only when there is none.
+ * @param props - The resolved current workspace.
+ * @param props.current - What `useCurrentTenant` returned.
+ * @returns The rows or the state that stands in for them.
+ */
+function WorkspaceRows({ current }: { current: CurrentTenant }) {
+  if (current.status === 'ready' && current.slug !== null) {
+    const { slug } = current
+    return WORKSPACE_SECTIONS.map((section) => (
+      <SettingsRow
+        key={section.key}
+        title={section.title}
+        description={section.description}
+        href={section.path(slug)}
+      />
+    ))
+  }
+  if (current.status === 'pending') {
+    return <ActivityIndicator accessibilityLabel="Loading your workspaces" />
+  }
+  if (current.status === 'error')
+    return <LoadError message={TENANTS_ERROR} onRetry={current.retry} />
+  return <Text className="text-base text-muted-foreground">Choose a workspace first.</Text>
+}
 
 /**
  * The settings tab: the Account rows that open the account screens, the
@@ -14,7 +44,6 @@ import { useSignOut } from '@/hooks/use-sign-out'
 export default function Settings() {
   const { signOut, isPending } = useSignOut()
   const current = useCurrentTenant()
-  const slug = current.status === 'ready' ? current.slug : null
   return (
     <Screen title="Settings" bottomInset={false}>
       {SETTINGS_GROUPS.map((group) => (
@@ -31,20 +60,7 @@ export default function Settings() {
                 />
               ))
             : null}
-          {group.key === 'workspace' ? (
-            slug !== null ? (
-              WORKSPACE_SECTIONS.map((section) => (
-                <SettingsRow
-                  key={section.key}
-                  title={section.title}
-                  description={section.description}
-                  href={section.path(slug)}
-                />
-              ))
-            ) : (
-              <Text className="text-base text-muted-foreground">Choose a workspace first.</Text>
-            )
-          ) : null}
+          {group.key === 'workspace' ? <WorkspaceRows current={current} /> : null}
         </View>
       ))}
       <Button

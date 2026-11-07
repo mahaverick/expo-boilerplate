@@ -8,7 +8,7 @@ import { useCurrentTenantStore } from '@/states/current-tenant.store'
 import { resetSecureStore } from '@/tests/mocks/expo-secure-store'
 import { renderScreen, restoreApi, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
-import { serveWorkspace } from '@/tests/support/workspace-api'
+import { membership, serveWorkspace } from '@/tests/support/workspace-api'
 
 jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn() } }))
 
@@ -68,6 +68,70 @@ describe('Settings', () => {
     expect(screen.getByText('Choose a workspace first.')).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'General' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'Members' })).toBeNull()
+  })
+
+  describe('while the workspaces are not known', () => {
+    beforeEach(() => {
+      useAuthStore.getState().login('a', {
+        id: 'u1',
+        email: 'ada@example.com',
+        firstName: null,
+        lastName: null,
+        createdAt: '2026-01-01',
+        platformRole: null,
+        analyticsOptOut: false,
+      })
+    })
+
+    it('shows a spinner, not the choose line, while the list loads', async () => {
+      restoreApi()
+      serve(() => new Promise(() => {}))
+      await renderScreen(<Settings />)
+      expect(screen.getByLabelText('Loading your workspaces')).toBeTruthy()
+      expect(screen.queryByText('Choose a workspace first.')).toBeNull()
+    })
+
+    it('shows the load error with Try again when the list fails, then the rows', async () => {
+      restoreApi()
+      let fail = true
+      const listed = {
+        status: 200,
+        data: {
+          success: true,
+          data: {
+            items: [membership('acme', 'Acme')],
+            page: { hasNext: false, nextCursor: null },
+          },
+        },
+      }
+      serve((config) => {
+        if (config.url !== '/tenants') return { status: 404, data: { success: false } }
+        return fail ? { status: 500, data: { success: false, message: 'Broke' } } : listed
+      })
+      await renderScreen(<Settings />)
+      expect(
+        await screen.findByText(
+          'We couldn’t load your workspaces, so none are listed. Select Try again to load them.'
+        )
+      ).toBeTruthy()
+      expect(screen.queryByText('Choose a workspace first.')).toBeNull()
+      fail = false
+      await fireEvent.press(screen.getByRole('button', { name: 'Try again' }))
+      expect(await screen.findByRole('link', { name: 'General' })).toBeTruthy()
+    })
+
+    it('says to choose a workspace first when the list has none', async () => {
+      restoreApi()
+      serveWorkspace({
+        'GET /tenants': {
+          status: 200,
+          data: { success: true, data: { items: [], page: { hasNext: false, nextCursor: null } } },
+        },
+      })
+      await renderScreen(<Settings />)
+      expect(await screen.findByText('Choose a workspace first.')).toBeTruthy()
+      expect(screen.queryByLabelText('Loading your workspaces')).toBeNull()
+    })
   })
 
   it.each([
