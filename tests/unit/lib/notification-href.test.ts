@@ -1,6 +1,24 @@
+import { jest } from '@jest/globals'
 import { notificationHref } from '@/lib/notification-href'
+import type { NotificationLink } from '@/lib/notification-link'
 import type { Notification } from '@/queries/notification.queries'
-import { describe, expect, it } from '@/tests/support/runner'
+import { afterEach, describe, expect, it } from '@/tests/support/runner'
+
+/** A link target the shared `notificationLink` returns in place of its own, when set. */
+let mockLink: { value: unknown } | null = null
+
+jest.mock('@/lib/notification-link', () => {
+  const actual: { notificationLink: (notification: Notification) => NotificationLink | null } =
+    jest.requireActual('@/lib/notification-link')
+  return {
+    notificationLink: (notification: Notification) =>
+      mockLink === null ? actual.notificationLink(notification) : mockLink.value,
+  }
+})
+
+afterEach(() => {
+  mockLink = null
+})
 
 /**
  * A notification.
@@ -40,5 +58,12 @@ describe('notificationHref', () => {
     expect(notificationHref(make('billing_trial_ending', null))).toBeNull()
     expect(notificationHref(make('billing_trial_ending', { slug: '_platform' }))).toBeNull()
     expect(notificationHref(make('tenant_invitation', { slug: 'acme' }))).toBeNull()
+  })
+
+  it('gives no link for a target this app does not know', () => {
+    mockLink = {
+      value: { to: '/settings/workspace/$slug/checkout', params: { slug: 'acme' }, label: 'x' },
+    }
+    expect(notificationHref(make('billing_payment_failed', { slug: 'acme' }))).toBeNull()
   })
 })

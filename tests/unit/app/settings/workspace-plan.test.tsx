@@ -21,6 +21,16 @@ const CATALOG = [
   { key: 'audit_export', kind: 'feature', label: 'Audit export', description: 'y' },
 ]
 
+/** A catalog plan that carries prices and buying words, so a screen that rendered plans would fail `BANNED`. */
+const PAID_PLAN = {
+  key: 'paid',
+  name: 'Upgrade to Paid',
+  description: 'Upgrade to Paid for ₹999 a month. Subscribe now to buy more members.',
+  sortOrder: 1,
+  entitlements: { members: 50, advanced_example: true },
+  prices: [{ id: 'price_1', interval: 'month', amountMinor: 99_900, currency: 'INR' }],
+}
+
 /**
  * Entitlements; a test overrides fields.
  * @param overrides - Fields to change.
@@ -72,7 +82,7 @@ function servePlan(serving: Serving = {}) {
     }
     if (url === '/plans') {
       return envelope({
-        plans: [],
+        plans: [PAID_PLAN],
         catalog: CATALOG,
         trial: { enabled: true, days: 14 },
         paymentsEnabled: true,
@@ -112,7 +122,7 @@ function treeText(): string {
   return out.join('\n')
 }
 
-const BANNED = [/₹/, /Upgrade/i, /\bBuy\b/i, /price/i, /checkout/i]
+const BANNED = [/₹/, /Upgrade/i, /\bBuy\b/i, /price/i, /checkout/i, /subscribe/i, /999/]
 
 describe('Plan screen', () => {
   it('shows the plan, usage in catalog order with key fallback, and the features', async () => {

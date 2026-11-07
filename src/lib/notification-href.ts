@@ -4,7 +4,8 @@ import type { Notification } from '@/queries/notification.queries'
 
 /**
  * Where a notification leads in this app. The shared link's Billing target is
- * the Plan screen here. A notification with no destination gives null.
+ * the Plan screen here. A notification with no destination, or a target this
+ * app does not know, gives null.
  * @param notification - The notification.
  * @returns The route and its link text, or null.
  */
@@ -15,5 +16,8 @@ export function notificationHref(notification: Notification): { href: Href; labe
   if (link.to === '/settings/workspace/$slug/billing') {
     return { href: `/settings/workspace/${slug}/billing`, label: 'Open Plan' }
   }
-  return { href: `/settings/workspace/${slug}/members`, label: 'Open Members' }
+  if (link.to === '/settings/workspace/$slug/members') {
+    return { href: `/settings/workspace/${slug}/members`, label: 'Open Members' }
+  }
+  return null
 }
