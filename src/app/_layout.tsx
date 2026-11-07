@@ -17,6 +17,7 @@ import {
 } from '@/http/session-lifecycle'
 import { queryClient } from '@/lib/query-client'
 import { installQueryManagers } from '@/lib/query-managers'
+import { installAnalyticsIdentity } from '@/observability/telemetry/install-identity'
 import { initAnalytics } from '@/observability/telemetry/telemetry'
 import { resolvedScheme, useThemeStore } from '@/states/theme.store'
 
@@ -78,6 +79,9 @@ export default function RootLayout() {
       clearTimeout(state.fallback)
     }
   }, [])
+
+  // Before the restore, so a restored session is identified before any event.
+  useEffect(() => installAnalyticsIdentity(), [])
 
   useEffect(() => {
     void restoreSession()
