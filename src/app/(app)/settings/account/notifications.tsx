@@ -3,7 +3,7 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { LoadError } from '@/components/shared/load-error'
 import { Screen } from '@/components/ui/screen'
 import { Switch } from '@/components/ui/switch'
-import { humanizeNotificationType } from '@/lib/notification-type'
+import { notificationTypeLabel } from '@/copy/notifications'
 import { toast } from '@/lib/toast'
 import { writeFailureMessage } from '@/lib/write-failure'
 import {
@@ -36,7 +36,7 @@ const PREFERENCES_ERROR =
  */
 function PreferenceRow({ preference }: { preference: NotificationPreference }) {
   const update = useUpdatePreferences()
-  const label = humanizeNotificationType(preference.notificationType)
+  const label = notificationTypeLabel(preference.notificationType)
   const inAppOnly = IN_APP_ONLY_TYPES.has(preference.notificationType)
   const email = inAppOnly ? 'Never sent' : preference.emailEnabled ? 'On' : 'Off'
   const inAppEnabled = update.isPending ? update.variables.inAppEnabled : preference.inAppEnabled

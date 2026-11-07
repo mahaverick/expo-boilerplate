@@ -1,3 +1,5 @@
+import { humanizeNotificationType } from '@/lib/notification-type'
+
 /** What a failed list says. */
 export const NOTIFICATIONS_ERROR =
   'We couldn’t load your notifications, so none are listed. Select Try again to load them.'
@@ -6,15 +8,32 @@ export const NOTIFICATIONS_ERROR =
 export const NOTIFICATIONS_MORE_ERROR =
   'We couldn’t load more notifications. Select Try again to load them.'
 
-/** The kinds whose server text carries prices or an upgrade prompt. The app words them itself. */
-export const NEUTRAL_KINDS: ReadonlySet<string> = new Set([
-  'billing_trial_ending',
-  'billing_payment_failed',
-  'billing_payer_left',
-  'billing_upgrade_requested',
-  'billing_paid_cancelled',
-  'workspace_full',
-])
+/**
+ * Whether the app words a notification itself: every `billing_*` kind, known
+ * or not, and `workspace_full`. Their server text carries prices or an upgrade
+ * prompt, and the app shows neither (spec section 6).
+ * @param type - The notification's type.
+ * @returns True for a kind whose server title and body never show.
+ */
+export function isNeutralKind(type: string): boolean {
+  return type.startsWith('billing_') || type === 'workspace_full'
+}
+
+/** The app's labels where the shared label names an upgrade; keyed by type. */
+const APP_TYPE_LABELS: Readonly<Record<string, string>> = {
+  billing_upgrade_requested: 'Plan request',
+}
+
+/**
+ * A notification type's label in this app: its own label where the shared
+ * one names an upgrade, otherwise `humanizeNotificationType`. The inbox and
+ * the preferences screen both use it, so they agree.
+ * @param type - The notification's type.
+ * @returns The label.
+ */
+export function notificationTypeLabel(type: string): string {
+  return APP_TYPE_LABELS[type] ?? humanizeNotificationType(type)
+}
 
 /** The app's line for each neutral kind; `{workspace}` is filled in. */
 const NEUTRAL_LINES: Readonly<Record<string, (workspace: string) => string>> = {
@@ -31,13 +50,24 @@ const NEUTRAL_LINES: Readonly<Record<string, (workspace: string) => string>> = {
 }
 
 /**
- * The app's own body for a neutral kind, in place of the server's.
+ * The line for a neutral kind with no entry in `NEUTRAL_LINES`.
+ * @param workspace - The workspace's name.
+ * @returns The sentence.
+ */
+function generalPlanLine(workspace: string): string {
+  return `There’s an update about the plan for ${workspace}. Open Plan for details.`
+}
+
+/**
+ * The app's own body for a neutral kind, in place of the server's. A neutral
+ * kind with no line of its own gets the general plan line.
  * @param type - The notification's type.
  * @param workspace - The workspace's name, or undefined when it is unknown.
  * @returns The sentence, or undefined for a kind that shows the server's text.
  */
 export function neutralNoticeBody(type: string, workspace: string | undefined): string | undefined {
-  return NEUTRAL_LINES[type]?.(workspace ?? 'your workspace')
+  if (!isNeutralKind(type)) return undefined
+  return (NEUTRAL_LINES[type] ?? generalPlanLine)(workspace ?? 'your workspace')
 }
 
 /**

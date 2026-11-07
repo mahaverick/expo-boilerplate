@@ -3,11 +3,10 @@ import { useRef } from 'react'
 import { Pressable, Text, View } from 'react-native'
 import { TOUCH_TARGET } from '@/components/ui/touch-target'
 import { RowButton } from '@/components/workspace-settings/row-button'
-import { NEUTRAL_KINDS, neutralNoticeBody } from '@/copy/notifications'
+import { isNeutralKind, neutralNoticeBody, notificationTypeLabel } from '@/copy/notifications'
 import { cn } from '@/lib/cn'
 import { formatDateTime } from '@/lib/format'
 import { notificationHref } from '@/lib/notification-href'
-import { humanizeNotificationType } from '@/lib/notification-type'
 import {
   useDeleteNotification,
   useMarkRead,
@@ -44,8 +43,8 @@ export function NotificationRow({ notification }: { notification: Notification }
   const tenants = useTenants().data
   const markRead = useMarkRead()
   const remove = useDeleteNotification()
-  const neutral = NEUTRAL_KINDS.has(notification.type)
-  const kind = humanizeNotificationType(notification.type)
+  const neutral = isNeutralKind(notification.type)
+  const kind = notificationTypeLabel(notification.type)
   const title = neutral ? kind : notification.title
   const body =
     (neutral

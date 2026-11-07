@@ -51,6 +51,21 @@ describe('Notifications screen', () => {
     expect(screen.getByLabelText('Workspace full: In-app').props.value).toBe(false)
   })
 
+  it('calls a plan request "Plan request" and shows no upgrade text', async () => {
+    serve(() =>
+      envelope({
+        preferences: [
+          { notificationType: 'billing_upgrade_requested', emailEnabled: true, inAppEnabled: true },
+        ],
+      })
+    )
+    await renderScreen(<Notifications />)
+    expect(await screen.findByText('Plan request')).toBeTruthy()
+    expect(screen.getByLabelText('Plan request: In-app')).toBeTruthy()
+    expect(screen.queryByText(/upgrade/i)).toBeNull()
+    expect(screen.queryByLabelText(/upgrade/i)).toBeNull()
+  })
+
   it('sends emailEnabled true for an email type and keeps the in-app-only value', async () => {
     const sent = serve((config) =>
       config.method === 'put'

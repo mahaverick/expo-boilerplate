@@ -216,6 +216,57 @@ describe('Notifications tab', () => {
     expect(screen.getByRole('button', { name: 'Mark "Payment failed" as read' })).toBeTruthy()
   })
 
+  it('calls a plan request "Plan request" and shows no upgrade text', async () => {
+    serveInbox({
+      list: () =>
+        envelope(
+          page([
+            note('u1', {
+              type: 'billing_upgrade_requested',
+              title: 'Upgrade requested',
+              body: 'Ada asked you to upgrade Acme to Paid.',
+              metadata: { slug: 'acme' },
+            }),
+          ])
+        ),
+    })
+    await renderTab()
+    const row = await screen.findByTestId('notification-u1')
+    await waitFor(() =>
+      expect(within(row).getByText('A member of Acme asked about its plan.')).toBeTruthy()
+    )
+    expect(within(row).getByText('Plan request')).toBeTruthy()
+    expect(within(row).getByText(/^Plan request · /)).toBeTruthy()
+    expect(within(row).queryByText(/upgrade/i)).toBeNull()
+    expect(within(row).queryByLabelText(/upgrade/i)).toBeNull()
+  })
+
+  it('words an unknown billing kind itself, with no price', async () => {
+    serveInbox({
+      list: () =>
+        envelope(
+          page([
+            note('r1', {
+              type: 'billing_renewal_notice',
+              title: 'Renew Paid for ₹999',
+              body: 'Your plan renews at ₹999 a month.',
+              metadata: { slug: 'acme' },
+            }),
+          ])
+        ),
+    })
+    await renderTab()
+    const row = await screen.findByTestId('notification-r1')
+    await waitFor(() =>
+      expect(
+        within(row).getByText('There’s an update about the plan for Acme. Open Plan for details.')
+      ).toBeTruthy()
+    )
+    expect(screen.queryByText(/₹/)).toBeNull()
+    expect(screen.queryByText(/Renew Paid/)).toBeNull()
+    expect(screen.queryByLabelText(/₹/)).toBeNull()
+  })
+
   it('names "your workspace" when the list lacks the workspace', async () => {
     serveInbox({
       list: () =>
