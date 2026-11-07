@@ -455,6 +455,15 @@ function currentSettled(): AnalyticsSettled {
 }
 
 /**
+ * The same state `whenAnalyticsSettled` resolves with, read now, for a fatal
+ * crash that cannot wait for a promise. Before the SDK starts it is anonymous.
+ * @returns The distinct id, or null, the capture state, and whether that id is the identified person.
+ */
+export function analyticsSettledNow(): AnalyticsSettled {
+  return currentSettled()
+}
+
+/**
  * Resolves once analytics has started or become inert, with the SDK's
  * distinct id, whether capture is on, and whether that id is the person this
  * facade identified. With no key it resolves at once,

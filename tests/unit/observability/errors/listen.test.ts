@@ -9,10 +9,14 @@ import {
   resetErrorListenForTests,
   RETHROW_WINDOW_MS,
 } from '@/observability/errors/listen'
-import { report } from '@/observability/errors/report'
+import { report, reportFatal, sendPendingReports } from '@/observability/errors/report'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
-jest.mock('@/observability/errors/report', () => ({ report: jest.fn() }))
+jest.mock('@/observability/errors/report', () => ({
+  report: jest.fn(),
+  reportFatal: jest.fn(),
+  sendPendingReports: jest.fn(),
+}))
 
 /** React Native's global error handler signature. */
 type GlobalHandler = (error: unknown, isFatal?: boolean) => void
@@ -45,6 +49,8 @@ const saved = {
   key: process.env.EXPO_PUBLIC_POSTHOG_KEY,
 }
 const reported = jest.mocked(report)
+const fatal = jest.mocked(reportFatal)
+const sendPending = jest.mocked(sendPendingReports)
 
 /** The handler React Native had before the install. */
 const previous = jest.fn<GlobalHandler>()
@@ -56,6 +62,8 @@ beforeEach(() => {
   resetErrorListenForTests()
   process.env.EXPO_PUBLIC_POSTHOG_KEY = 'phc_test_key_not_real'
   reported.mockReset()
+  fatal.mockReset()
+  sendPending.mockReset()
   previous.mockReset()
   enableTracker.mockReset()
   current = previous
@@ -135,31 +143,61 @@ describe('noteError', () => {
 describe('installErrorListeners', () => {
   it('the global handler still calls the previous handler', () => {
     installErrorListeners()
-    const error = new Error('fatal')
-    current(error, true)
-    expect(reported).toHaveBeenCalledWith(error, 'global', false)
-    expect(previous).toHaveBeenCalledWith(error, true)
     const soft = new Error('soft')
     current(soft, false)
-    expect(reported).toHaveBeenLastCalledWith(soft, 'global', true)
-    expect(previous).toHaveBeenLastCalledWith(soft, false)
+    expect(reported).toHaveBeenCalledWith(soft, 'global', false)
+    expect(fatal).not.toHaveBeenCalled()
+    expect(previous).toHaveBeenCalledWith(soft, false)
+    const unflagged = new Error('unflagged')
+    current(unflagged)
+    expect(reported).toHaveBeenLastCalledWith(unflagged, 'global', false)
+    expect(previous.mock.calls.at(-1)).toEqual([unflagged])
   })
 
-  it('calls the previous handler with the same arguments, with no key', () => {
-    delete process.env.EXPO_PUBLIC_POSTHOG_KEY
+  it('keeps a fatal error for the next launch before the previous handler runs, even one that throws', () => {
+    previous.mockImplementation(() => {
+      expect(fatal).toHaveBeenCalledTimes(1)
+      throw new Error('the process ends here')
+    })
     installErrorListeners()
     const error = new Error('fatal')
-    current(error)
-    expect(previous.mock.calls).toEqual([[error]])
+    expect(() => {
+      current(error, true)
+    }).toThrow('the process ends here')
+    expect(fatal).toHaveBeenCalledWith(error, 'global')
     expect(reported).not.toHaveBeenCalled()
+    expect(previous).toHaveBeenCalledWith(error, true)
+  })
+
+  it('notes a fatal error object once', () => {
+    installErrorListeners()
+    const error = new Error('fatal')
+    noteError(error, 'react', true)
+    current(error, true)
+    expect(fatal).not.toHaveBeenCalled()
+    expect(previous).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends the reports kept by the last launch', () => {
+    installErrorListeners()
+    expect(sendPending).toHaveBeenCalledTimes(1)
+  })
+
+  it('installs nothing and reads nothing with no key', () => {
+    delete process.env.EXPO_PUBLIC_POSTHOG_KEY
+    installErrorListeners()
+    expect(current).toBe(previous)
+    expect(enableTracker).not.toHaveBeenCalled()
+    expect(sendPending).not.toHaveBeenCalled()
   })
 
   it('installs once', () => {
     installErrorListeners()
     installErrorListeners()
-    current(new Error('fatal'), true)
+    current(new Error('soft'), false)
     expect(previous).toHaveBeenCalledTimes(1)
     expect(enableTracker).toHaveBeenCalledTimes(1)
+    expect(sendPending).toHaveBeenCalledTimes(1)
   })
 
   it('reports an unhandled rejection through Hermes’s tracker', () => {

@@ -2,6 +2,7 @@ import { jest } from '@jest/globals'
 import type { BeforeSendFn, CaptureEvent } from '@posthog/core'
 import { apiUrl } from '@/http/client'
 import {
+  analyticsSettledNow,
   captureScreen,
   forgetStaleIdentity,
   identifyUser,
@@ -507,5 +508,18 @@ describe('analytics with a key', () => {
     })
     resetAnalytics()
     await expect(whenAnalyticsSettled()).resolves.toMatchObject({ identified: false })
+  })
+
+  it('reads the same state synchronously, for a fatal crash that cannot wait', () => {
+    expect(analyticsSettledNow()).toEqual({ distinctId: null, capturing: false, identified: false })
+    initAnalytics()
+    identifyUser('user-1')
+    expect(analyticsSettledNow()).toEqual({
+      distinctId: 'user-1',
+      capturing: true,
+      identified: true,
+    })
+    setAnalyticsOptOut(true)
+    expect(analyticsSettledNow()).toMatchObject({ capturing: false, identified: false })
   })
 })

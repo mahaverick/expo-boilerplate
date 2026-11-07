@@ -17,15 +17,24 @@ import {
   isAppFrame,
   isIgnoredError,
   LAUNCH_LIMIT,
+  MAX_PENDING_REPORTS,
+  PENDING_REPORTS_KEY,
+  prepareExceptionList,
   report,
+  reportFatal,
   resetReporterForTests,
   RETRY_DELAY_MS,
+  sendPendingReports,
   SETTLE_CAP_MS,
   STALE_ERROR_MS,
   type ExceptionEvent,
 } from '@/observability/errors/report'
 import { ANALYTICS_APP } from '@/observability/telemetry/config'
-import { getAnalyticsSessionIdFor, whenAnalyticsSettled } from '@/observability/telemetry/telemetry'
+import {
+  analyticsSettledNow,
+  getAnalyticsSessionIdFor,
+  whenAnalyticsSettled,
+} from '@/observability/telemetry/telemetry'
 import { currentRoutePattern } from '@/observability/telemetry/use-screen-views'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
@@ -34,8 +43,20 @@ jest.mock('expo-application', () => ({
   nativeBuildVersion: '42',
 }))
 jest.mock('@/observability/telemetry/telemetry', () => ({
+  analyticsSettledNow: jest.fn(),
   whenAnalyticsSettled: jest.fn(),
   getAnalyticsSessionIdFor: jest.fn(),
+}))
+/** What the fake MMKV instance holds. */
+const mockStored = new Map<string, string>()
+jest.mock('@/lib/storage', () => ({
+  storage: {
+    getString: (key: string) => mockStored.get(key),
+    set: (key: string, value: string) => {
+      mockStored.set(key, value)
+    },
+    remove: (key: string) => mockStored.delete(key),
+  },
 }))
 jest.mock('@/observability/telemetry/use-screen-views', () => ({
   currentRoutePattern: jest.fn(),
@@ -51,6 +72,7 @@ type Settled = Awaited<ReturnType<typeof whenAnalyticsSettled>>
 const IDENTIFIED: Settled = { distinctId: 'user-a', capturing: true, identified: true }
 
 const settled = jest.mocked(whenAnalyticsSettled)
+const settledNow = jest.mocked(analyticsSettledNow)
 const sessionFor = jest.mocked(getAnalyticsSessionIdFor)
 const routePattern = jest.mocked(currentRoutePattern)
 const fetchMock = jest.fn<(url: string, init: RequestInit) => Promise<{ status: number }>>()
@@ -114,6 +136,9 @@ beforeEach(() => {
   process.env.EXPO_PUBLIC_APP_ENV = 'test'
   settled.mockReset()
   settled.mockResolvedValue(IDENTIFIED)
+  settledNow.mockReset()
+  settledNow.mockReturnValue(IDENTIFIED)
+  mockStored.clear()
   sessionFor.mockReset()
   sessionFor.mockReturnValue('session-1')
   routePattern.mockReset()
@@ -178,6 +203,37 @@ describe('what is never reported', () => {
     expect(isIgnoredError(input)).toBe(false)
   })
 
+  it.each<[string, () => unknown]>([
+    ['as the cause', () => new Error('wrap', { cause: new AxiosError('500', 'ERR_BAD_RESPONSE') })],
+    [
+      'deeper in the cause chain',
+      () =>
+        new Error('outer', {
+          cause: new Error('middle', { cause: new AxiosError('Network Error', 'ERR_NETWORK') }),
+        }),
+    ],
+    ['in an object’s error property', () => ({ error: new AxiosError('500', 'ERR_BAD_RESPONSE') })],
+    [
+      'in an AggregateError',
+      () =>
+        new AggregateError([new Error('fine'), new AxiosError('500', 'ERR_BAD_RESPONSE')], 'many'),
+    ],
+  ])('drops a report with an axios error %s', async (_label, make) => {
+    const input = make()
+    if (input instanceof Error) input.stack = appError('wrap').stack ?? ''
+    expect(isIgnoredError(input)).toBe(true)
+    report(input, 'rejection', false)
+    await drain()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('stops walking a cyclic cause chain', () => {
+    const first = new Error('a')
+    const second = new Error('b', { cause: first })
+    Object.defineProperty(first, 'cause', { value: second })
+    expect(isIgnoredError(first)).toBe(false)
+  })
+
   it('drops an exception with no frame from the app bundle', async () => {
     const error = new Error('from a library')
     error.stack = 'Error: from a library\n    at apply (native)'
@@ -205,6 +261,53 @@ describe('scrubbing', () => {
     expect(body).toContain('[email]')
     expect(body).toContain('?[query]')
     expect(body).toContain('[jwt]')
+  })
+})
+
+describe('the fields sent', () => {
+  it('sends only the fields it knows, so a field the builder adds later never leaves unscrubbed', () => {
+    const [exception] = prepareExceptionList([
+      {
+        type: 'TypeError',
+        value: 'v',
+        module: 'ada@example.com',
+        mechanism: { type: 'generic', handled: false, source: 'ada@example.com' },
+        stacktrace: {
+          type: 'raw',
+          frames: [
+            {
+              platform: 'hermes',
+              filename: 'index.android.bundle',
+              function: 'render',
+              lineno: 1,
+              colno: 2,
+              in_app: true,
+              context_line: 'const email = "ada@example.com"',
+              vars: { password: 'hunter2' },
+              abs_path: '/Users/ada/app.js',
+            },
+          ],
+        },
+      },
+    ])
+    expect(exception).toEqual({
+      type: 'TypeError',
+      value: 'v',
+      mechanism: { type: 'generic', handled: false },
+      stacktrace: {
+        type: 'raw',
+        frames: [
+          {
+            platform: 'hermes',
+            filename: 'index.android.bundle',
+            function: 'render',
+            lineno: 1,
+            colno: 2,
+            in_app: true,
+          },
+        ],
+      },
+    })
   })
 })
 
@@ -523,5 +626,120 @@ describe('fingerprintOf', () => {
       fingerprintOf([{ type: 'TypeError', value: 'v', stacktrace: { type: 'raw', frames } }])
     ).toBe('TypeError|b.bundle:inner:1')
     expect(fingerprintOf([{ type: 'Error', value: 'no frames' }])).toBe('Error|no frames')
+  })
+})
+
+describe('a fatal crash', () => {
+  /** The events kept for the next launch. */
+  function pending(): ExceptionEvent[] {
+    return JSON.parse(mockStored.get(PENDING_REPORTS_KEY) ?? '[]') as ExceptionEvent[]
+  }
+
+  it('is built, scrubbed and kept at once, with the identity known now, and not posted', () => {
+    const error = appError('No account for ada@example.com')
+    reportFatal(error, 'global')
+    const [event] = pending()
+    expect(event).toMatchObject({
+      event: '$exception',
+      distinct_id: 'user-a',
+      properties: { origin: 'global', release: '1.4.0+42', route_id: '/tenants/[slug]' },
+    })
+    expect(JSON.stringify(event)).not.toContain('ada@example.com')
+    const [exception] = event!.properties.$exception_list as { mechanism: { handled: boolean } }[]
+    expect(exception?.mechanism.handled).toBe(false)
+    expect(settled).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(jest.getTimerCount()).toBe(0)
+  })
+
+  it('is anonymous unless the person is identified now', () => {
+    settledNow.mockReturnValue({ distinctId: 'anon-1', capturing: true, identified: false })
+    reportFatal(appError('signed out'), 'global')
+    const [event] = pending()
+    expect(event?.distinct_id).not.toBe('anon-1')
+    expect(event?.properties.$process_person_profile).toBe(false)
+  })
+
+  it('keeps at most five, dropping the oldest', () => {
+    for (let index = 0; index < MAX_PENDING_REPORTS + 2; index += 1) {
+      reportFatal(appError(`crash ${String(index)}`, `fn${String(index)}`), 'global')
+    }
+    const values = pending().map(
+      (event) => (event.properties.$exception_list as { value: string }[])[0]?.value
+    )
+    expect(values).toEqual(['crash 2', 'crash 3', 'crash 4', 'crash 5', 'crash 6'])
+  })
+
+  it('keeps nothing for an ignored error, or with no key', () => {
+    reportFatal(new AxiosError('500', 'ERR_BAD_RESPONSE'), 'global')
+    delete process.env.EXPO_PUBLIC_POSTHOG_KEY
+    reportFatal(appError('inert'), 'global')
+    expect(mockStored.has(PENDING_REPORTS_KEY)).toBe(false)
+  })
+})
+
+describe('the next launch', () => {
+  /** Keeps two crashes, as a launch that ended would have. */
+  function keepTwo(): void {
+    reportFatal(appError('first crash'), 'global')
+    reportFatal(appError('second crash', 'other'), 'global')
+  }
+
+  it('sends the kept crashes to the collect proxy and clears them on a 2xx', async () => {
+    keepTwo()
+    sendPendingReports()
+    await jest.advanceTimersByTimeAsync(0)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(apiUrl('/collect/batch/'))
+    expect(sentEvents()).toHaveLength(2)
+    expect(mockStored.has(PENDING_REPORTS_KEY)).toBe(false)
+  })
+
+  it('clears them on a 4xx', async () => {
+    keepTwo()
+    fetchMock.mockResolvedValueOnce({ status: 400 })
+    sendPendingReports()
+    await jest.advanceTimersByTimeAsync(0)
+    expect(mockStored.has(PENDING_REPORTS_KEY)).toBe(false)
+  })
+
+  it.each<[string, () => void]>([
+    [
+      'a network failure',
+      () => {
+        fetchMock.mockRejectedValue(new TypeError('Network request failed'))
+      },
+    ],
+    [
+      'a 5xx',
+      () => {
+        fetchMock.mockResolvedValue({ status: 503 })
+      },
+    ],
+  ])('keeps them after %s, retry included', async (_label, fail) => {
+    keepTwo()
+    fail()
+    sendPendingReports()
+    await jest.advanceTimersByTimeAsync(RETRY_DELAY_MS)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(mockStored.get(PENDING_REPORTS_KEY) ?? '[]')).toHaveLength(2)
+  })
+
+  it('keeps a crash kept after the send started', async () => {
+    keepTwo()
+    sendPendingReports()
+    reportFatal(appError('third crash', 'third'), 'global')
+    await jest.advanceTimersByTimeAsync(0)
+    const left = JSON.parse(mockStored.get(PENDING_REPORTS_KEY) ?? '[]') as ExceptionEvent[]
+    expect(left).toHaveLength(1)
+  })
+
+  it('sends nothing when nothing is kept, or with no key', async () => {
+    sendPendingReports()
+    keepTwo()
+    delete process.env.EXPO_PUBLIC_POSTHOG_KEY
+    sendPendingReports()
+    await jest.advanceTimersByTimeAsync(0)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

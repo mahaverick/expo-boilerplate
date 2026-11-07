@@ -8,7 +8,9 @@
  * What differs from react: there is no page URL, so no `$current_url`; no
  * chunk loading, so no `chunk_load` origin; no beacon or `keepalive`, so
  * `AppState` `background` flushes the queue with a plain `fetch`; and the
- * release is the native app version and build.
+ * release is the native app version and build. A fatal crash ends the
+ * process before anything asynchronous runs, so `reportFatal` keeps it in
+ * MMKV and the next launch sends it (`sendPendingReports`).
  */
 import {
   chromeStackLineParser,
@@ -20,6 +22,7 @@ import {
   PrimitiveCoercer,
   StringCoercer,
   type Exception,
+  type Mechanism,
   type StackFrame,
 } from '@posthog/core/error-tracking'
 import { uuidv7 } from '@posthog/core/vendor/uuidv7'
@@ -27,8 +30,10 @@ import { isAxiosError } from 'axios'
 import * as Application from 'expo-application'
 import { AppState } from 'react-native'
 import { apiUrl } from '@/http/client'
+import { storage } from '@/lib/storage'
 import { ANALYTICS_APP, analyticsConfig } from '@/observability/telemetry/config'
 import {
+  analyticsSettledNow,
   getAnalyticsSessionIdFor,
   whenAnalyticsSettled,
   type AnalyticsSettled,
@@ -57,8 +62,17 @@ export const BATCH_WINDOW_MS = 2_000
 /** How long a batch that failed on the network or with a 5xx waits before its one retry. */
 export const RETRY_DELAY_MS = 5_000
 
-/** Exceptions kept from a `cause` chain, the thrown one first. */
+/** Exceptions kept from a `cause` chain, the thrown one first; also how deep `isIgnoredError` looks. */
 const CAUSE_DEPTH = 5
+
+/** The MMKV key of the fatal crashes kept for the next launch. */
+export const PENDING_REPORTS_KEY = 'error-report:pending'
+
+/** The most fatal crashes kept for the next launch; a new one drops the oldest. */
+export const MAX_PENDING_REPORTS = 5
+
+/** The most errors `isIgnoredError` inspects in one noted value. */
+const NESTED_ERROR_LIMIT = 50
 
 /** The most serialized bytes in one request, react's cap. */
 export const BATCH_MAX_BYTES = 60 * 1024
@@ -95,6 +109,8 @@ let queue: ExceptionEvent[] = []
 const awaitingIdentity = new Set<PendingEvent>()
 let flushTimer: ReturnType<typeof setTimeout> | undefined
 const retrying = new Map<ExceptionEvent[], ReturnType<typeof setTimeout>>()
+/** Retries of kept crashes; a move to the background leaves them, since storage still holds them. */
+const pendingRetries = new Set<ReturnType<typeof setTimeout>>()
 let appStateSubscription: { remove: () => void } | undefined
 
 /** The `message` of an error-like value, the value itself when it is a string, else undefined. */
@@ -106,15 +122,46 @@ function messageOf(input: unknown): string | undefined {
 }
 
 /**
- * Whether a noted error is dropped before anything is built: any axios error
- * (its `config.data` can hold the refresh token, and the server owns its
- * 5xx), an abort or cancel, or a `fetch` that never reached the network.
+ * The errors the builder would read from a value: the value, its `cause`
+ * chain, an `AggregateError`'s `errors`, and a plain object's own
+ * Error-valued properties, to `CAUSE_DEPTH` levels and at most
+ * `NESTED_ERROR_LIMIT` values. A cycle is visited once.
+ */
+function nestedErrors(input: unknown): unknown[] {
+  const found: unknown[] = []
+  const visited = new Set<unknown>()
+  const pending: [unknown, number][] = [[input, 0]]
+  while (pending.length > 0 && found.length < NESTED_ERROR_LIMIT) {
+    const [value, depth] = pending.shift() as [unknown, number]
+    if (typeof value !== 'object' || value === null || visited.has(value)) continue
+    visited.add(value)
+    found.push(value)
+    if (depth >= CAUSE_DEPTH) continue
+    if (value instanceof Error) {
+      pending.push([(value as { cause?: unknown }).cause, depth + 1])
+      const { errors } = value as { errors?: unknown }
+      if (Array.isArray(errors)) for (const member of errors) pending.push([member, depth + 1])
+      continue
+    }
+    for (const child of Object.values(value)) {
+      if (child instanceof Error) pending.push([child, depth + 1])
+    }
+  }
+  return found
+}
+
+/**
+ * Whether a noted error is dropped before anything is built: an axios error
+ * anywhere the builder would read one (the value, its causes, an
+ * `AggregateError`'s members, a plain object's Error property), since its
+ * `config.data` can hold the refresh token and the server owns its 5xx; an
+ * abort or cancel; or a `fetch` that never reached the network.
  * @param input - The noted error, as received.
  * @returns True to drop it.
  */
 export function isIgnoredError(input: unknown): boolean {
-  if (isAxiosError(input)) return true
   if (typeof input !== 'object' || input === null) return false
+  if (nestedErrors(input).some((value) => isAxiosError(value))) return true
   const name = (input as { name?: unknown }).name
   if (name === 'AbortError' || name === 'CanceledError') return true
   return input instanceof TypeError && messageOf(input) === NETWORK_FAILURE_MESSAGE
@@ -144,33 +191,54 @@ export function isAppFrame(filename: string | undefined): boolean {
   return RELEASE_BUNDLES.has(filename.slice(filename.lastIndexOf('/') + 1))
 }
 
-/** A frame with `in_app` recomputed from the raw filename, then its filename and function scrubbed. */
+/**
+ * The fields of a frame that are sent: `in_app` recomputed from the raw
+ * filename, the filename and function scrubbed, and the position. Any other
+ * field, such as a source line or variables, is never sent.
+ */
 function scrubFrame(frame: StackFrame): StackFrame {
   return {
-    ...frame,
+    platform: frame.platform,
     in_app: isAppFrame(frame.filename),
     ...(frame.filename === undefined ? {} : { filename: scrubText(frame.filename) }),
     ...(frame.function === undefined ? {} : { function: scrubText(frame.function) }),
+    ...(frame.lineno === undefined ? {} : { lineno: frame.lineno }),
+    ...(frame.colno === undefined ? {} : { colno: frame.colno }),
+  }
+}
+
+/** The mechanism fields that are sent, all of them the builder's own values. */
+function mechanismOf(mechanism: Mechanism): Mechanism {
+  const { type, handled, synthetic, exception_id: exceptionId, parent_id: parentId } = mechanism
+  return {
+    ...(type === undefined ? {} : { type }),
+    ...(handled === undefined ? {} : { handled }),
+    ...(synthetic === undefined ? {} : { synthetic }),
+    ...(exceptionId === undefined ? {} : { exception_id: exceptionId }),
+    ...(parentId === undefined ? {} : { parent_id: parentId }),
   }
 }
 
 /**
  * The builder's exception list cut to `CAUSE_DEPTH`, with `in_app`
  * recomputed for every frame and every type, value, filename and function
- * scrubbed.
+ * scrubbed. Only the fields named here are sent, so a field a later
+ * `@posthog/core` adds never leaves unscrubbed.
  * @param list - `$exception_list` as the builder returned it.
  * @returns The list to send.
  */
-function prepareExceptionList(list: Exception[]): Exception[] {
+export function prepareExceptionList(list: Exception[]): Exception[] {
   return list.slice(0, CAUSE_DEPTH).map((exception) => ({
-    ...exception,
     ...(exception.type === undefined ? {} : { type: scrubText(exception.type) }),
     ...(exception.value === undefined ? {} : { value: scrubText(exception.value) }),
+    ...(exception.mechanism === undefined ? {} : { mechanism: mechanismOf(exception.mechanism) }),
     ...(exception.stacktrace
       ? {
           stacktrace: {
-            ...exception.stacktrace,
-            frames: exception.stacktrace.frames?.map(scrubFrame),
+            type: exception.stacktrace.type,
+            ...(exception.stacktrace.frames === undefined
+              ? {}
+              : { frames: exception.stacktrace.frames.map(scrubFrame) }),
           },
         }
       : {}),
@@ -294,8 +362,14 @@ function takeBatch(events: ExceptionEvent[]): ExceptionEvent[] {
  * after a network failure or a 5xx.
  * @param batch - The events to send.
  * @param canRetry - False for the retry itself.
+ * @param onAnswered - For kept crashes: called once the API answered below
+ *   500, when the batch needs no other try.
  */
-async function send(batch: ExceptionEvent[], canRetry: boolean): Promise<void> {
+async function send(
+  batch: ExceptionEvent[],
+  canRetry: boolean,
+  onAnswered?: () => void
+): Promise<void> {
   try {
     const response = await fetch(apiUrl('/collect/batch/'), {
       method: 'POST',
@@ -303,11 +377,22 @@ async function send(batch: ExceptionEvent[], canRetry: boolean): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: batchBody(batch),
     })
-    if (response.status < 500) return
+    if (response.status < 500) {
+      onAnswered?.()
+      return
+    }
   } catch {
     // A network failure is retried once below, like a 5xx.
   }
   if (!canRetry) return
+  if (onAnswered) {
+    const timer = setTimeout(() => {
+      pendingRetries.delete(timer)
+      void send(batch, false, onAnswered)
+    }, RETRY_DELAY_MS)
+    pendingRetries.add(timer)
+    return
+  }
   retrying.set(
     batch,
     setTimeout(() => {
@@ -368,12 +453,118 @@ function listenForBackground(): void {
 }
 
 /**
+ * Filters, builds, scrubs and throttles one noted error, synchronously.
+ * @param error - The noted error.
+ * @param origin - Where it was noticed.
+ * @param handled - True when the app shows the person an error screen.
+ * @param notedAt - When it was noted.
+ * @param isStale - True to leave out the route, which is no longer the error's own.
+ * @returns The event without its identity, or null when it is dropped.
+ */
+function buildEvent(
+  error: unknown,
+  origin: ErrorOrigin,
+  handled: boolean,
+  notedAt: number,
+  isStale: boolean
+): PendingEvent | null {
+  const { key, environment } = analyticsConfig()
+  if (key === null || accepted >= LAUNCH_LIMIT || isIgnoredError(error)) return null
+  const list = prepareExceptionList(build(error, handled))
+  const hasAppFrame = list.some((exception) =>
+    exception.stacktrace?.frames?.some((frame) => frame.in_app)
+  )
+  if (!hasAppFrame) return null
+  const fingerprint = fingerprintOf(list)
+  const count = fingerprintCounts.get(fingerprint) ?? 0
+  if (count >= FINGERPRINT_LIMIT) return null
+  fingerprintCounts.set(fingerprint, count + 1)
+  accepted += 1
+  const routeId = isStale ? undefined : currentRoutePattern()
+  return {
+    event: '$exception',
+    uuid: uuidv7(),
+    timestamp: new Date(notedAt).toISOString(),
+    properties: {
+      $exception_list: list,
+      $exception_level: 'error',
+      app: ANALYTICS_APP,
+      origin,
+      release: release(),
+      environment,
+      ...(routeId === undefined ? {} : { route_id: routeId }),
+    },
+  }
+}
+
+/** The fatal crashes kept by this launch or an earlier one. */
+function readPending(): ExceptionEvent[] {
+  try {
+    const stored = storage.getString(PENDING_REPORTS_KEY)
+    const parsed: unknown = stored ? JSON.parse(stored) : []
+    return Array.isArray(parsed) ? (parsed as ExceptionEvent[]) : []
+  } catch {
+    return []
+  }
+}
+
+/** Stores the kept crashes, or removes the key when none is left. */
+function writePending(events: ExceptionEvent[]): void {
+  if (events.length === 0) storage.remove(PENDING_REPORTS_KEY)
+  else storage.set(PENDING_REPORTS_KEY, JSON.stringify(events))
+}
+
+/**
+ * Keeps a fatal crash for the next launch. React Native's handler ends the
+ * process right after this returns, before a promise or a timer could run,
+ * so everything here is synchronous: the event is built, scrubbed and
+ * throttled, takes the identity analytics holds now (anonymous unless the
+ * person is identified and capturing), and joins the MMKV list, which keeps
+ * the newest `MAX_PENDING_REPORTS`. Nothing is posted. Does nothing without
+ * a PostHog key. Never throws.
+ * @param error - The thrown error.
+ * @param origin - Where it was noticed.
+ */
+export function reportFatal(error: unknown, origin: ErrorOrigin): void {
+  try {
+    const event = buildEvent(error, origin, false, Date.now(), false)
+    if (!event) return
+    const kept = [...readPending(), withIdentity(event, analyticsSettledNow())]
+    writePending(kept.slice(-MAX_PENDING_REPORTS))
+  } catch {
+    // Error tracking never fails the app, and never reports itself.
+  }
+}
+
+/**
+ * Sends the fatal crashes an earlier launch kept, through the batch requests.
+ * Each request's events leave the list once the API answers below 500; a
+ * network failure or a 5xx, after its one retry, keeps them for the next
+ * launch. Does nothing without a PostHog key. Never throws.
+ */
+export function sendPendingReports(): void {
+  try {
+    if (analyticsConfig().key === null) return
+    const events = readPending()
+    while (events.length > 0) {
+      const batch = takeBatch(events)
+      const sent = new Set(batch.map((event) => event.uuid))
+      void send(batch, true, () => {
+        writePending(readPending().filter((event) => !sent.has(event.uuid)))
+      })
+    }
+  } catch {
+    // Error tracking never fails the app.
+  }
+}
+
+/**
  * Filters, builds, scrubs and throttles one noted error, then queues it to
  * send once its identity is known. Does nothing without a PostHog key. Never
  * throws.
  * @param error - The noted error.
  * @param origin - Where it was noticed.
- * @param handled - True when the app already shows the person an error screen.
+ * @param handled - True when the app shows the person an error screen.
  * @param notedAt - When it was noted, `Date.now()` by default. Older than
  *   `STALE_ERROR_MS`, it is sent anonymous and without its route.
  */
@@ -384,35 +575,10 @@ export function report(
   notedAt = Date.now()
 ): void {
   try {
-    const { key, environment } = analyticsConfig()
-    if (key === null || accepted >= LAUNCH_LIMIT || isIgnoredError(error)) return
     const isStale = Date.now() - notedAt > STALE_ERROR_MS
-    const list = prepareExceptionList(build(error, handled))
-    const hasAppFrame = list.some((exception) =>
-      exception.stacktrace?.frames?.some((frame) => frame.in_app)
-    )
-    if (!hasAppFrame) return
-    const fingerprint = fingerprintOf(list)
-    const count = fingerprintCounts.get(fingerprint) ?? 0
-    if (count >= FINGERPRINT_LIMIT) return
-    fingerprintCounts.set(fingerprint, count + 1)
-    accepted += 1
+    const event = buildEvent(error, origin, handled, notedAt, isStale)
+    if (!event) return
     listenForBackground()
-    const routeId = isStale ? undefined : currentRoutePattern()
-    const event: PendingEvent = {
-      event: '$exception',
-      uuid: uuidv7(),
-      timestamp: new Date(notedAt).toISOString(),
-      properties: {
-        $exception_list: list,
-        $exception_level: 'error',
-        app: ANALYTICS_APP,
-        origin,
-        release: release(),
-        environment,
-        ...(routeId === undefined ? {} : { route_id: routeId }),
-      },
-    }
     awaitingIdentity.add(event)
     void resolveIdentity().then(
       (settled) => {
@@ -441,6 +607,8 @@ export function resetReporterForTests(): void {
   flushTimer = undefined
   for (const timer of retrying.values()) clearTimeout(timer)
   retrying.clear()
+  for (const timer of pendingRetries) clearTimeout(timer)
+  pendingRetries.clear()
   appStateSubscription?.remove()
   appStateSubscription = undefined
 }

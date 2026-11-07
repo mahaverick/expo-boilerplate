@@ -1,11 +1,15 @@
 /**
  * @file Where errors are noticed: `noteError`, which the root error boundary
  * calls, and the listeners `installErrorListeners` adds for the errors no
- * boundary sees. With no PostHog key, nothing is noted.
+ * boundary sees. With no PostHog key, nothing is noted or installed.
  *
  * - **Uncaught errors** reach React Native's global handler. The install wraps
  *   it, notes the error, then calls the handler it replaced with the same
- *   arguments, so the red box and the crash still happen.
+ *   arguments, so the red box and the crash still happen. No error screen
+ *   shows, so every one is reported as unhandled.
+ * - **A fatal error** ends the process inside that handler, before a promise
+ *   or a timer runs, so it is kept in MMKV synchronously (`reportFatal`) and
+ *   the next launch's install sends it (`sendPendingReports`).
  * - **Unhandled rejections** reach Hermes's rejection tracker, which the
  *   install enables only in a release build whose `Promise` is Hermes's own.
  *   A development build already enables it with React Native's options, which
@@ -16,7 +20,7 @@
  *   rejection, so nothing is enabled.
  */
 import { analyticsConfig } from '@/observability/telemetry/config'
-import { report, type ErrorOrigin } from './report'
+import { report, reportFatal, sendPendingReports, type ErrorOrigin } from './report'
 
 /**
  * How long a second error with the same name, message and stack counts as a
@@ -70,22 +74,37 @@ function isRethrow(error: object): boolean {
 }
 
 /**
- * Hands one error to the reporter. An error object is noted once, whichever
- * source sees it first, and so is a re-throw of the same crash. With no
- * PostHog key it does nothing. Never throws.
+ * Whether an error is new: an error object is noted once, whichever source
+ * sees it first, and so is a re-throw of the same crash. False with no
+ * PostHog key.
+ */
+function isNew(error: unknown): boolean {
+  if (analyticsConfig().key === null) return false
+  if (typeof error !== 'object' || error === null) return true
+  if (seen.has(error)) return false
+  seen.add(error)
+  return !isRethrow(error)
+}
+
+/**
+ * Hands one error to the reporter, once (see `isNew`). With no PostHog key it
+ * does nothing. Never throws.
  * @param error - What was thrown or rejected, as received.
  * @param origin - Where it was noticed.
- * @param handled - True when the app already shows the person an error screen.
+ * @param handled - True when the app shows the person an error screen for it.
  */
 export function noteError(error: unknown, origin: ErrorOrigin, handled: boolean): void {
   try {
-    if (analyticsConfig().key === null) return
-    if (typeof error === 'object' && error !== null) {
-      if (seen.has(error)) return
-      seen.add(error)
-      if (isRethrow(error)) return
-    }
-    report(error, origin, handled)
+    if (isNew(error)) report(error, origin, handled)
+  } catch {
+    // Error tracking never fails the app.
+  }
+}
+
+/** Keeps a fatal error for the next launch, once (see `isNew`). Never throws. */
+function noteFatal(error: unknown): void {
+  try {
+    if (isNew(error)) reportFatal(error, 'global')
   } catch {
     // Error tracking never fails the app.
   }
@@ -103,7 +122,8 @@ function wrapGlobalHandler(errorUtils: ErrorGlobals['ErrorUtils']): void {
   }
   replaced = { handler: previous, set: setHandler }
   setHandler((...args: Parameters<GlobalHandler>) => {
-    noteError(args[0], 'global', args[1] !== true)
+    if (args[1] === true) noteFatal(args[0])
+    else noteError(args[0], 'global', false)
     previous(...args)
   })
 }
@@ -121,11 +141,13 @@ function trackRejections(hermes: ErrorGlobals['HermesInternal']): void {
 }
 
 /**
- * Wraps React Native's global error handler and enables Hermes's promise
- * rejection tracker. Idempotent; the root layout calls it at module load.
+ * Wraps React Native's global error handler, enables Hermes's promise
+ * rejection tracker, and sends the fatal crashes the last launch kept. With
+ * no PostHog key it installs and reads nothing. Idempotent; the root layout
+ * calls it at module load.
  */
 export function installErrorListeners(): void {
-  if (isInstalled) return
+  if (isInstalled || analyticsConfig().key === null) return
   isInstalled = true
   const globals = globalThis as unknown as ErrorGlobals
   try {
@@ -134,6 +156,7 @@ export function installErrorListeners(): void {
   } catch {
     // A runtime without these hooks reports nothing.
   }
+  sendPendingReports()
 }
 
 /** Test-only: put back the replaced handler and forget the install and the recent re-throw keys. */
