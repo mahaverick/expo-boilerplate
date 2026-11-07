@@ -116,6 +116,61 @@ describe('WorkspaceOverview', () => {
   })
 })
 
+describe('the entry rows', () => {
+  it('always offers Insights and pushes its route', async () => {
+    serveWorkspace()
+    await renderScreen(<WorkspaceOverview slug="acme" />)
+    await fireEvent.press(await screen.findByRole('link', { name: 'Insights' }))
+    expect(router.push).toHaveBeenCalledWith('/tenants/acme/insights')
+  })
+
+  it('hides Beta while the flag is off or unread', async () => {
+    serveWorkspace({
+      'GET /tenants/acme/flags': envelope({ flags: { example_beta_page: false } }),
+    })
+    await renderScreen(<WorkspaceOverview slug="acme" />)
+    await screen.findByRole('link', { name: 'Insights' })
+    expect(screen.queryByRole('link', { name: 'Beta' })).toBeNull()
+  })
+
+  it('hides Beta when the flags read fails', async () => {
+    const sent = serveWorkspace()
+    await renderScreen(<WorkspaceOverview slug="acme" />)
+    await screen.findByRole('link', { name: 'Insights' })
+    await waitFor(() => {
+      expect(sent.some((request) => request.url === '/tenants/acme/flags')).toBe(true)
+    })
+    expect(screen.queryByRole('link', { name: 'Beta' })).toBeNull()
+  })
+
+  it('shows Beta while the flag is on and pushes its route', async () => {
+    serveWorkspace({
+      'GET /tenants/acme/flags': envelope({ flags: { example_beta_page: true } }),
+    })
+    await renderScreen(<WorkspaceOverview slug="acme" />)
+    await fireEvent.press(await screen.findByRole('link', { name: 'Beta' }))
+    expect(router.push).toHaveBeenCalledWith('/tenants/acme/beta')
+  })
+})
+
+describe('the platform-access banner', () => {
+  it('shows who the person is and a way back for staff', async () => {
+    serveWorkspace({ 'GET /tenants/acme': envelope(acme({ access: 'platform', role: 'admin' })) })
+    await renderScreen(<WorkspaceOverview slug="acme" />)
+    expect(await screen.findByText(/as platform staff \(Admin\)\./)).toBeTruthy()
+    expect(screen.getAllByRole('header')).toHaveLength(1)
+    await fireEvent.press(screen.getByRole('link', { name: 'Back to your workspaces' }))
+    expect(router.push).toHaveBeenCalledWith('/tenants')
+  })
+
+  it('is absent for a member', async () => {
+    serveWorkspace()
+    await renderScreen(<WorkspaceOverview slug="acme" />)
+    await screen.findByText('Details')
+    expect(screen.queryByText(/platform staff/)).toBeNull()
+  })
+})
+
 describe('the tenants/[slug] route', () => {
   it('opens the route slug and remembers it', async () => {
     mockParams.slug = 'acme'

@@ -5,6 +5,7 @@ import { LoadError } from '@/components/shared/load-error'
 import { Screen } from '@/components/ui/screen'
 import { DetailsForm, DetailsRows } from '@/components/workspace-settings/details-form'
 import { SettingsForm, SettingsRows } from '@/components/workspace-settings/settings-form'
+import { PlatformAccessBanner } from '@/components/workspaces/platform-access-banner'
 import { canManageTenant } from '@/constants/roles'
 import { formatDate } from '@/lib/format'
 import { ROLE_ERROR } from '@/lib/role-error'
@@ -133,6 +134,7 @@ export default function WorkspaceGeneral() {
   }
   return (
     <Screen title="General" topInset={false}>
+      <PlatformAccessBanner slug={slug} />
       {body}
     </Screen>
   )

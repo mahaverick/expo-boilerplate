@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Screen } from '@/components/ui/screen'
 import { TextField } from '@/components/ui/text-field'
 import { TOUCH_TARGET } from '@/components/ui/touch-target'
+import { PlatformAccessBanner } from '@/components/workspaces/platform-access-banner'
 import { APP_NAME } from '@/constants/app'
 import { actorName, auditSentence } from '@/constants/audit-actions'
 import { canViewActivity } from '@/constants/roles'
@@ -206,6 +207,7 @@ export default function WorkspaceActivity() {
   }
   return (
     <Screen title="Activity" topInset={false}>
+      <PlatformAccessBanner slug={slug} />
       {body}
     </Screen>
   )

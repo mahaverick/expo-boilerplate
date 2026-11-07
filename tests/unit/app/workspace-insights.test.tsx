@@ -1,0 +1,98 @@
+import { jest } from '@jest/globals'
+import { screen } from '@testing-library/react-native'
+import Insights from '@/app/(app)/tenants/[slug]/insights'
+import { useAuthStore } from '@/states/auth.store'
+import { renderScreen, restoreApi } from '@/tests/support/api'
+import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
+import { envelope, serveWorkspace } from '@/tests/support/workspace-api'
+
+jest.mock('expo-router', () => ({
+  router: { replace: jest.fn(), push: jest.fn() },
+  useLocalSearchParams: () => ({ slug: 'acme' }),
+}))
+
+/** Entitlements with the feature on or off. */
+function entitlements(feature: boolean) {
+  return envelope({
+    plan: { key: 'paid', name: 'Paid' },
+    features: { advanced_example: feature },
+    limits: {},
+  })
+}
+
+beforeEach(() => {
+  useAuthStore.getState().login('a', {
+    id: 'u1',
+    email: 'ada@example.com',
+    firstName: null,
+    lastName: null,
+    createdAt: '2026-01-01',
+    platformRole: null,
+    analyticsOptOut: false,
+  })
+})
+
+afterEach(() => {
+  restoreApi()
+  useAuthStore.getState().logout()
+  jest.clearAllMocks()
+})
+
+describe('Insights', () => {
+  it('shows the two counts when the plan includes the feature', async () => {
+    serveWorkspace({
+      'GET /tenants/acme/entitlements': entitlements(true),
+      'GET /tenants/acme/insights': envelope({
+        membersJoinedLast30Days: 4,
+        invitationsSentLast30Days: 9,
+      }),
+    })
+    await renderScreen(<Insights />)
+    expect(await screen.findByText('Members joined, last 30 days')).toBeTruthy()
+    expect(screen.getByText('4')).toBeTruthy()
+    expect(screen.getByText('Invitations sent, last 30 days')).toBeTruthy()
+    expect(screen.getByText('9')).toBeTruthy()
+    expect(screen.getByRole('header', { name: 'Insights' })).toBeTruthy()
+    expect(screen.getAllByRole('header')).toHaveLength(1)
+  })
+
+  it('shows the locked card, with no action, when the plan lacks the feature', async () => {
+    const sent = serveWorkspace({ 'GET /tenants/acme/entitlements': entitlements(false) })
+    await renderScreen(<Insights />)
+    expect(await screen.findByText('Workspace insights')).toBeTruthy()
+    expect(
+      screen.getByText('See who joined and how many invitations went out in the last 30 days.')
+    ).toBeTruthy()
+    expect(screen.getByText('Included in Paid.')).toBeTruthy()
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(sent.some((request) => request.url === '/tenants/acme/insights')).toBe(false)
+  })
+
+  it('shows the locked card when the API answers 402 PLAN_FEATURE_REQUIRED', async () => {
+    serveWorkspace({
+      'GET /tenants/acme/entitlements': entitlements(true),
+      'GET /tenants/acme/insights': {
+        status: 402,
+        data: {
+          success: false,
+          message: 'Not on your plan',
+          code: 'PLAN_FEATURE_REQUIRED',
+          details: { key: 'advanced_example' },
+        },
+      },
+    })
+    await renderScreen(<Insights />)
+    expect(await screen.findByText('Included in Paid.')).toBeTruthy()
+    expect(screen.queryByText('Members joined, last 30 days')).toBeNull()
+  })
+
+  it('shows Try again when the insights fail to load', async () => {
+    serveWorkspace({
+      'GET /tenants/acme/entitlements': entitlements(true),
+      'GET /tenants/acme/insights': { status: 500, data: { success: false, message: 'x' } },
+    })
+    await renderScreen(<Insights />)
+    expect(await screen.findByRole('button', { name: 'Try again' })).toBeTruthy()
+    expect(screen.queryByText('Included in Paid.')).toBeNull()
+  })
+})

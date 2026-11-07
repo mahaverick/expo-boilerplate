@@ -11,7 +11,9 @@ import Security from '@/app/(app)/settings/account/security'
 import WorkspaceActivity from '@/app/(app)/settings/workspace/[slug]/activity'
 import WorkspaceGeneral from '@/app/(app)/settings/workspace/[slug]/general'
 import WorkspaceMembers from '@/app/(app)/settings/workspace/[slug]/members'
+import Beta from '@/app/(app)/tenants/[slug]/beta'
 import Overview from '@/app/(app)/tenants/[slug]/index'
+import Insights from '@/app/(app)/tenants/[slug]/insights'
 import Tenants from '@/app/(app)/tenants/index'
 import Welcome from '@/app/(app)/welcome'
 import NotFound from '@/app/+not-found'
@@ -34,6 +36,8 @@ import { tenantAuditListOptions } from '@/queries/audit.queries'
 import { authKeys } from '@/queries/auth.queries'
 import { billingKeys } from '@/queries/billing.queries'
 import { clientSettingsKeys } from '@/queries/client-settings.queries'
+import { tenantFlagsKey } from '@/queries/flags.queries'
+import { insightsKey } from '@/queries/insights.queries'
 import { notificationKeys, type NotificationPreference } from '@/queries/notification.queries'
 import { sessionKeys } from '@/queries/sessions.queries'
 import {
@@ -130,6 +134,10 @@ function seeded(detail: unknown, list: TenantWithRole[]): QueryClient {
   seed.setQueryData(tenantKeys.detail('acme'), detail)
   seed.setQueryData(tenantsQueryOptions().queryKey, list)
   seed.setQueryData(billingKeys.billing('acme'), null)
+  seed.setQueryData(tenantFlagsKey('acme'), {
+    example_beta_page: false,
+    example_cta_experiment: 'control',
+  })
   seed.setQueryData(clientSettingsKeys.all, null)
   seed.setQueryData(tenantKeys.onboarding('acme'), {
     state: 'in_progress',
@@ -197,6 +205,70 @@ for (const [name, workspaceClient, workspaceScreen] of WORKSPACE_SCREENS) {
     element: (
       <QueryClientProvider client={workspaceClient}>{workspaceScreen()}</QueryClientProvider>
     ),
+  })
+}
+
+/**
+ * A client holding the Insights and Beta reads for the staff and extra-screen cases.
+ * @param seed - Fills the client.
+ * @returns The seeded client.
+ */
+function extraClient(seed: (client: QueryClient) => void): QueryClient {
+  const extra = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  seed(extra)
+  return extra
+}
+
+/** The Insights and Beta screens, and the overview a staff member sees. */
+const EXTRA_SCREENS: Array<[string, QueryClient, () => React.JSX.Element]> = [
+  [
+    'Workspace Insights (open)',
+    extraClient((extra) => {
+      extra.setQueryData(billingKeys.entitlements('acme'), {
+        plan: { key: 'paid', name: 'Paid' },
+        features: { advanced_example: true },
+        limits: {},
+      })
+      extra.setQueryData(insightsKey('acme'), {
+        membersJoinedLast30Days: 4,
+        invitationsSentLast30Days: 9,
+      })
+    }),
+    () => <Insights />,
+  ],
+  [
+    'Workspace Insights (locked)',
+    extraClient((extra) => {
+      extra.setQueryData(billingKeys.entitlements('acme'), {
+        plan: { key: 'free', name: 'Free' },
+        features: {},
+        limits: {},
+      })
+    }),
+    () => <Insights />,
+  ],
+  [
+    'Workspace Beta',
+    extraClient((extra) => {
+      extra.setQueryData([...tenantKeys.detail('acme'), 'beta'], {
+        slug: 'acme',
+        enabledAt: '2026-11-07T00:00:00.000Z',
+      })
+    }),
+    () => <Beta />,
+  ],
+  [
+    'Workspace overview (staff banner)',
+    seeded({ ...ACME, access: 'platform' }, []),
+    () => <Overview />,
+  ],
+]
+for (const [name, extra, extraScreen] of EXTRA_SCREENS) {
+  A11Y_SCREENS.push({
+    name,
+    element: <QueryClientProvider client={extra}>{extraScreen()}</QueryClientProvider>,
   })
 }
 

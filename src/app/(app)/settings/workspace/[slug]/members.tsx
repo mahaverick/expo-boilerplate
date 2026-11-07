@@ -8,6 +8,7 @@ import { Screen } from '@/components/ui/screen'
 import { InviteForm } from '@/components/workspace-settings/invite-form'
 import { MemberRow } from '@/components/workspace-settings/member-row'
 import { PendingInvitations } from '@/components/workspace-settings/pending-invitations'
+import { PlatformAccessBanner } from '@/components/workspaces/platform-access-banner'
 import { canManageTenant, type MembershipRole } from '@/constants/roles'
 import { PLATFORM_TENANT_SLUG } from '@/constants/routes'
 import { useListPages } from '@/hooks/use-list-pages'
@@ -164,6 +165,7 @@ export default function WorkspaceMembers() {
   }
   return (
     <Screen title="Members" topInset={false}>
+      <PlatformAccessBanner slug={slug} />
       {body}
     </Screen>
   )
