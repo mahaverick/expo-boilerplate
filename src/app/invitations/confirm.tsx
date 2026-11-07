@@ -6,13 +6,13 @@ import { SignInLinkScreen } from '@/components/auth/sign-in-link-screen'
 import { Button } from '@/components/ui/button'
 import { InlineError } from '@/components/ui/inline-error'
 import { Screen } from '@/components/ui/screen'
+import { joinFailureMessage } from '@/copy/invitations'
 import { useSignOut } from '@/hooks/use-sign-out'
 import { SignInNotKeptError } from '@/http/body-token'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import { statusFrom } from '@/lib/api-error'
 import { invitationTokenSchema } from '@/lib/invitation-token'
 import { landJoined } from '@/lib/land-joined'
-import { retryableFailureMessage } from '@/lib/retry'
 import { useConfirmInvitation } from '@/queries/invitation.queries'
 import { useAuthStore } from '@/states/auth.store'
 import { useOwnSignOutStore } from '@/states/own-sign-out.store'
@@ -210,7 +210,7 @@ export default function ConfirmInvitation() {
     }
     return (
       <Screen title={FAILED_TITLE}>
-        <InlineError message={retryableFailureMessage(failure, 'attempts')} />
+        <InlineError message={joinFailureMessage(failure)} />
         <Button variant="primary" label="Try again" loading={confirm.isPending} onPress={post} />
       </Screen>
     )

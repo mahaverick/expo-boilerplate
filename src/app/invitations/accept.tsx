@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { InlineError } from '@/components/ui/inline-error'
 import { Screen } from '@/components/ui/screen'
 import { ROLE_LABELS } from '@/constants/roles'
+import { joinFailureMessage } from '@/copy/invitations'
 import { useSignOut } from '@/hooks/use-sign-out'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import { retryAfterSecondsFrom, statusFrom } from '@/lib/api-error'
@@ -320,7 +321,7 @@ export default function AcceptInvitation() {
               ? `You weren’t added to ${joining.invitation.tenant.name}`
               : 'This invitation didn’t open'
           }
-          error={retryableFailureMessage(failure.error, 'attempts')}
+          error={joinFailureMessage(failure.error)}
           retry={() => {
             retry(joining.call)
           }}

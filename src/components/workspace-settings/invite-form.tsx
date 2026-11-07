@@ -16,9 +16,9 @@ import {
   type MembershipRole,
 } from '@/constants/roles'
 import { STEP_UP_WAITING_LABEL, useStepUp, useStepUpWaiting } from '@/hooks/use-step-up'
-import { codeFrom, messageFrom } from '@/lib/api-error'
+import { codeFrom, messageFrom, statusFrom } from '@/lib/api-error'
 import { inDays } from '@/lib/link-lifetime'
-import { isMembersLimitRefusal, NOT_SENT_AT_LIMIT } from '@/lib/members-limit'
+import { NOT_SENT_AT_LIMIT } from '@/lib/members-limit'
 import { isReauthRequired, stepUpRefusal } from '@/lib/step-up'
 import { toast } from '@/lib/toast'
 import { useClientSettings } from '@/queries/client-settings.queries'
@@ -100,7 +100,8 @@ export function InviteForm({ slug, myRole }: InviteFormProps) {
         const code = codeFrom(error)
         if (code === ALREADY_MEMBER) setEmailError(messageFrom(error))
         else if (code === INVITATION_CONFLICT) setFormError(RACED)
-        else if (isMembersLimitRefusal(error)) setFormError(NOT_SENT_AT_LIMIT)
+        // Any 402 here is the members limit; its message asks for an upgrade, so it never shows.
+        else if (statusFrom(error) === 402) setFormError(NOT_SENT_AT_LIMIT)
         else if (isReauthRequired(error)) setFormError(stepUpRefusal(error))
         else setFormError(messageFrom(error))
       } finally {

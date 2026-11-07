@@ -7,10 +7,10 @@ import { canActorGrantRole, ROLE_LABELS, type MembershipRole } from '@/constants
 import { useListPages } from '@/hooks/use-list-pages'
 import { useSecondsLeft } from '@/hooks/use-seconds-left'
 import { STEP_UP_WAITING_LABEL, useStepUp, useStepUpWaiting } from '@/hooks/use-step-up'
-import { codeFrom, retryAfterSecondsFrom } from '@/lib/api-error'
+import { codeFrom, retryAfterSecondsFrom, statusFrom } from '@/lib/api-error'
 import { formatTimeLeft } from '@/lib/countdown'
 import { formatDateTime } from '@/lib/format'
-import { isMembersLimitRefusal, NOT_SENT_AT_LIMIT } from '@/lib/members-limit'
+import { NOT_SENT_AT_LIMIT } from '@/lib/members-limit'
 import { toast } from '@/lib/toast'
 import { writeFailureMessage } from '@/lib/write-failure'
 import { inviterName } from '@/queries/invitation.queries'
@@ -120,7 +120,8 @@ function InvitationRow({ slug, invitation, myRole, readOnly }: InvitationRowProp
             const wait = retryAfterSecondsFrom(error)
             if (wait !== null) setLocalUntil(Date.now() + wait * 1_000)
           }
-          toast.error(isMembersLimitRefusal(error) ? NOT_SENT_AT_LIMIT : actionFailure(error))
+          // Any 402 here is the members limit; its message asks for an upgrade, so it never shows.
+          toast.error(statusFrom(error) === 402 ? NOT_SENT_AT_LIMIT : actionFailure(error))
         }
       )
       .finally(() => {

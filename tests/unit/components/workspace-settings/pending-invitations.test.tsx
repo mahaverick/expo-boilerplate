@@ -337,6 +337,23 @@ describe('PendingInvitations', () => {
     })
   })
 
+  it('a resend 402 without counts shows the app’s copy, never the server’s', async () => {
+    serveInvitations({
+      resend: {
+        status: 402,
+        data: { success: false, code: 'PLAN_LIMIT_REACHED', message: 'Upgrade to add more.' },
+      },
+    })
+    await renderList()
+    await fireEvent.press(
+      await screen.findByRole('button', { name: 'Resend, invitation to i1@example.com' })
+    )
+    await waitFor(() => {
+      expect(toasts()).toContain('Not sent. You’re at the members limit.')
+    })
+    expect(toasts().some((title) => /upgrade/i.test(title))).toBe(false)
+  })
+
   it('revoke confirms first, then runs through step-up', async () => {
     const sent = serveInvitations({ revoke: REAUTH_ANSWER })
     await renderList()
