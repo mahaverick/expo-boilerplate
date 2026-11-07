@@ -64,14 +64,18 @@ describe('PasskeyRequired', () => {
     ).toBeTruthy()
   })
 
-  it('says how to ask for deletion by email, without a support address', async () => {
-    setWebUrl(undefined)
+  it('without a support address, points to the one on the website and offers it', async () => {
+    setWebUrl('https://app.example.com')
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     client.setQueryData(clientSettingsKeys.all, null)
     await renderScreen(<PasskeyRequired />, client)
     expect(
-      screen.getByText('To ask us to delete your account instead, write to our support team.')
+      screen.getByText(
+        'To ask us to delete your account instead, write to the support address on our website.'
+      )
     ).toBeTruthy()
+    expect(screen.queryByText(/our support team/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Open the website' })).toBeTruthy()
   })
 
   it('renders inside a scroll view, so Sign out stays reachable at large text sizes', async () => {

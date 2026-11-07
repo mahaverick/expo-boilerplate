@@ -48,7 +48,7 @@ export default function PasskeyRequired() {
         Settings, then Security, then come back.
       </Text>
       <Text className="text-base text-foreground">
-        {`To ask us to delete your account instead, write to ${supportEmail ?? 'our support team'}.`}
+        {`To ask us to delete your account instead, write to ${supportEmail ?? 'the support address on our website'}.`}
       </Text>
       {webUrl ? (
         <Button
