@@ -469,7 +469,8 @@ it’s you" flow. The files are listed in
   `/settings/account/{name}` under the stack's empty-titled header with Back.
   The Workspace group lists General, Members and Activity
   (`WORKSPACE_SECTIONS`) for the current workspace, and says "Choose a
-  workspace first." when none resolves. `/profile` and `/settings/account`
+  workspace first." when the person has none. While the list loads it shows a
+  spinner, and a failed read shows the load error with Try again. `/profile` and `/settings/account`
   redirect to Profile. Section headings inside a screen are plain text, not
   headings, because a screen has one header role and the accessibility
   harness rejects a second.
@@ -570,10 +571,12 @@ screens, Insights and Beta. They are plan 3c3's. The files are listed in
 - **Every member write runs through `useStepUp().run`.** A role change, a
   removal, leaving, an invite, a resend and a revoke each go through it, and
   the button shows `STEP_UP_WAITING_LABEL` while `useStepUpWaiting()` is true.
-  Express asks for a recent sign-in on the platform workspace for each of them
-  except a revoke (`requireRecentAuthOnPlatformTenant`), and for staff acting
-  through platform access on a customer workspace, revokes included. A
-  customer workspace asks its members for none. One path for every write
+  On the platform workspace, express asks for a recent sign-in on each of them
+  except a revoke (`requireRecentAuthOnPlatformTenant`). Staff acting through
+  platform access on a customer workspace must give a recent sign-in and a
+  reason for each write except leaving
+  (`requireRecentAuthAndReasonOnPlatformAccess`), revokes included; expo shows
+  them no write control. A customer workspace asks its members for none. One path for every write
   means a write that can be refused gets the dialog, never a bare
   `REAUTH_REQUIRED`, and a write that cannot be refused costs nothing extra.
 - **A refused invite shows inline in the invite form.** The invite form is a
@@ -610,8 +613,9 @@ screens, Insights and Beta. They are plan 3c3's. The files are listed in
   refetch brings the same rows, and then the pages stay, because the boundary
   row holds. `dataUpdatedAt` moves on every refetch and is shared by two
   fetches in one millisecond, and a count read from the cache during render
-  re-renders nothing. The cost: new rows on page 1 fold the list back to
-  page 1. A failed later page keeps the loaded rows and offers Try again
+  re-renders nothing. The cost: any change to page 1's data folds the list
+  back to page 1. Members' first page carries the total, so an add or a
+  removal on any page folds it. A failed later page keeps the loaded rows and offers Try again
   beside them.
 - **Legacy workspace paths redirect to the new screens.**
   `/tenants/{slug}/settings`, `/members` and `/activity` go to General,
@@ -788,6 +792,21 @@ Each item is a change for react or for a later plan, with the reason it waits.
   token, so the join's token was revoked, and the old session stays open until
   it fails. It fails safe: the person sees "Go to Home" and signs in again.
   The fix signs out and shows the prefilled form.
+- **Leaving from Members opened through the overview can refetch the left
+  workspace.** "Open members" in Getting started pushes Members above
+  `/tenants/{slug}`, and the replace to `/tenants` replaces only Members. The
+  overview beneath keeps observers on the workspace's queries, and after the
+  cache drop it can send GETs that express answers with 404. It fails safe:
+  Back shows the "not available" panel. The fix drops the cache from
+  `/tenants` once it has focus, or removes every route for the slug first.
+- **The accept screen keeps two unused props.** Its switch panel passes the
+  sign-out's pending state to `loading` and `disabled`, but the joining state
+  replaces the panel before the sign-out starts. Remove them, as on the
+  confirm screen.
+- **Load more can pair a new search with the old cursor.** While page 1 of a
+  new search shows the previous rows as placeholder data, Load more takes the
+  previous request's cursor. Disable Load more while page 1 is placeholder
+  data.
 - **Continue on both invitation screens waits for the whole sign-out.**
   `retryPendingRevoke` can take up to the client timeout of 30 seconds before
   the screen posts. The post could start once the local sign-out is done.
