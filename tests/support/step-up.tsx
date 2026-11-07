@@ -82,29 +82,34 @@ function Caller({ outcomes }: { outcomes: Outcome[] }) {
 
 /**
  * A query client that holds the client settings, so the update check makes no request.
+ * @param settings - The client settings to hold; null when the app has none.
  * @returns The client.
  */
-function stepUpClient(): QueryClient {
+function stepUpClient(settings: unknown = null): QueryClient {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   })
-  client.setQueryData(clientSettingsKeys.all, null)
+  client.setQueryData(clientSettingsKeys.all, settings)
   return client
 }
 
 /**
  * Renders the caller inside the provider.
  * @param beside - Rendered next to the caller, inside the same provider, such as a route screen.
+ * @param settings - The client settings the client holds; null when the app has none.
  * @returns The outcomes the caller collects.
  */
-export async function renderCaller(beside?: ReactNode): Promise<Outcome[]> {
+export async function renderCaller(
+  beside?: ReactNode,
+  settings: unknown = null
+): Promise<Outcome[]> {
   const outcomes: Outcome[] = []
   await renderScreen(
     <StepUpProvider>
       <Caller outcomes={outcomes} />
       {beside}
     </StepUpProvider>,
-    stepUpClient()
+    stepUpClient(settings)
   )
   return outcomes
 }

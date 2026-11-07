@@ -27,6 +27,16 @@ export { unwrap } from '@/http/create-api-client'
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? ''
 
 /**
+ * The absolute URL of an API path, for the one caller that cannot go through
+ * axios (the notification stream).
+ * @param path - The path under the API prefix, with a leading slash.
+ * @returns The origin, the prefix and the path.
+ */
+export function apiUrl(path: string): string {
+  return `${API_URL}${API_PREFIX}${path}`
+}
+
+/**
  * Whether `config` is a call to this app's API: the configured origin, under
  * `API_PREFIX`. Only those carry the client, device and trace headers; an
  * absolute URL to anywhere else never does.

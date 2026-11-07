@@ -45,7 +45,9 @@ describe('Settings', () => {
     expect(screen.getByText('Account')).toBeTruthy()
     expect(screen.getByText('Your profile, sign-in and notifications.')).toBeTruthy()
     expect(screen.getByText('Workspace')).toBeTruthy()
-    expect(screen.getByText('The current workspace’s details, members and activity.')).toBeTruthy()
+    expect(
+      screen.getByText('The current workspace’s details, members, activity and plan.')
+    ).toBeTruthy()
   })
 
   it.each([
@@ -56,11 +58,18 @@ describe('Settings', () => {
       'How each kind of notification reaches you.',
       '/settings/account/notifications',
     ],
+    ['Delete account', 'Ask us to delete your account.', '/settings/account/delete'],
   ])('the %s row shows %s and pushes %s', async (title, description, href) => {
     await renderScreen(<Settings />)
     expect(screen.getByText(description)).toBeTruthy()
     await fireEvent.press(screen.getByRole('link', { name: title }))
     expect(router.push).toHaveBeenCalledWith(href as Href)
+  })
+
+  it('lists Delete account last in the Account group', async () => {
+    await renderScreen(<Settings />)
+    const titles = screen.getAllByRole('link').map((link) => String(link.props.accessibilityLabel))
+    expect(titles.slice(0, 4)).toEqual(['Profile', 'Security', 'Notifications', 'Delete account'])
   })
 
   it('says to choose a workspace first when none is current', async () => {
@@ -138,6 +147,7 @@ describe('Settings', () => {
     ['General', 'The workspace’s details, time zone, and language and region.', 'general'],
     ['Members', 'Members, roles and pending invitations.', 'members'],
     ['Activity', 'Every change made in this workspace, newest first.', 'activity'],
+    ['Plan', 'The workspace’s plan and its limits.', 'billing'],
   ])('the %s row pushes the current workspace’s screen', async (title, description, leaf) => {
     useAuthStore.getState().login('a', {
       id: 'u1',

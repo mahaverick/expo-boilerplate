@@ -170,6 +170,14 @@ describe('InviteForm', () => {
     expect(await screen.findByText('Not sent. You’re at the members limit.')).toBeTruthy()
   })
 
+  it('a 402 without counts shows the app’s copy, never the server’s', async () => {
+    serveInvite(refusal(402, 'PLAN_LIMIT_REACHED', 'Upgrade to add more.'))
+    await renderForm()
+    await invite('ada@example.com')
+    expect(await screen.findByText('Not sent. You’re at the members limit.')).toBeTruthy()
+    expect(screen.queryByText(/upgrade/i)).toBeNull()
+  })
+
   it('already_member shows on the email field', async () => {
     serveInvite(refusal(409, 'already_member', 'That person is already a member.'))
     await renderForm()

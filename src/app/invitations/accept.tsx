@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { InlineError } from '@/components/ui/inline-error'
 import { Screen } from '@/components/ui/screen'
 import { ROLE_LABELS } from '@/constants/roles'
+import { joinFailureMessage } from '@/copy/invitations'
 import { useSignOut } from '@/hooks/use-sign-out'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import { retryAfterSecondsFrom, statusFrom } from '@/lib/api-error'
@@ -156,7 +157,7 @@ export default function AcceptInvitation() {
   const queryClient = useQueryClient()
   const verify = useVerifyInvitation()
   const accept = useAcceptInvitation()
-  const { signOut, isPending: isSigningOut } = useSignOut()
+  const { signOut } = useSignOut()
   /** Who was signed in when the restore settled; null until it settles. */
   const [started, setStarted] = useState<{ user: User | null } | null>(null)
   const [joining, setJoining] = useState<Joining | null>(null)
@@ -320,7 +321,7 @@ export default function AcceptInvitation() {
               ? `You weren’t added to ${joining.invitation.tenant.name}`
               : 'This invitation didn’t open'
           }
-          error={retryableFailureMessage(failure.error, 'attempts')}
+          error={joinFailureMessage(failure.error)}
           retry={() => {
             retry(joining.call)
           }}
@@ -357,12 +358,11 @@ export default function AcceptInvitation() {
         <Button
           variant="primary"
           label={`Continue as ${invitation.email}`}
-          loading={isSigningOut}
           onPress={() => {
             continueAs(invitation)
           }}
         />
-        <Button variant="secondary" label="Cancel" disabled={isSigningOut} onPress={goHome} />
+        <Button variant="secondary" label="Cancel" onPress={goHome} />
       </Screen>
     )
   }

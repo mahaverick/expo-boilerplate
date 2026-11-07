@@ -15,6 +15,10 @@ import { METRICS } from '@/tests/support/a11y'
 import { restoreApi, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
+// The stream opens a real connection; its own suite covers it.
+jest.mock('@/components/notifications/notification-stream', () => ({
+  NotificationStream: () => null,
+}))
 jest.mock('@/lib/storage', () => ({
   storage: { getString: () => undefined, set: () => undefined, remove: () => undefined },
 }))
@@ -121,7 +125,11 @@ describe('the (app) stack', () => {
     useTabBarStore.setState({ height: 0, owner: null })
     const result = await renderRouter(
       routes({
-        '(app)/(tabs)/_layout': TabsLayout,
+        '(app)/(tabs)/_layout': () => (
+          <QueryClientProvider client={new QueryClient()}>
+            <TabsLayout />
+          </QueryClientProvider>
+        ),
         '(app)/(tabs)/notifications': stub('notifications'),
         '(app)/(tabs)/settings': stub('settings'),
       }),

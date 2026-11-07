@@ -48,6 +48,10 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }))
 jest.mock('@/http/session-lifecycle', () => ({ useSessionStatus: jest.fn(() => 'signed-in') }))
+jest.mock('@/components/notifications/notification-stream', () => {
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native')
+  return { NotificationStream: () => <Text>notification-stream</Text> }
+})
 
 /**
  * Sets the session status the mocked hook reports.
@@ -239,5 +243,25 @@ describe('(app) layout', () => {
     setStatus('signed-out')
     await render(<AppLayout />)
     expect(screen.getByText('redirect:/login')).toBeTruthy()
+  })
+
+  it('mounts the notification stream once, beside the stack, only when signed in', async () => {
+    setStatus('signed-in')
+    await render(<AppLayout />)
+    expect(screen.getAllByText('notification-stream')).toHaveLength(1)
+    expect(screen.getByText('stack')).toBeTruthy()
+  })
+
+  it('mounts no notification stream while restoring, signed out or asked for a passkey', async () => {
+    setStatus('restoring')
+    const view = await render(<AppLayout />)
+    expect(screen.queryByText('notification-stream')).toBeNull()
+    setStatus('signed-out')
+    await view.rerender(<AppLayout />)
+    expect(screen.queryByText('notification-stream')).toBeNull()
+    setStatus('signed-in')
+    usePasskeySetupStore.setState({ required: true })
+    await view.rerender(<AppLayout />)
+    expect(screen.queryByText('notification-stream')).toBeNull()
   })
 })

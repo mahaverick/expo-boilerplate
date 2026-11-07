@@ -6,6 +6,7 @@ import { BackHandler, Text } from 'react-native'
 import { Button } from '@/components/ui/button'
 import { Screen } from '@/components/ui/screen'
 import { useSignOut } from '@/hooks/use-sign-out'
+import { useClientSettings } from '@/queries/client-settings.queries'
 import { useAuthStore } from '@/states/auth.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 
@@ -22,6 +23,8 @@ import { usePasskeySetupStore } from '@/states/passkey-setup.store'
 export default function PasskeyRequired() {
   const { signOut, isPending } = useSignOut()
   const webUrl = Constants.expoConfig?.extra?.webUrl as string | undefined
+
+  const supportEmail = useClientSettings()?.supportEmail
 
   const required = usePasskeySetupStore((state) => state.required)
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -43,6 +46,9 @@ export default function PasskeyRequired() {
       <Text className="text-base text-foreground">
         Your account needs a passkey. This app can’t add one yet. Add one on the website under
         Settings, then Security, then come back.
+      </Text>
+      <Text className="text-base text-foreground">
+        {`To ask us to delete your account instead, write to ${supportEmail ?? 'the support address on our website'}.`}
       </Text>
       {webUrl ? (
         <Button

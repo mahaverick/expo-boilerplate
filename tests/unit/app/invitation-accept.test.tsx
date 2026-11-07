@@ -429,6 +429,31 @@ describe('AcceptInvitation', () => {
     expect(await screen.findByRole('header', { name: 'Check your inbox' })).toBeTruthy()
   })
 
+  it.each([
+    [
+      'express’s full-workspace 402',
+      {
+        success: false,
+        message: 'This workspace is full on its current plan. Ask an owner to upgrade.',
+        code: 'PLAN_LIMIT_REACHED',
+      },
+    ],
+    ['a bare 402', { success: false, message: 'Upgrade to join.' }],
+  ])('%s on accept shows the app’s members-limit copy, never the server’s', async (_name, data) => {
+    signInAs('ada@example.com')
+    serveInvitation({ 'POST /invitations/accept': { status: 402, data } })
+    await renderScreen(<AcceptInvitation />)
+    expect(await screen.findByRole('header', { name: 'You weren’t added to Acme' })).toBeTruthy()
+    expect(
+      screen.getByText(
+        'This workspace is at its members limit, so you can’t join it yet. Ask an owner of the workspace.'
+      )
+    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
+    expect(screen.queryByText(/upgrade/i)).toBeNull()
+    expect(screen.queryByText(/full on its current plan/)).toBeNull()
+  })
+
   it('posts once under StrictMode', async () => {
     const seen = serveInvitation()
     await renderScreen(

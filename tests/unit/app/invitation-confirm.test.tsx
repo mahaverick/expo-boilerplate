@@ -319,6 +319,28 @@ describe('ConfirmInvitation', () => {
     expect(urls(seen)).toEqual(['/invitations/confirm', '/invitations/confirm'])
   })
 
+  it.each([
+    [
+      'express’s full-workspace 402',
+      {
+        success: false,
+        message: 'This workspace is full on its current plan. Ask an owner to upgrade.',
+        code: 'PLAN_LIMIT_REACHED',
+      },
+    ],
+    ['a bare 402', { success: false, message: 'Upgrade to join.' }],
+  ])('%s shows the app’s members-limit copy, never the server’s', async (_name, data) => {
+    serveConfirm({ status: 402, data })
+    await renderScreen(<ConfirmInvitation />)
+    expect(
+      await screen.findByText(
+        'This workspace is at its members limit, so you can’t join it yet. Ask an owner of the workspace.'
+      )
+    ).toBeTruthy()
+    expect(screen.queryByText(/upgrade/i)).toBeNull()
+    expect(screen.queryByText(/full on its current plan/)).toBeNull()
+  })
+
   it('a sign-in the device could not keep says so inline', async () => {
     const realSet = setItemAsync.getMockImplementation()!
     setItemAsync.mockImplementation((key, value, options) =>

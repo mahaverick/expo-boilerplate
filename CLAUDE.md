@@ -464,16 +464,16 @@ it’s you" flow. The files are listed in
 [ARCHITECTURE.md](ARCHITECTURE.md#account-settings-and-step-up).
 
 - **The Settings tab lists rows; the screens sit in the `(app)` stack.**
-  Account holds Profile, Security and Notifications
+  Account holds Profile, Security, Notifications and Delete account
   (`ACCOUNT_SECTIONS` in `src/constants/settings.ts`), and each row opens
   `/settings/account/{name}` under the stack's empty-titled header with Back.
-  The Workspace group lists General, Members and Activity
+  The Workspace group lists General, Members, Activity and Plan
   (`WORKSPACE_SECTIONS`) for the current workspace, and says "Choose a
   workspace first." when the person has none. While the list loads it shows a
-  spinner, and a failed read shows the load error with Try again. `/profile` and `/settings/account`
-  redirect to Profile. Section headings inside a screen are plain text, not
-  headings, because a screen has one header role and the accessibility
-  harness rejects a second.
+  spinner, and a failed read shows the load error with Try again. `/profile`
+  and `/settings/account` redirect to Profile. Section headings inside a
+  screen are plain text, not headings, because a screen has one header role
+  and the accessibility harness rejects a second.
 - **The step-up provider sits in the root layout, not in `(app)`.**
   `StepUpProvider` wraps the stack inside the update and maintenance gates.
   `/auth/confirm` is a root route, so a provider under `(app)` would unmount
@@ -576,9 +576,10 @@ screens, Insights and Beta. They are plan 3c3's. The files are listed in
   platform access on a customer workspace must give a recent sign-in and a
   reason for each write except leaving
   (`requireRecentAuthAndReasonOnPlatformAccess`), revokes included; expo shows
-  them no write control. A customer workspace asks its members for none. One path for every write
-  means a write that can be refused gets the dialog, never a bare
-  `REAUTH_REQUIRED`, and a write that cannot be refused costs nothing extra.
+  them no write control. A customer workspace asks its members for none. One
+  path for every write means a write that can be refused gets the dialog,
+  never a bare `REAUTH_REQUIRED`, and a write that cannot be refused costs
+  nothing extra.
 - **A refused invite shows inline in the invite form.** The invite form is a
   form, and an error that blocks a form renders inline. A refused step-up
   there is a form-level error, as in react. The Security screen keeps its
@@ -605,18 +606,19 @@ screens, Insights and Beta. They are plan 3c3's. The files are listed in
   each page its own query, keyed by its cursor, and joins the rows, each key
   once (`keyOf`). It never uses `useInfiniteQuery`, and phones have no table.
   A request that changes by value starts again at page 1. So does a page 1
-  whose rows change after page 2 was asked for, through a write's
-  invalidation or a refocus. Express's cursors seek after the boundary row
+  whose boundary row changes after page 2 was asked for, through a write's
+  invalidation or a refocus. Express's cursors seek after page 1's last row
   (`list-page.utilities.ts`), so later pages fetched with the old cursors
-  would drop or repeat rows. The signal is page 1's data object, a field
-  the hook subscribes to. Structural sharing keeps that object when a
-  refetch brings the same rows, and then the pages stay, because the boundary
-  row holds. `dataUpdatedAt` moves on every refetch and is shared by two
-  fetches in one millisecond, and a count read from the cache during render
-  re-renders nothing. The cost: any change to page 1's data folds the list
-  back to page 1. Members' first page carries the total, so an add or a
-  removal on any page folds it. A failed later page keeps the loaded rows and offers Try again
-  beside them.
+  would drop or repeat rows once that row changes. The signal is the key of
+  page 1's last row. While it holds, the pages stay, even when an optimistic
+  edit, a refetch or a changed total replaces page 1's data object, because
+  the cursors still seek after the same row. `dataUpdatedAt` is no signal: it
+  moves on every refetch and is shared by two fetches in one millisecond. The
+  cost: a list keeps a page whose rows shifted until the next fold, such as an
+  insert or a removal on page 1 that leaves its last row in place. Load more is
+  hidden while page 1 shows placeholder data, because the previous request's
+  cursor does not belong to the new one. A failed later page keeps the loaded
+  rows and offers Try again beside them.
 - **Legacy workspace paths redirect to the new screens.**
   `/tenants/{slug}/settings`, `/members` and `/activity` go to General,
   Members and Activity under `/settings/workspace/{slug}/`, and
@@ -661,9 +663,120 @@ screens, Insights and Beta. They are plan 3c3's. The files are listed in
   overview drops its Beta row.
 - **Insights shows a failed entitlements read as a `LoadError`**, never as the
   locked card. A locked state reads "Included in Paid." with no action,
-  because billing actions wait for the billing plan.
+  because the app never sells or steers to a purchase (spec section 6).
 - **The members-limit note shows its counts only.** It has no Upgrade or
-  Request action; see the follow-ups.
+  Request action, for the same reason. Its words are in
+  `src/copy/members-limit.ts`.
+
+## Notifications, plan and deletion
+
+The rules below cover the live notification stream, the Notifications tab, the
+read-only Plan screen and account deletion. They are plan 3c4's. The files are
+listed in [ARCHITECTURE.md](ARCHITECTURE.md#notifications-plan-and-deletion).
+
+- **`expo/fetch` reads the stream; `react-native-sse` is not used.** The spec
+  names the library and says to replace one that fails its check. Version 1.2.1
+  (March 2024) fails on three counts. It gives no signal when the server ends
+  the stream, which express does when the access token expires. It reconnects
+  every 3 seconds on its own, because the server's `retry:` line overrides
+  `pollingInterval: 0`, and sends the expired token. It exposes no response
+  headers, so `Retry-After` is unreadable. `expo/fetch` streams
+  `response.body`, exposes the status and headers, aborts through an
+  `AbortController`, and ships in `expo`. `src/http/sse.ts` holds the parser
+  and `openEventStream`; reconnecting is the caller's job.
+- **One component owns the stream.** `NotificationStream` renders once, in the
+  `(app)` layout beside the stack, after the redirects, so it never mounts
+  signed out. Two mounts would open two streams. Screens only read the query
+  cache that its frames invalidate.
+- **The stream is open only in the foreground.** It opens while the app is
+  `active`, a person is signed in, maintenance is not `full` and the passkey
+  flag is down. `background` aborts it. `inactive` (the iOS app switcher, a
+  system sheet) keeps the last answer, so a sheet does not close it. The token
+  travels in the `Authorization` header, never the URL.
+- **Express ends every stream at access-token expiry, so an end is not a
+  failure.** An end, or a 401, waits up to 1 second of jitter
+  (`reopenJitter` in `src/lib/stream-backoff.ts`), then refreshes the session
+  with `ensureSession` and reopens with `Last-Event-ID`, so no missed
+  notification is lost. A deploy ends every stream at once, and without the
+  jitter every client would call `/auth/refresh` in the same moment. The wait
+  runs through the stream's one timer, so background and sign-out clear it.
+  Two quick ends in a row (under 1 second, with no frame) fall back to the
+  backoff, so a server that ends streams at once cannot cause a tight loop.
+  Each connect also refetches the notification list and every cached
+  workspace's billing reads, because `entitlements_changed` frames carry no
+  `id:` line and are never replayed.
+- **A 429 `too_many_streams` stops the stream until the next foreground.** The
+  spec says so. React retries it with backoff, but its message names
+  browser tabs, so the app never shows it. Other refusals wait the backoff or
+  `Retry-After`, whichever is longer, capped at 5 minutes, plus up to 20%
+  jitter.
+- **A 403 `PASSKEY_SETUP_REQUIRED` on the stream raises the passkey flag and
+  stops.** The `(app)` guard then sends the person to `/passkey-required`.
+- **Sign-out and a different person restart the stream.** The effect keys on
+  the user id, so an in-place sign-in as another person drops the last event
+  id, the backoff and the 429 stop. The new person never receives the old
+  person's cursor.
+- **Billing notifications show the app's text, never the server's.**
+  `isNeutralKind` in `src/copy/notifications.ts` marks every type that starts
+  with `billing_`, known or not, and `workspace_full`. For those the row's
+  title is the type's label and its body is the app's line; a neutral kind
+  with no line of its own reads "There’s an update about the plan for
+  {workspace}. Open Plan for details." Express's bodies carry prices ("Your
+  payment of ₹999 failed") and "upgrade from Billing", and the app sells
+  nothing and shows no prices (spec section 6). A billing kind express adds
+  later is neutral without a change here. Other kinds show the server's text.
+  The owner chose this on 7 November 2026.
+- **Labels come from `notificationTypeLabel`, never the shared humanizer
+  alone.** The shared `humanizeNotificationType` labels
+  `billing_upgrade_requested` "Upgrade request", and the app shows no upgrade
+  wording. `notificationTypeLabel` gives "Plan request" for it and the shared
+  label for every other type. The inbox row (its title, its kind line and its
+  button labels) and the notification preferences screen (each row and its
+  switch label) both call it, so the two screens agree.
+- **The Plan screen reads the entitlements and the catalog's labels only.**
+  `GET /tenants/:slug/entitlements` and the `/plans` catalog supply the plan,
+  its state, its limits and its features. The screen never reads
+  `/tenants/:slug/billing`, which carries prices and the payer. Its route is
+  `/settings/workspace/{slug}/billing`, the web's path, so the shared
+  `notificationLink` target maps one to one. The path is not an app link, so
+  an emailed billing link opens the website. A `402` shows the app's copy,
+  never the server's message.
+- **A `402` on an invitation screen shows the app's copy.** Express refuses a
+  join into a full workspace with a `402` whose message asks an owner to
+  upgrade, and that answer carries no `details`, so the shared
+  `planRefusalFrom` does not match it. `joinFailureMessage` in
+  `src/copy/invitations.ts` maps any `402` on `/invitations/accept` and
+  `/invitations/confirm` to "This workspace is at its members limit, so you
+  can’t join it yet. Ask an owner of the workspace." The invite form and
+  Resend map any `402` to "Not sent. You’re at the members limit." for the
+  same reason, with or without counts.
+- **A write that removes its row reports failure through the mutation cache.**
+  A notification write removes its row at once, so the row's observer is gone
+  before the answer, and TanStack skips an observer's `onError` when it has no
+  listeners. `useNotificationWriteToasts` subscribes to the mutation cache
+  instead and toasts each failed write keyed `['notifications', 'write']`.
+- **A leave lands on `/tenants` and drops the cache from there.** The member
+  row records the slug (`src/lib/left-workspaces.ts`), then calls
+  `router.dismissAll()` and pushes `/tenants`; with nothing beneath it, it
+  replaces the screen. `dismissTo` cannot do this: it pops only to a list
+  already in the stack. The list drops each recorded workspace's cache when it
+  gains focus, once no screen of the left workspace is mounted, so nothing
+  refetches a workspace that now answers 404. Back from the list reaches the
+  first screen, never an overview of the left workspace.
+- **Delete account is reachable only from Settings, signed in.** React PR #183
+  found that its signed-out `/delete-account` page only sends a sign-in link,
+  and the first link a new address opens creates an account. Expo has no such
+  screen and claims no such path.
+- **Account deletion runs through `useStepUp().run`.** The request button shows
+  `STEP_UP_WAITING_LABEL` while `useStepUpWaiting()` is true. Express has no
+  cancel route, so the screen points to the support address to withdraw a
+  request.
+- **Passkey-required mode blocks deletion, and that is a known gap.** Express
+  answers the deletion routes with `403 PASSKEY_SETUP_REQUIRED` in that mode,
+  and the app cannot add a passkey yet. `/passkey-required` carries one line
+  on asking for deletion by email. [SECURITY.md](SECURITY.md#known-gaps) and
+  the README's review notes record the gap; the passkeys plan closes it. The
+  owner chose this on 7 November 2026.
 
 ## Copy
 
@@ -715,16 +828,15 @@ Adding a banned package gives the project two ways to do the same thing.
 
 Each item is a change for react or for a later plan, with the reason it waits.
 
-- **Coverage thresholds sit below react's.** React's are statements 88,
-  branches 82, functions 86 and lines 89. The shared tests alone (31 manifest
-  rows, 29 of them test files) cover statements 43.78%, branches 46.00%,
-  functions 31.47% and lines 42.51% of `src/`, because they exercise only part
-  of the 75 shared files. The full suite measures statements 87.15%, branches
-  83.69%, functions 82.47% and lines 87.78% on 7 November 2026.
-  `jest.config.ts` and `ci.yml` hold 87, 83, 82 and 87. Branches are above
-  react's 82. Statements, functions and lines are still below react's. React
-  should mark more of its tests for expo; then expo raises each threshold
-  toward react's.
+- **Coverage thresholds sit above react's, though the shared tests alone fall
+  short.** React's are statements 88, branches 82, functions 86 and lines 89.
+  The shared tests alone (31 manifest rows, 29 of them test files) cover
+  statements 43.78%, branches 46.00%, functions 31.47% and lines 42.51% of
+  `src/`, because they exercise only part of the 75 shared files. The full
+  suite measures statements 90.14%, branches 85.94%, functions 87.27% and lines
+  90.94% on 7 November 2026, and `jest.config.ts` and `ci.yml` hold 90, 85, 87
+  and 90. The margin comes from expo's own screens and hooks. React should mark
+  more of its tests for expo, so the shared rows carry their own share.
 - **One copy-style case is skipped by name.** `test` and `test:coverage` pass
   `--testNamePattern` with a negative lookahead that skips only "finds the copy
   it guards" in `tests/unit/copy-style.test.ts`. That case expects more than
@@ -766,13 +878,23 @@ Each item is a change for react or for a later plan, with the reason it waits.
   `ClientSettings` and `isClientSettings` omit the field, so expo parses it
   itself. A react PR types it; once expo copies that, replace
   `src/lib/minimum-version.ts`'s schema with the shared type.
-- **The Notifications tab is a placeholder.** It says the feature is not in
-  this version. Plan 3c4 fills it. The Settings tab is real: its Account rows
-  open Profile, Security and Notifications preferences.
-- **The billing actions wait for the billing plan.** The members-limit note
-  shows its counts with no Upgrade or Request action, and Insights' locked
-  state reads "Included in Paid." with no action. The plan adds the actions
-  and the usage meter.
+- **The stream's first reconnect after a long background can send an expired
+  token.** The connect reads the token from the store, and the foreground
+  refresh may not have landed. The server answers 401, and the stream
+  refreshes and reopens once. Awaiting `refreshSettled()` before the connect
+  would remove the 401.
+- **A `503 MAINTENANCE_MODE` on the stream is an ordinary 503.** The stream
+  uses `expo/fetch`, not `apiClient`, so the maintenance interceptor does not
+  see it. The stream backs off, and the next API read sets the mode.
+- **The Plan screen shows the server's `plan.name` unfiltered.** The name is
+  staff-editable server text. The screen assumes staff keep prices and
+  purchase prompts out of it. The app's own copy never carries either.
+- **Request deletion uses the `secondary` variant.** `Button` has no
+  destructive variant, and the confirmation `Alert` carries the destructive
+  confirm. A `destructive` variant needs a kit change.
+- **The Notifications badge keeps the tab bar's default colours.**
+  `tabBarBadgeStyle` takes colour values, not token classes, and the theme's
+  colours are `var(--token)` strings.
 - **Activity filters by search and by access only.** The Access filter offers
   Staff, Member and System. The Action and Actor filters wait for a later
   plan.
@@ -792,21 +914,6 @@ Each item is a change for react or for a later plan, with the reason it waits.
   token, so the join's token was revoked, and the old session stays open until
   it fails. It fails safe: the person sees "Go to Home" and signs in again.
   The fix signs out and shows the prefilled form.
-- **Leaving from Members opened through the overview can refetch the left
-  workspace.** "Open members" in Getting started pushes Members above
-  `/tenants/{slug}`, and the replace to `/tenants` replaces only Members. The
-  overview beneath keeps observers on the workspace's queries, and after the
-  cache drop it can send GETs that express answers with 404. It fails safe:
-  Back shows the "not available" panel. The fix drops the cache from
-  `/tenants` once it has focus, or removes every route for the slug first.
-- **The accept screen keeps two unused props.** Its switch panel passes the
-  sign-out's pending state to `loading` and `disabled`, but the joining state
-  replaces the panel before the sign-out starts. Remove them, as on the
-  confirm screen.
-- **Load more can pair a new search with the old cursor.** While page 1 of a
-  new search shows the previous rows as placeholder data, Load more takes the
-  previous request's cursor. Disable Load more while page 1 is placeholder
-  data.
 - **Continue on both invitation screens waits for the whole sign-out.**
   `retryPendingRevoke` can take up to the client timeout of 30 seconds before
   the screen posts. The post could start once the local sign-out is done.
@@ -820,9 +927,6 @@ Each item is a change for react or for a later plan, with the reason it waits.
 - **Jest prints "A worker process has failed to exit gracefully."** It showed
   in plans 3b and 3c1 and on 6 November 2026. Run `pnpm test --detectOpenHandles`
   to find the handle; `tests/setup.ts` already unrefs TanStack Query's timers.
-- **Two items from react PR #183 wait for the account-deletion plan.**
-  `/delete-account` can create an account, and passkey-required mode blocks
-  deletion. That plan owns the screen.
 - **Plans are not tracked.** `docs/superpowers/plans/` is git-ignored, and the
   specs under `docs/superpowers/specs/` are tracked. A plan lives on the
   machine of whoever wrote it.

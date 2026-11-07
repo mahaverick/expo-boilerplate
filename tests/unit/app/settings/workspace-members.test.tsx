@@ -1,7 +1,6 @@
 import { jest } from '@jest/globals'
 import { QueryClient } from '@tanstack/react-query'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native'
-import { useEffect, useState } from 'react'
 import { Alert } from 'react-native'
 import Members from '@/app/(app)/settings/workspace/[slug]/members'
 import { StepUpProvider } from '@/components/step-up/step-up-provider'
@@ -17,7 +16,12 @@ import { acme, envelope, membership } from '@/tests/support/workspace-api'
 
 const mockReplace = jest.fn()
 jest.mock('expo-router', () => ({
-  router: { replace: (...args: unknown[]) => mockReplace(...args), push: jest.fn() },
+  router: {
+    replace: (...args: unknown[]) => mockReplace(...args),
+    push: jest.fn(),
+    // Nothing beneath: a leave replaces the screen. The leave test in workspace-members-leave covers a stack.
+    canDismiss: () => false,
+  },
   useLocalSearchParams: () => ({ slug: 'acme' }),
 }))
 /** The in-memory stand-in for MMKV. */
@@ -512,61 +516,11 @@ describe('Members screen', () => {
       expect(mockReplace).toHaveBeenCalledWith('/tenants')
     })
     expect(forget).toHaveBeenCalledWith('u1')
-    // The cache stays until the screen is gone; the leave test below drops it on unmount.
+    // The list drops the cache when it gains focus; workspace-members-leave covers that.
     expect(order).toEqual(['forget:u1', 'replace:/tenants:false'])
     expect(toasts()).toContain('You left Acme.')
     const del = writes(sent).find((config) => config.url === '/tenants/acme/membership')
     expect(del?.method).toBe('delete')
-  })
-
-  it('sends no GET to the left workspace after a leave', async () => {
-    const sent = serveMembers({ owners: [ME, member('u9', 'owner')] })
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
-    })
-    client.setQueryData(clientSettingsKeys.all, null)
-    const navigator: { replace?: () => void } = {}
-    /**
-     * Stands for the stack. A replace re-renders the outgoing screen while it
-     * animates out, then removes it a moment later, as a navigator does.
-     * @returns The screen, or nothing once it has gone.
-     */
-    function Stack() {
-      const [phase, setPhase] = useState<'shown' | 'leaving' | 'gone'>('shown')
-      useEffect(() => {
-        navigator.replace = () => {
-          setPhase('leaving')
-          setTimeout(() => {
-            setPhase('gone')
-          }, 10)
-        }
-      }, [])
-      return phase === 'gone' ? null : <Members key="members" />
-    }
-    mockReplace.mockImplementation(() => {
-      navigator.replace?.()
-    })
-    await renderScreen(
-      <StepUpProvider>
-        <Stack />
-      </StepUpProvider>,
-      client
-    )
-    await fireEvent.press(await screen.findByRole('button', { name: 'Leave' }))
-    await confirmAlert('Leave')
-    await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith('/tenants')
-    })
-    await waitFor(() => {
-      expect(screen.queryByRole('button', { name: 'Leave' })).toBeNull()
-    })
-    // A GET the outgoing screen sends goes out as it re-renders, before it is removed.
-    const left = sent.findIndex((config) => config.url === '/tenants/acme/membership')
-    const after = sent
-      .slice(left + 1)
-      .filter((config) => config.method === 'get' && config.url?.startsWith('/tenants/acme'))
-    expect(after.map((config) => config.url)).toEqual([])
-    expect(client.getQueryCache().findAll({ queryKey: tenantKeys.detail('acme') })).toHaveLength(0)
   })
 
   it('leaving keeps a different remembered workspace', async () => {
