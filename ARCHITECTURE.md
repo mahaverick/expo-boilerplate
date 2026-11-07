@@ -8,11 +8,12 @@ developer who changes the code. The rules for changing it are in
 The app is the iOS and Android client for the same account, workspaces and API
 as react-boilerplate. As of 7 November 2026 it signs a person in with an
 emailed link and keeps the session on the device. It has four tabs (Home,
-Workspace, Notifications and Settings), the account screens under Settings
-(Profile, Security and notification preferences), the "Confirm it’s you"
-dialog for an action that needs a recent sign-in, a workspace's overview, the
-list and creation of workspaces, the workspace settings (General, Members and
-Activity), the two invitation screens, Insights and Beta, the screens that
+Workspace, Notifications and Settings), a live notification stream, the account
+screens under Settings (Profile, Security, notification preferences and Delete
+account), the "Confirm it’s you" dialog for an action that needs a recent
+sign-in, a workspace's overview, the list and creation of workspaces, the
+workspace settings (General, Members, Activity and a read-only Plan), the two
+invitation screens, Insights and Beta, the screens that
 block the app for an update or maintenance, the shared core, the theme, and
 the ports that connect the two. The design for the screens that follow is in
 [the spec](docs/superpowers/specs/2026-11-03-expo-boilerplate-design.md).
@@ -33,7 +34,8 @@ the ports that connect the two. The design for the screens that follow is in
 src/
   app/              Expo Router routes (see "The route tree"), +native-intent
   components/       auth/ (the sign-in form), invitations/ (the signed-in
-                    person's inbox), settings/ (rows, the read-only note, the
+                    person's inbox), account/ (what deletion removes),
+                    notifications/ (the stream and the row), settings/ (rows, the read-only note, the
                     legacy redirect), shared/ (banners, update and maintenance
                     screens, load error, empty state, tab-bar height), ui/ (the
                     UI kit: Screen, Button, TextField, InlineError, Toaster,
@@ -42,11 +44,13 @@ src/
                     gate, overview, platform-access banner, getting started,
                     create form)
   constants/        shared: routes, roles, audit actions; frontend-app.ts is a port
+  copy/             expo's own words for billing, the members limit and
+                    notifications (no prices, no purchase prompts)
   hooks/            shared hooks; use-sign-out, use-current-tenant,
-                    use-is-online, use-list-pages and use-top-banner are
-                    expo's own
-  http/             shared: interceptors, refresh core; client.ts and session.ts are ports; token-store, revoke, body-token, session-lifecycle and maintenance are expo's
-  lib/              shared pure logic; toast.ts is a port; app-links, minimum-version, query-managers and safe-path are expo's
+                    use-is-online, use-list-pages, use-notification-write-toasts
+                    and use-top-banner are expo's own
+  http/             shared: interceptors, refresh core; client.ts and session.ts are ports; token-store, revoke, body-token, session-lifecycle, maintenance and sse are expo's
+  lib/              shared pure logic; toast.ts is a port; app-links, left-workspaces, minimum-version, notification-href, query-managers, safe-path and stream-backoff are expo's
   observability/    flags/ and telemetry/: both are ports
   polyfills.ts      the Web APIs Hermes may lack, loaded first
   ports/            navigation.ts, runtime.ts, webauthn.ts
@@ -244,14 +248,14 @@ src/app/
   passkey-required.tsx         the blocking screen for an account that must add a passkey
   +native-intent.tsx, +not-found.tsx
   (app)/                       the session guard
-    _layout.tsx                restore, sign-in redirect, passkey redirect; anchored on (tabs),
-                               so the tabs sit beneath every screen above them
+    _layout.tsx                restore, sign-in redirect, passkey redirect, NotificationStream;
+                               anchored on (tabs), so the tabs sit beneath every screen above them
     welcome.tsx                create a first workspace (header with Back)
     (tabs)/
       _layout.tsx              four tabs, no navigator header; publishes the tab bar height
       index.tsx                Home
       workspace.tsx            the current workspace's overview, in place
-      notifications.tsx        placeholder
+      notifications.tsx        the notification list: status chips, Load more, mark and delete
       settings.tsx             the Account rows, the Workspace rows, and Sign out
     profile.tsx                redirects to /settings/account/profile
     settings/account/
@@ -259,11 +263,13 @@ src/app/
       profile.tsx              edit the name (header with Back)
       security.tsx             sign-in methods, signed-in devices, Sign out other devices
       notifications.tsx        how each kind of notification reaches you
+      delete.tsx               ask for the account to be deleted, through step-up
     settings/workspace/[slug]/
       index.tsx                redirects to General
       general.tsx              details, time zone, language and region
       members.tsx              members and roles, the invite form, pending invitations
       activity.tsx             the audit log, newest first, with search and an access filter
+      billing.tsx              Plan: the plan's name, state, limits and features, read-only
     tenants/
       index.tsx                all workspaces, and Create (header with Back)
       [slug]/index.tsx         one workspace's overview (header with Back)
@@ -355,7 +361,7 @@ src/app/
 ## Workspace settings and invitations
 
 - **The Workspace rows.** `WORKSPACE_SECTIONS` in `src/constants/settings.ts`
-  lists General, Members and Activity, each with a typed path for a slug. The
+  lists General, Members, Activity and Plan, each with a typed path for a slug. The
   legacy `/tenants/{slug}/settings`, `/members` and `/activity` routes and
   `/settings/workspace/{slug}` render `WorkspaceSettingsRedirect`
   (`src/components/settings/workspace-settings-redirect.tsx`), which keeps the
@@ -376,8 +382,9 @@ src/app/
   System). `src/lib/audit-targets.ts` names what an entry acted on.
 - **Paging.** `src/hooks/use-list-pages.ts` pages a list with "Load more": one
   query per page, keyed by its cursor, from the shared `listQueryOptions`.
-  It shows each row key once, and starts again at page 1 when page 1's rows
-  change after page 2 was asked for.
+  It shows each row key once, starts again at page 1 when page 1's last row
+  changes after page 2 was asked for, and hides Load more while page 1 is
+  placeholder data.
 - **The kit's additions.** `src/components/ui/choice-sheet.tsx` is a bottom
   sheet in a `Modal` with no scrim. `TextField` takes `multiline`.
   `src/lib/link-lifetime.ts` writes a link's lifetime and expiry the way the
@@ -398,6 +405,49 @@ src/app/
   `src/queries/flags.queries.ts` holds `useTenantFlags`, which reads
   `GET /tenants/:slug/flags` and returns the fallbacks on any error. The
   overview reads it to show the Insights and Beta rows.
+
+## Notifications, plan and deletion
+
+- **The stream transport.** `src/http/sse.ts` holds `createSseParser`, a pure
+  parser for server-sent events (SSE), and `openEventStream`, which opens
+  `GET /notifications/stream` over `expo/fetch` and resolves with how it ended:
+  closed by the server, refused with a status, a code and `Retry-After`, or
+  aborted. It never reconnects. `apiUrl` in `src/http/client.ts` builds the URL,
+  so that file stays the only reader of `EXPO_PUBLIC_API_URL`.
+- **The library choice.** The spec's library table names `react-native-sse`.
+  Version 1.2.1 fails the check the spec sets: it gives no signal when the
+  server ends the stream, it reconnects every 3 seconds with the expired
+  token, and it hides the response headers, so `Retry-After` is unreadable.
+  `expo/fetch` streams the body, exposes the status and headers, aborts through
+  an `AbortController`, and ships in `expo`, so the app uses it. The spec stays
+  as written; [CLAUDE.md](CLAUDE.md#notifications-plan-and-deletion) holds the
+  reasons.
+- **`NotificationStream`.** `src/components/notifications/notification-stream.tsx`
+  renders once in the `(app)` layout's signed-in branch and returns `null`. It
+  owns the stream's lifetime, its reconnects (`src/lib/stream-backoff.ts` holds
+  the backoff, the `Retry-After` cap and the jitter) and what each frame does to
+  the query cache: a `notification` frame invalidates the list, and an
+  `entitlements_changed` frame refetches that workspace's billing reads.
+- **The Notifications tab.** `src/app/(app)/(tabs)/notifications.tsx` lists with
+  `useListPages`, filters by All, Unread and Read, and marks and deletes through
+  the shared hooks. `notification-row.tsx` draws a row;
+  `src/lib/notification-href.ts` maps a notification's target to a typed route.
+  `src/hooks/use-notification-write-toasts.ts` toasts a failed write from the
+  mutation cache. The tab's badge reads the unread count in
+  `(tabs)/_layout.tsx`.
+- **`src/copy/`.** `billing.ts` words the Plan screen, `members-limit.ts` the
+  members-limit note, and `notifications.ts` the neutral lines for the billing
+  kinds and the tab's badge. No file there holds a price or a purchase prompt.
+- **Plan.** `billing.tsx` reads `useEntitlements` and the `/plans` catalog's
+  labels. It never reads `/tenants/:slug/billing`.
+- **Delete account.** `delete.tsx` reads the open request, posts a new one
+  through `useStepUp().run` (`src/queries/account-deletion.queries.ts`), and
+  `src/components/account/what-we-delete.tsx` lists what deletion removes.
+  `/passkey-required` carries one line on asking by email.
+- **Leaving a workspace.** `src/lib/left-workspaces.ts` records the slugs of
+  workspaces the person left. `/tenants` drops each one's cache when it gains
+  focus. Both `useListPages` and the Members screen are described in
+  [Workspace settings and invitations](#workspace-settings-and-invitations).
 
 ## The theme and the splash screen
 

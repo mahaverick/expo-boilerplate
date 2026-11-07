@@ -5,12 +5,13 @@ Expo SDK 58 and TypeScript app for iOS and Android that talks to the
 `express-boilerplate` API and shares its core logic with `react-boilerplate`.
 This file is for a developer who runs, tests or checks the app.
 
-As of 6 November 2026 the app signs a person in with an emailed link and keeps
+As of 7 November 2026 the app signs a person in with an emailed link and keeps
 the session in the device's secure storage. A signed-in person sees four tabs:
-Home, Workspace (the current workspace's overview), Notifications and Settings.
-Notifications is a placeholder. Settings opens Profile, Security (sign-in
-methods, signed-in devices and "Sign out other devices") and notification
-preferences, and holds Sign out. An action that needs a recent sign-in asks the
+Home, Workspace (the current workspace's overview), Notifications (a live list
+with an unread badge) and Settings. Settings opens Profile, Security (sign-in
+methods, signed-in devices and "Sign out other devices"), notification
+preferences and Delete account, shows each workspace's plan read-only, and
+holds Sign out. An action that needs a recent sign-in asks the
 person to confirm it by an emailed link. The app also
 lists and creates workspaces (`/tenants`, `/welcome`), shows a full-screen
 notice for an update or for maintenance, and has a blocking screen for an
@@ -196,10 +197,23 @@ messages follow Conventional Commits, and commits are GPG-signed.
   react's, unchanged; expo's own cover the ports, the polyfills, the entry
   order, the theme, the root layout, the tokens, the session modules, the
   screens, the UI kit and the accessibility harness.
-- **The coverage thresholds** are statements 87, branches 83, functions 82 and
-  lines 87. Statements, functions and lines sit below react's until more
-  shared tests run here ([CLAUDE.md](CLAUDE.md#follow-ups)).
+- **The coverage thresholds** are statements 90, branches 85, functions 87 and
+  lines 90, above react's (88, 82, 86 and 89). The shared tests alone cover
+  less ([CLAUDE.md](CLAUDE.md#follow-ups)).
 - **One copy-style case is skipped by name**, for the reason CLAUDE.md gives.
+
+## Notes for app review
+
+The app sells nothing, as the spec's section 6 requires, so Apple's guideline
+3.1.1 and Google Play's payments policy have nothing to review here.
+
+- The app shows no prices and has no upgrade button, checkout link or text that
+  asks the person to buy. The Plan screen (Settings, Workspace, Plan) shows the
+  plan's name, its limits and its features, and nothing else.
+- Billing notifications show the app's neutral text, not the server's.
+- Account deletion is in Settings, Account, Delete account. A person in
+  passkey-required mode cannot use it yet; the blocking screen says to ask by
+  email ([SECURITY.md](SECURITY.md#known-gaps)).
 
 ## Device checklist
 
@@ -396,6 +410,30 @@ date, the device and the OS version beside each.
       overview, General, Members, Activity, Insights and Beta each show
       "You’re viewing ... as platform staff", and Members and General show no
       write controls.
+- [ ] **The notification stream works on both platforms, in a release build.**
+      Express's stream must pass through a release build with no development
+      tool buffering it (Flipper buffers a streamed body). Create a
+      notification for the signed-in person from the API. It appears in the Notifications tab within a few seconds, with no
+      pull to refresh.
+- [ ] **The stream survives 15 minutes in the foreground.** Leave the app open
+      on the Notifications tab for more than 15 minutes, past the access token's
+      expiry. Express ends the stream, and the app reopens it. A notification
+      created afterwards still appears with no refresh.
+- [ ] **The stream stops in the background and resumes.** Send the app to the
+      background and create a notification. Return to the app: the list and the
+      badge include it, and the stream is open again.
+- [ ] **The badge counts.** With unread notifications, the Notifications tab
+      shows the count (with a plus sign when the server capped the count). Mark one read: the count drops. Mark
+      all read: the badge disappears.
+- [ ] **A leave from Members opened through Getting started lands on the
+      workspace list.** On a customer workspace's overview, select Open members
+      in Getting started, then Leave. The app lands on `/tenants`. Back reaches
+      the tabs, and no screen of the left workspace flashes.
+- [ ] **A deletion request goes through step-up on both platforms.** With the
+      last confirmation older than the API's step-up window, open Settings,
+      Account, Delete account and send a request. The "Confirm it’s you" dialog
+      opens, and the request goes through after the emailed link. The screen
+      then shows when the account will be deleted.
 
 ## Reporting a problem
 
