@@ -45,7 +45,9 @@ describe('Settings', () => {
     expect(screen.getByText('Account')).toBeTruthy()
     expect(screen.getByText('Your profile, sign-in and notifications.')).toBeTruthy()
     expect(screen.getByText('Workspace')).toBeTruthy()
-    expect(screen.getByText('The current workspace’s details, members and activity.')).toBeTruthy()
+    expect(
+      screen.getByText('The current workspace’s details, members, activity and plan.')
+    ).toBeTruthy()
   })
 
   it.each([
@@ -138,6 +140,7 @@ describe('Settings', () => {
     ['General', 'The workspace’s details, time zone, and language and region.', 'general'],
     ['Members', 'Members, roles and pending invitations.', 'members'],
     ['Activity', 'Every change made in this workspace, newest first.', 'activity'],
+    ['Plan', 'The workspace’s plan and its limits.', 'billing'],
   ])('the %s row pushes the current workspace’s screen', async (title, description, leaf) => {
     useAuthStore.getState().login('a', {
       id: 'u1',

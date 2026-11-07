@@ -25,7 +25,7 @@ export const SETTINGS_GROUPS: ReadonlyArray<SettingsGroup> = [
   {
     key: 'workspace',
     title: 'Workspace',
-    description: 'The current workspace’s details, members and activity.',
+    description: 'The current workspace’s details, members, activity and plan.',
   },
 ]
 
@@ -53,7 +53,7 @@ export const ACCOUNT_SECTIONS: ReadonlyArray<AccountSection> = [
 
 /** A Workspace row: the words that describe it and the screen it opens. */
 export interface WorkspaceSection {
-  key: 'general' | 'members' | 'activity'
+  key: 'general' | 'members' | 'activity' | 'plan'
   title: string
   description: string
   /** The route of the section for a workspace. */
@@ -82,5 +82,11 @@ export const WORKSPACE_SECTIONS: ReadonlyArray<WorkspaceSection> = [
     title: 'Activity',
     description: 'Every change made in this workspace, newest first.',
     path: (slug) => `/settings/workspace/${slug}/activity`,
+  },
+  {
+    key: 'plan',
+    title: 'Plan',
+    description: 'The workspace’s plan and its limits.',
+    path: (slug) => `/settings/workspace/${slug}/billing`,
   },
 ]

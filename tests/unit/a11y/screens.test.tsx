@@ -9,6 +9,7 @@ import NotificationPreferences from '@/app/(app)/settings/account/notifications'
 import Profile from '@/app/(app)/settings/account/profile'
 import Security from '@/app/(app)/settings/account/security'
 import WorkspaceActivity from '@/app/(app)/settings/workspace/[slug]/activity'
+import WorkspacePlan from '@/app/(app)/settings/workspace/[slug]/billing'
 import WorkspaceGeneral from '@/app/(app)/settings/workspace/[slug]/general'
 import WorkspaceMembers from '@/app/(app)/settings/workspace/[slug]/members'
 import Beta from '@/app/(app)/tenants/[slug]/beta'
@@ -410,6 +411,50 @@ for (const [name, tenant] of ACTIVITY_SCREENS) {
     element: (
       <QueryClientProvider client={activityClient}>
         <WorkspaceActivity />
+      </QueryClientProvider>
+    ),
+  })
+}
+
+/** The Plan screen for an owner, staff with platform access and the platform workspace. */
+const PLAN_SCREENS: Array<[string, Record<string, unknown>, boolean]> = [
+  ['Workspace Plan (owner)', ACME, true],
+  ['Workspace Plan (staff)', { ...ACME, access: 'platform' }, true],
+  ['Workspace Plan (platform workspace)', { ...ACME, isPlatform: true }, false],
+]
+for (const [name, tenant, withPlan] of PLAN_SCREENS) {
+  const planClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  planClient.setQueryData(tenantKeys.detail('acme'), tenant)
+  planClient.setQueryData(clientSettingsKeys.all, null)
+  if (withPlan) {
+    planClient.setQueryData(billingKeys.entitlements('acme'), {
+      plan: { key: 'free', name: 'Free' },
+      state: 'free',
+      trialEndsAt: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      pastDue: null,
+      features: { advanced_example: false },
+      limits: { members: { limit: 3, used: 3, approaching: false } },
+    })
+    planClient.setQueryData(billingKeys.plans, {
+      plans: [],
+      catalog: [
+        { key: 'members', kind: 'limit', label: 'Members', description: 'People.' },
+        { key: 'advanced_example', kind: 'feature', label: 'Advanced example', description: 'x' },
+      ],
+      trial: { enabled: true, days: 14 },
+      paymentsEnabled: true,
+      gstRegistered: false,
+    })
+  }
+  A11Y_SCREENS.push({
+    name,
+    element: (
+      <QueryClientProvider client={planClient}>
+        <WorkspacePlan />
       </QueryClientProvider>
     ),
   })
