@@ -8,6 +8,7 @@ import Workspace from '@/app/(app)/(tabs)/workspace'
 import NotificationPreferences from '@/app/(app)/settings/account/notifications'
 import Profile from '@/app/(app)/settings/account/profile'
 import Security from '@/app/(app)/settings/account/security'
+import WorkspaceGeneral from '@/app/(app)/settings/workspace/[slug]/general'
 import Overview from '@/app/(app)/tenants/[slug]/index'
 import Tenants from '@/app/(app)/tenants/index'
 import Welcome from '@/app/(app)/welcome'
@@ -163,6 +164,37 @@ for (const [name, workspaceClient, workspaceScreen] of WORKSPACE_SCREENS) {
     name,
     element: (
       <QueryClientProvider client={workspaceClient}>{workspaceScreen()}</QueryClientProvider>
+    ),
+  })
+}
+
+/** The settings the General screen shows. */
+const GENERAL_SETTINGS = {
+  tenantId: 't-acme',
+  timezone: 'Europe/London',
+  locale: 'en-GB',
+  metadata: { plan: 'x' },
+  updatedAt: '2026-01-05T00:00:00.000Z',
+}
+
+/** The General screen as a manager, a viewer and staff with platform access sees it. */
+const GENERAL_SCREENS: Array<[string, Record<string, unknown>]> = [
+  ['Workspace General (manager)', ACME],
+  ['Workspace General (viewer)', { ...ACME, role: 'viewer' }],
+  ['Workspace General (staff)', { ...ACME, access: 'platform' }],
+]
+for (const [name, tenant] of GENERAL_SCREENS) {
+  const generalClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  generalClient.setQueryData(tenantKeys.detail('acme'), tenant)
+  generalClient.setQueryData(tenantKeys.settings('acme'), GENERAL_SETTINGS)
+  A11Y_SCREENS.push({
+    name,
+    element: (
+      <QueryClientProvider client={generalClient}>
+        <WorkspaceGeneral />
+      </QueryClientProvider>
     ),
   })
 }
