@@ -39,7 +39,12 @@ import { billingKeys } from '@/queries/billing.queries'
 import { clientSettingsKeys } from '@/queries/client-settings.queries'
 import { tenantFlagsKey } from '@/queries/flags.queries'
 import { insightsKey } from '@/queries/insights.queries'
-import { notificationKeys, type NotificationPreference } from '@/queries/notification.queries'
+import {
+  notificationKeys,
+  notificationsListOptions,
+  type Notification,
+  type NotificationPreference,
+} from '@/queries/notification.queries'
 import { sessionKeys } from '@/queries/sessions.queries'
 import {
   invitationsListOptions,
@@ -103,7 +108,6 @@ const SCREENS: Array<[string, () => React.JSX.Element]> = [
   ],
   ['Home', () => <Home />],
   ['Workspace tab', () => <Workspace />],
-  ['Notifications', () => <Notifications />],
   ['Settings', () => <Settings />],
   ['Profile', () => <Profile />],
   ['Welcome', () => <Welcome />],
@@ -498,6 +502,77 @@ for (const [name, preferencesQueryClient] of PREFERENCE_SCREENS) {
     element: (
       <QueryClientProvider client={preferencesQueryClient}>
         <NotificationPreferences />
+      </QueryClientProvider>
+    ),
+  })
+}
+
+/**
+ * A client holding the Notifications tab's reads in a given state.
+ * @param state - Rows, or an error on the first page with no data.
+ * @returns The seeded client.
+ */
+function inboxClient(state: Notification[] | 'error'): QueryClient {
+  const seed = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  seed.setQueryData(tenantsQueryOptions().queryKey, [])
+  seed.setQueryData(notificationsListOptions({ unread: true, limit: 1 }).queryKey, {
+    items: [],
+    page: { hasNext: false, nextCursor: null, prevCursor: null, hasPrev: false, limit: 1 },
+    total: { count: state === 'error' ? 0 : state.length, capped: false },
+  })
+  const list = notificationsListOptions({}).queryKey
+  if (state === 'error') {
+    seed
+      .getQueryCache()
+      .build(seed, { queryKey: list })
+      .setState({ status: 'error', error: new Error('offline'), fetchStatus: 'idle' })
+  } else {
+    seed.setQueryData(list, {
+      items: state,
+      page: { hasNext: true, nextCursor: 'c2', prevCursor: null, hasPrev: false, limit: 20 },
+    })
+  }
+  return seed
+}
+
+/** One unread invitation and one neutral billing notice. */
+const INBOX_ROWS: Notification[] = [
+  {
+    id: 'n1',
+    userId: 'u1',
+    type: 'tenant_invitation',
+    title: 'Invitation to Acme',
+    body: 'Ada invited you.',
+    metadata: { tenantSlug: 'acme' },
+    readAt: null,
+    createdAt: '2026-11-01T10:00:00.000Z',
+  },
+  {
+    id: 'n2',
+    userId: 'u1',
+    type: 'billing_payment_failed',
+    title: 'Your payment of ₹999 failed',
+    body: 'Upgrade from Billing.',
+    metadata: { slug: 'acme' },
+    readAt: '2026-11-02T10:00:00.000Z',
+    createdAt: '2026-11-01T09:00:00.000Z',
+  },
+]
+
+/** The Notifications tab with rows, empty and failed. */
+const INBOX_SCREENS: Array<[string, QueryClient]> = [
+  ['Notifications', inboxClient(INBOX_ROWS)],
+  ['Notifications (empty)', inboxClient([])],
+  ['Notifications (load failed)', inboxClient('error')],
+]
+for (const [name, inbox] of INBOX_SCREENS) {
+  A11Y_SCREENS.push({
+    name,
+    element: (
+      <QueryClientProvider client={inbox}>
+        <Notifications />
       </QueryClientProvider>
     ),
   })

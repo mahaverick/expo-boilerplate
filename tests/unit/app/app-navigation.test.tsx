@@ -125,7 +125,11 @@ describe('the (app) stack', () => {
     useTabBarStore.setState({ height: 0, owner: null })
     const result = await renderRouter(
       routes({
-        '(app)/(tabs)/_layout': TabsLayout,
+        '(app)/(tabs)/_layout': () => (
+          <QueryClientProvider client={new QueryClient()}>
+            <TabsLayout />
+          </QueryClientProvider>
+        ),
         '(app)/(tabs)/notifications': stub('notifications'),
         '(app)/(tabs)/settings': stub('settings'),
       }),
