@@ -809,6 +809,19 @@ collect proxy at `apiUrl('/collect')`, and the app never holds a PostHog host.
   the query keys in `ANALYTICS_URL_QUERY_ALLOWLIST`. A guard that throws drops
   the event. The SDK's own events (the app lifecycle events included) pass it
   too. Without a guard, a link's `?token=` or `?email=` would reach PostHog.
+- **The SDK's lifecycle events keep only a URL's scheme and host.** The SDK
+  sends `Application Opened` with `url` set to the link that opened the app.
+  `sanitizeUrl` keeps an https link's path, and `/tenants/acme-corp` names a
+  workspace. So for `Application Installed`, `Updated`, `Opened`, `Became
+  Active` and `Backgrounded`, the guard cuts every https URL to its scheme and
+  host and drops an app path.
+- **Every event and every exception carries `$geoip_disable: true`.** Express's
+  collect proxy sets `x-forwarded-for` to the client's IP address, and PostHog
+  would resolve it to a city and a country that the privacy manifest and the
+  store answers never declare. The guard sets it last, so no caller can turn
+  it off, and `buildEvent` sets it on every exception, saved crashes included.
+  The PostHog project should also have "Discard client IP data" on, an owner
+  setting.
 - **`track` takes a registered event.** `event-registry.ts` lists the events
   expo sends and fails to compile on a property that admits a free string. A
   free string is how a name, an address or a search term ends up in an event.
@@ -843,10 +856,18 @@ collect proxy at `apiUrl('/collect')`, and the app never holds a PostHog host.
   the pattern (`/settings/workspace/[slug]/members`), never the filled-in
   path, so a slug or a token never leaves the device. The SDK's screen
   autocapture needs `PostHogProvider`, which the app never mounts.
-- **The workspace group waits for sign-in.** `useTenantGroup` reads nothing
-  while restoring or signed out, because the workspace list needs a token. A
-  member of the platform workspace is never grouped there. The group carries
-  the workspace id and `tenant_access` and no group properties.
+- **The workspace group is the workspace on screen, and waits for sign-in.**
+  `useTenantGroup` takes the route's `slug` first, as
+  `useFeaturePropertiesSync` does, so an event never carries one workspace's
+  `$feature/*` values under another's group, and staff on a customer
+  workspace send `tenant_access: 'platform'`. The Workspace tab has no route
+  slug and groups the current workspace. Every other screen (Home,
+  Notifications, Settings, the account screens, `/tenants`) clears the group,
+  as react's `installRouteAnalytics` clears it off a page outside a tenant
+  route. The group is cleared while that workspace's detail loads. It reads
+  nothing while restoring or signed out, because the workspace list needs a
+  token. A member of the platform workspace is never grouped there. The group
+  carries the workspace id and `tenant_access` and no group properties.
 
 **Exceptions**
 
@@ -865,7 +886,9 @@ collect proxy at `apiUrl('/collect')`, and the app never holds a PostHog host.
   type, value and frames field by field through `scrubText`, so a field a
   later `@posthog/core` adds never leaves unscrubbed. A frame carries its
   scrubbed filename and function and its position, and no source line or
-  variable. An error with no frame of the app's own is dropped.
+  variable. An app frame's filename is its base name, because an Android
+  install lives under random directories. An error with no frame of the app's
+  own is dropped.
 - **The throttle is 5 events per fingerprint and 30 per launch.** A request
   carries at most 10 events and at most 60 KiB. A second error with the same
   name, message and stack within a second counts as a re-throw of the first.
@@ -884,7 +907,8 @@ collect proxy at `apiUrl('/collect')`, and the app never holds a PostHog host.
   oldest dropped). The next launch's `installErrorListeners` sends the list.
   The event is stored with a fresh distinct id, `$process_person_profile:
   false` and no `$session_id`, because it can be sent after the person has
-  opted out or signed out.
+  opted out or signed out. A stored entry that is not an object with a string
+  `uuid` is dropped on read, so a corrupt list cannot block sending.
 - **With no key, nothing is installed.** `installErrorListeners` wraps
   `ErrorUtils`' global handler, calls the handler it replaced with the same
   arguments, and enables Hermes's rejection tracker in a release build only.
@@ -1000,10 +1024,12 @@ Each item is a change for react or for a later plan, with the reason it waits.
   The shared tests alone (31 manifest rows, 29 of them test files) cover
   statements 43.78%, branches 46.00%, functions 31.47% and lines 42.51% of
   `src/`, because they exercise only part of the 75 shared files. The full
-  suite measures statements 92.67%, branches 87.42%, functions 89.42% and lines
-  93.47% on 8 November 2026, and `jest.config.ts` and `ci.yml` hold 92, 87, 89
-  and 93. The margin comes from expo's own screens and hooks. React should mark
-  more of its tests for expo, so the shared rows carry their own share.
+  suite measures statements 92.66%, branches 87.57%, functions 89.38% and lines
+  93.51% on 8 November 2026, and `jest.config.ts` and `ci.yml` hold 92, 87, 89
+  and 93. Each margin is under 0.7 of a point, so a change that adds untested
+  branches fails the gate. The margin comes from expo's own screens and hooks.
+  React should mark more of its tests for expo, so the shared rows carry their
+  own share.
 - **One copy-style case is skipped by name.** `test` and `test:coverage` pass
   `--testNamePattern` with a negative lookahead that skips only "finds the copy
   it guards" in `tests/unit/copy-style.test.ts`. That case expects more than
@@ -1092,7 +1118,11 @@ Each item is a change for react or for a later plan, with the reason it waits.
 - **Source maps, `expo-updates` and the per-profile network settings belong to
   plan 3e.** Release stack frames carry bundle positions until a build
   uploads source maps, and the PostHog CLI keys a release by app version and
-  build, not by update ID, so plan 3e decides the keying with `eas.json`. That
+  build, not by update ID, so plan 3e decides the keying with `eas.json`.
+  `isAppFrame` matches only `index.android.bundle` and `main.jsbundle`
+  (`RELEASE_BUNDLES` in `report.ts`). An update that `expo-updates` downloads
+  runs from a bundle with another name, so every exception after an update
+  would have no app frame and be dropped. Plan 3e adds those names. That
   plan also sets cleartext traffic and App Transport Security (ATS) for each
   build profile. When it adds `expo-updates`, remove it from `knip.ts`'s
   `ignoreDependencies`: knip reports the entry as unneeded once the package is

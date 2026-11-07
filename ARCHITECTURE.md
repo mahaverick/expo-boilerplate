@@ -480,7 +480,8 @@ rules and their reasons.
   property names it never carries. `event-registry.ts` is the typed list of
   events. `install-identity.ts` follows the auth store's user.
   `use-screen-views.ts` sends a screen view for each route pattern, and
-  `use-tenant-group.ts` puts events in the current workspace's group.
+  `use-tenant-group.ts` puts events in the group of the workspace on screen
+  (the route's, or the Workspace tab's current one).
   `install-identity.ts` also forgets the flags module's per-person state.
   `url-sanitizer.ts` is react's, byte for byte, and `index.ts` is the port.
 - **`errors/`.** `report.ts` filters, builds, scrubs and throttles an

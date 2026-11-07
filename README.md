@@ -194,6 +194,12 @@ track people across other companies' apps or websites.
   names the person (their user id) only when they are identified and sharing
   analytics, so crash data is declared as linked. Otherwise it is anonymous,
   and a crash saved for the next launch always is.
+- **Location is not collected.** Express's collect proxy forwards the
+  client's IP address, which PostHog would resolve to a city and a country.
+  The app sets `$geoip_disable` on every event and every exception report, so
+  PostHog adds no location, and neither store answer declares one. The
+  PostHog project should also have "Discard client IP data" on, which is the
+  project owner's setting.
 - **PostHog processes the data for the app.** On Google Play, mark the data as
   encrypted in transit (HTTPS), and declare the account deletion path (Settings,
   Account, Delete account).
@@ -499,6 +505,12 @@ date, the device and the OS version beside each.
       screen, with a route pattern such as `/tenants/[slug]` and no filled-in
       path, no email address and no `token` in any property. The API's log
       shows `POST /api/v1/collect/batch/` and no request to a PostHog host.
+      Every event carries `$geoip_disable` true and no `$geoip_*` property.
+- [ ] **A cold launch from an app link sends only its scheme and host.**
+      Force-quit the app, then open an https app link that carries a web
+      address, such as `https://<web host>/tenants/<slug>`. The app opens on
+      that workspace. In PostHog, the `Application Opened` event's `url` is
+      `https://<web host>`, with no path and no slug.
 - [ ] **Turning analytics off stops the events.** In Settings, Account,
       Privacy, turn "Share usage analytics" off, then open screens and tap.
       PostHog receives no new event from this install. Turn it on again and
@@ -509,13 +521,12 @@ date, the device and the OS version beside each.
       again: PostHog shows one `$exception` with origin `global`, no person's
       id, and `$process_person_profile` false. The launch after that sends
       nothing more.
-- [ ] **Hermes stack frames parse, and an Android bundle path holds no random
-      directory.** Open the `$exception` from the check above on both
-      platforms. Its frames show a file name (`main.jsbundle` on iOS,
+- [ ] **Hermes stack frames parse, and an app frame names only its bundle.**
+      Open the `$exception` from the check above on both platforms. Its app
+      frames show the bundle's base name (`main.jsbundle` on iOS,
       `index.android.bundle` on Android), a function and a position, with
-      `in_app` true. On Android, read each frame's filename: if it holds an
-      absolute path with a random directory name, record it, because the
-      scrubber might keep it.
+      `in_app` true. No filename holds an install directory. The event carries
+      `$geoip_disable` true.
 - [ ] **The privacy report of an archive matches the manifest.** Archive an iOS
       build in Xcode, then choose Generate Privacy Report. It lists product
       interaction and user ID (linked, analytics) and crash data (linked,
