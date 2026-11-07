@@ -7,7 +7,7 @@ import { tenantFlagsKey, useTenantFlags } from '@/queries/flags.queries'
 import { useAuthStore } from '@/states/auth.store'
 import { renderScreen, restoreApi } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
-import { envelope, NOT_FOUND, serveWorkspace } from '@/tests/support/workspace-api'
+import { acme, envelope, NOT_FOUND, serveWorkspace } from '@/tests/support/workspace-api'
 
 jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), push: jest.fn() },
@@ -84,5 +84,22 @@ describe('Beta', () => {
     await renderScreen(<Beta />)
     expect(await screen.findByRole('button', { name: 'Try again' })).toBeTruthy()
     expect(screen.queryByText('Page not found')).toBeNull()
+  })
+
+  it('tells staff with platform access whose workspace this is, also on Page not found', async () => {
+    serveWorkspace({
+      'GET /tenants/acme': envelope(acme({ access: 'platform' })),
+      'GET /tenants/acme/beta': envelope({ slug: 'acme', enabledAt: '2026-11-07T00:00:00.000Z' }),
+    })
+    await renderScreen(<Beta />)
+    expect(await screen.findByText(/as platform staff \(Owner\)\./)).toBeTruthy()
+    restoreApi()
+    serveWorkspace({
+      'GET /tenants/acme': envelope(acme({ access: 'platform' })),
+      'GET /tenants/acme/beta': NOT_FOUND,
+    })
+    await renderScreen(<Beta />)
+    expect(await screen.findByRole('header', { name: 'Page not found' })).toBeTruthy()
+    expect(await screen.findAllByText(/as platform staff \(Owner\)\./)).toHaveLength(1)
   })
 })

@@ -5,6 +5,7 @@ import { ActivityIndicator, Text } from 'react-native'
 import { LoadError } from '@/components/shared/load-error'
 import { Button } from '@/components/ui/button'
 import { Screen } from '@/components/ui/screen'
+import { PlatformAccessBanner } from '@/components/workspaces/platform-access-banner'
 import { statusFrom } from '@/lib/api-error'
 import { useTenantBeta } from '@/queries/beta.queries'
 import { tenantFlagsKey } from '@/queries/flags.queries'
@@ -35,6 +36,7 @@ export default function WorkspaceBeta() {
   if (closed) {
     return (
       <Screen title="Page not found" topInset={false}>
+        <PlatformAccessBanner slug={slug} />
         <Button
           variant="primary"
           label="Go to Home"
@@ -69,6 +71,7 @@ export default function WorkspaceBeta() {
   }
   return (
     <Screen title="Beta" topInset={false}>
+      <PlatformAccessBanner slug={slug} />
       {body}
     </Screen>
   )

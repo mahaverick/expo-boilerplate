@@ -44,12 +44,12 @@ function tenantFlagsQueryOptions(slug: string) {
 
 /**
  * A workspace's flag values. A flag is off, or at its fallback, until the
- * server answers, and stays there when the read fails. Plan 3d replaces this
+ * server answers, and whenever the latest read failed, even after a good one. Plan 3d replaces this
  * hook with the full flags client.
  * @param slug - The workspace's web address.
  * @returns A value for every flag this app reads.
  */
 export function useTenantFlags(slug: string): ClientFlagValues {
-  const { data } = useQuery(tenantFlagsQueryOptions(slug))
-  return data ?? fallbackFlags()
+  const { data, isError } = useQuery(tenantFlagsQueryOptions(slug))
+  return isError || data === undefined ? fallbackFlags() : data
 }

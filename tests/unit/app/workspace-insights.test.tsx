@@ -4,7 +4,7 @@ import Insights from '@/app/(app)/tenants/[slug]/insights'
 import { useAuthStore } from '@/states/auth.store'
 import { renderScreen, restoreApi } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
-import { envelope, serveWorkspace } from '@/tests/support/workspace-api'
+import { acme, envelope, serveWorkspace } from '@/tests/support/workspace-api'
 
 jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), push: jest.fn() },
@@ -94,5 +94,24 @@ describe('Insights', () => {
     await renderScreen(<Insights />)
     expect(await screen.findByRole('button', { name: 'Try again' })).toBeTruthy()
     expect(screen.queryByText('Included in Paid.')).toBeNull()
+  })
+
+  it('shows Try again, not a spinner, when the entitlements fail to load', async () => {
+    serveWorkspace({
+      'GET /tenants/acme/entitlements': { status: 500, data: { success: false, message: 'x' } },
+    })
+    await renderScreen(<Insights />)
+    expect(await screen.findByRole('button', { name: 'Try again' })).toBeTruthy()
+    expect(screen.queryByLabelText('Loading insights')).toBeNull()
+  })
+
+  it('tells staff with platform access whose workspace this is', async () => {
+    serveWorkspace({
+      'GET /tenants/acme': envelope(acme({ access: 'platform' })),
+      'GET /tenants/acme/entitlements': entitlements(false),
+    })
+    await renderScreen(<Insights />)
+    expect(await screen.findByText(/as platform staff \(Owner\)\./)).toBeTruthy()
+    expect(screen.getAllByRole('header')).toHaveLength(1)
   })
 })

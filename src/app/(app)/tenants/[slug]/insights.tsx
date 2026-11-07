@@ -2,7 +2,8 @@ import { useLocalSearchParams } from 'expo-router'
 import { ActivityIndicator, Text, View } from 'react-native'
 import { LoadError } from '@/components/shared/load-error'
 import { Screen } from '@/components/ui/screen'
-import { useFeature } from '@/queries/billing.queries'
+import { PlatformAccessBanner } from '@/components/workspaces/platform-access-banner'
+import { useEntitlements, useFeature } from '@/queries/billing.queries'
 import { INSIGHTS_LOCKED, useTenantInsights } from '@/queries/insights.queries'
 
 /** The feature's catalog key. */
@@ -84,6 +85,7 @@ function Stat({ label, value }: { label: string; value: number }) {
  * @returns The body.
  */
 function InsightsBody({ slug }: { slug: string }) {
+  const entitlements = useEntitlements(slug)
   const { enabled } = useFeature(slug, FEATURE)
   const insights = useTenantInsights(slug, { enabled: enabled === true })
   if (enabled === false || insights.data === INSIGHTS_LOCKED) return <LockedCard />
@@ -96,6 +98,16 @@ function InsightsBody({ slug }: { slug: string }) {
           value={insights.data.invitationsSentLast30Days}
         />
       </Card>
+    )
+  }
+  if (entitlements.isError && enabled === undefined) {
+    return (
+      <LoadError
+        message={INSIGHTS_ERROR}
+        onRetry={() => {
+          void entitlements.refetch()
+        }}
+      />
     )
   }
   if (insights.isError) {
@@ -120,6 +132,7 @@ export default function WorkspaceInsights() {
   const { slug } = useLocalSearchParams<{ slug: string }>()
   return (
     <Screen title="Insights" topInset={false}>
+      <PlatformAccessBanner slug={slug} />
       <InsightsBody slug={slug} />
     </Screen>
   )
