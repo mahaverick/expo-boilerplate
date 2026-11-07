@@ -204,6 +204,64 @@ describe('PendingInvitations', () => {
     expect(screen.getByText('i1@example.com')).toBeTruthy()
   })
 
+  it('a failed later page keeps the rows and offers Try again beside them', async () => {
+    let fail = true
+    serveInvitations({
+      list: (params) => {
+        if (params?.cursor !== 'c2') return envelope(page([invitation('i1')], 'c2'))
+        return fail ? refusal(500, 'INTERNAL', 'Broke') : envelope(page([invitation('i2')]))
+      },
+    })
+    await renderList()
+    await fireEvent.press(await screen.findByRole('button', { name: 'Load more' }))
+    expect(
+      await screen.findByText(
+        'We couldn’t load more invitations. Select Try again to load them.',
+        {},
+        { timeout: 4000 }
+      )
+    ).toBeTruthy()
+    expect(screen.getByText('i1@example.com')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+    fail = false
+    await fireEvent.press(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText('i2@example.com')).toBeTruthy()
+    expect(screen.getByText('i1@example.com')).toBeTruthy()
+  })
+
+  it('a double press of Resend sends one request', async () => {
+    const sent = serveInvitations()
+    await renderList()
+    const button = await screen.findByRole('button', {
+      name: 'Resend, invitation to i1@example.com',
+    })
+    await act(async () => {
+      void fireEvent.press(button)
+      await fireEvent.press(button)
+    })
+    await waitFor(() => {
+      expect(toasts()).toContain('Invitation resent to i1@example.com.')
+    })
+    expect(writes(sent)).toHaveLength(1)
+  })
+
+  it('a double press of Revoke sends one request', async () => {
+    const sent = serveInvitations()
+    await renderList()
+    await fireEvent.press(
+      await screen.findByRole('button', { name: 'Revoke invitation to i1@example.com' })
+    )
+    const buttons = alert.mock.calls[0]?.[2]
+    await act(async () => {
+      buttons?.[1]?.onPress?.()
+      await Promise.resolve(buttons?.[1]?.onPress?.())
+    })
+    await waitFor(() => {
+      expect(toasts()).toContain('Invitation to i1@example.com revoked.')
+    })
+    expect(writes(sent)).toHaveLength(1)
+  })
+
   it('resend runs through step-up and toasts', async () => {
     const sent = serveInvitations({ resend: REAUTH_ANSWER })
     await renderList()

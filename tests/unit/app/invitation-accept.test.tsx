@@ -394,6 +394,25 @@ describe('AcceptInvitation', () => {
     expect(urls(seen)).toEqual(['/invitations/preview'])
   })
 
+  it('signed in, a 404 preview still accepts, and a 403 accept is dead', async () => {
+    signInAs('ada@example.com')
+    const seen = serveInvitation({
+      'POST /invitations/preview': NOT_FOUND,
+      'POST /invitations/accept': {
+        status: 403,
+        data: { success: false, message: 'no', code: 'invitation_email_mismatch' },
+      },
+    })
+    await renderScreen(<AcceptInvitation />)
+    expect(
+      await screen.findByRole('header', { name: 'This invitation can’t be used' })
+    ).toBeTruthy()
+    expect(screen.getByText('Ask the person who invited you for a new invite.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+    expect(urls(seen)).toEqual(['/invitations/preview', '/invitations/accept'])
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
   it('a failed verify offers Try again', async () => {
     let calls = 0
     serveInvitation({

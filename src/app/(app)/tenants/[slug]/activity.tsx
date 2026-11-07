@@ -5,6 +5,6 @@ import { WorkspaceSettingsRedirect } from '@/components/settings/workspace-setti
  * workspace's activity settings and keeps the query.
  * @returns The redirect.
  */
-export default function TenantUactivity() {
+export default function LegacyWorkspaceActivity() {
   return <WorkspaceSettingsRedirect to="activity" />
 }

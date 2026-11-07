@@ -46,7 +46,8 @@ function firstMessage(errors: unknown[]): string | undefined {
  * @param props.submitLabel - The send button's label.
  * @param props.defaultEmail - The address the form starts with.
  * @param props.description - A line of text under the title.
- * @param props.notice - An error line above the form.
+ * @param props.notice - A line above the form, drawn as an inline error. It carries an error or a
+ *   note, such as the login screen's line that the app uses no passwords.
  * @param props.redirect - A safe path the link lands on, sent with the request.
  * @returns The screen.
  */

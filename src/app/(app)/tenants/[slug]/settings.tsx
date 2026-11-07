@@ -5,6 +5,6 @@ import { WorkspaceSettingsRedirect } from '@/components/settings/workspace-setti
  * workspace's general settings and keeps the query.
  * @returns The redirect.
  */
-export default function TenantUsettings() {
+export default function LegacyWorkspaceSettings() {
   return <WorkspaceSettingsRedirect to="general" />
 }

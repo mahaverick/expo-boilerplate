@@ -314,7 +314,9 @@ src/app/
   resolves it against the list of workspaces the API returns.
 - **The workspace screens.** `src/components/workspaces/` holds the switcher
   (`workspace-switcher.tsx`), the gate for loading, missing and suspended
-  states (`workspace-gate.tsx`), the overview shared by the Workspace tab and
+  states (`workspace-gate.tsx`), the missing and suspended panel it shares
+  with the stack screens (`missing-workspace.tsx`, which also holds
+  `StackWorkspaceGate` for Insights and Beta), the overview shared by the Workspace tab and
   `/tenants/[slug]` (`workspace-overview.tsx`), Getting started, the trial
   explainer (`trial-explainer.ts`), the create form and the platform-access
   banner (`platform-access-banner.tsx`), which every workspace screen draws
@@ -374,6 +376,8 @@ src/app/
   System). `src/lib/audit-targets.ts` names what an entry acted on.
 - **Paging.** `src/hooks/use-list-pages.ts` pages a list with "Load more": one
   query per page, keyed by its cursor, from the shared `listQueryOptions`.
+  It shows each row key once, and starts again at page 1 when page 1
+  refetches after page 2 was asked for.
 - **The kit's additions.** `src/components/ui/choice-sheet.tsx` is a bottom
   sheet in a `Modal` with no scrim. `TextField` takes `multiline`.
   `src/lib/link-lifetime.ts` writes a link's lifetime and expiry the way the

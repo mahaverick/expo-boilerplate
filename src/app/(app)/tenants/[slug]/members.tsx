@@ -5,6 +5,6 @@ import { WorkspaceSettingsRedirect } from '@/components/settings/workspace-setti
  * workspace's members settings and keeps the query.
  * @returns The redirect.
  */
-export default function TenantUmembers() {
+export default function LegacyWorkspaceMembers() {
   return <WorkspaceSettingsRedirect to="members" />
 }

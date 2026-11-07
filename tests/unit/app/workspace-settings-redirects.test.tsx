@@ -41,4 +41,10 @@ describe('workspace settings redirects', () => {
       screen.getByText('redirect:/settings/workspace/acme/members?q=ada&tab=a&tab=b')
     ).toBeTruthy()
   })
+
+  it('drops rest, the catch-all segment a deeper link carries', async () => {
+    mockParams = { slug: 'acme', rest: ['x', 'y'], q: 'ada' }
+    await render(<TenantActivity />)
+    expect(screen.getByText('redirect:/settings/workspace/acme/activity?q=ada')).toBeTruthy()
+  })
 })

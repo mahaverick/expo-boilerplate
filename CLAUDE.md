@@ -570,8 +570,12 @@ screens, Insights and Beta. They are plan 3c3's. The files are listed in
 - **Every member write runs through `useStepUp().run`.** A role change, a
   removal, leaving, an invite, a resend and a revoke each go through it, and
   the button shows `STEP_UP_WAITING_LABEL` while `useStepUpWaiting()` is true.
-  Express asks for a recent sign-in on each of them, so a write outside `run`
-  would fail with `REAUTH_REQUIRED` and no way to answer it.
+  Express asks for a recent sign-in on the platform workspace for each of them
+  except a revoke (`requireRecentAuthOnPlatformTenant`), and for staff acting
+  through platform access on a customer workspace, revokes included. A
+  customer workspace asks its members for none. One path for every write
+  means a write that can be refused gets the dialog, never a bare
+  `REAUTH_REQUIRED`, and a write that cannot be refused costs nothing extra.
 - **A refused invite shows inline in the invite form.** The invite form is a
   form, and an error that blocks a form renders inline. A refused step-up
   there is a form-level error, as in react. The Security screen keeps its

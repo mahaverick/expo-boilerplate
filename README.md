@@ -380,13 +380,15 @@ date, the device and the OS version beside each.
       `Intl.DateTimeFormat` and `Intl.getCanonicalLocales` threw (the second
       value repeats a variant). Enter `Asia/Kolkata` and `en-IN`: the save
       goes through.
-- [ ] **The role sheet and the choice chips fit at 200% text.** With the largest
-      system font, open Members, select a member's role, and open the invite
-      form's role chips. Every role is reachable by scrolling, no label is cut
-      off, and Cancel closes the sheet.
+- [ ] **The role sheets fit at 200% text.** With the largest system font,
+      open Members, select a member's role, then open the invite form's role
+      picker, which is a `ChoiceSheet` too. In each sheet every role is
+      reachable by scrolling, no label is cut off, and Cancel closes it.
 - [ ] **A step-up dialog opens right after the role sheet closes, on iOS.** On
-      Members, with the last confirmation older than the API's step-up window,
-      change a member's role. The "Confirm it’s you" dialog opens and stays
+      the platform workspace's Members, with the last confirmation older than
+      the API's step-up window, change a member's role. A customer workspace
+      asks its members for no step-up, so the check needs the platform
+      workspace. The "Confirm it’s you" dialog opens and stays
       open. On iOS a `Modal` that opens while another is still closing can be
       dropped; record whether it is.
 - [ ] **The platform-access banner shows for staff.** Signed in as platform

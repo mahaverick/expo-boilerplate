@@ -22,7 +22,7 @@ import { tenantAuditListOptions } from '@/queries/audit.queries'
 import { tenantKeys, useMyRole, useTenant } from '@/queries/tenant.queries'
 import { cleanSearch } from '@/schemas/list-request.schemas'
 import type { AuditEntry } from '@/types/api.types'
-import type { ListRequest } from '@/types/list.types'
+import { LIST_SEARCH_DEBOUNCE_MS, type ListRequest } from '@/types/list.types'
 
 /** What a reader who is not an owner or admin sees. */
 const NOT_ALLOWED = 'Only this workspace’s owners and admins can see its activity.'
@@ -33,9 +33,6 @@ const ACTIVITY_ERROR =
 
 /** What a failed later page says. */
 const MORE_ERROR = 'We couldn’t load more activity. Select Try again to load it.'
-
-/** How long typing pauses before a search runs. */
-const SEARCH_DELAY_MS = 300
 
 /** The access choices: the filter's value (empty for all) and its label. */
 const ACCESS_CHOICES = [
@@ -89,7 +86,7 @@ function ActivityLog({ slug }: { slug: string }) {
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(cleanSearch(text))
-    }, SEARCH_DELAY_MS)
+    }, LIST_SEARCH_DEBOUNCE_MS)
     return () => {
       clearTimeout(timer)
     }

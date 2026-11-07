@@ -44,8 +44,8 @@ function tenantFlagsQueryOptions(slug: string) {
 
 /**
  * A workspace's flag values. A flag is off, or at its fallback, until the
- * server answers, and whenever the latest read failed, even after a good one. Plan 3d replaces this
- * hook with the full flags client.
+ * server answers, and whenever the latest read failed, even after a good one.
+ * Plan 3d replaces this hook with the full flags client.
  * @param slug - The workspace's web address.
  * @returns A value for every flag this app reads.
  */

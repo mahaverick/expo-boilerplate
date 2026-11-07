@@ -59,7 +59,7 @@ function firstMessage(errors: unknown[]): string | undefined {
  * offered come from `canActorGrantRole`, so an admin cannot invite an admin or
  * an owner. The send runs through step-up. `already_member` goes on the email
  * field and clears when the address changes. A conflict, the members limit
- * and any other refusal show above the button. A refused step-up toasts.
+ * and any other refusal show above the button, and so does a refused step-up.
  * @param props - The workspace and the viewer's role.
  * @param props.slug - The workspace's web address.
  * @param props.myRole - The viewer's role.

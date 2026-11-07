@@ -71,7 +71,7 @@ export default function ConfirmInvitation() {
   const status = useSessionStatus()
   const queryClient = useQueryClient()
   const confirm = useConfirmInvitation()
-  const { signOut, isPending: isSigningOut } = useSignOut()
+  const { signOut } = useSignOut()
   const signedIn = useAuthStore((state) => state.isAuthenticated)
   const [phase, setPhase] = useState<Phase>('deciding')
   const [startedAs, setStartedAs] = useState<User | null>(null)
@@ -185,13 +185,8 @@ export default function ConfirmInvitation() {
         <Text className="text-base text-foreground">
           {`This invitation is for ${link.email}. You’re signed in as ${startedAs.email}.`}
         </Text>
-        <Button
-          variant="primary"
-          label={`Continue as ${link.email}`}
-          loading={isSigningOut}
-          onPress={continueAs}
-        />
-        <Button variant="secondary" label="Cancel" disabled={isSigningOut} onPress={goHome} />
+        <Button variant="primary" label={`Continue as ${link.email}`} onPress={continueAs} />
+        <Button variant="secondary" label="Cancel" onPress={goHome} />
       </Screen>
     )
   }
