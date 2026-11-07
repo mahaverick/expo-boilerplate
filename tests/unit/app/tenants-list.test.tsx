@@ -4,12 +4,19 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react-native'
 import { router } from 'expo-router'
 import { Text } from 'react-native'
 import Tenants from '@/app/(app)/tenants/index'
-import { useTenants } from '@/queries/tenant.queries'
+import { markLeft } from '@/lib/left-workspaces'
+import { tenantKeys, useTenants } from '@/queries/tenant.queries'
 import { useToastQueueStore } from '@/states/toast-queue.store'
 import { renderScreen, restoreApi, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
-jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn() } }))
+jest.mock('expo-router', () => ({
+  router: { replace: jest.fn(), push: jest.fn() },
+  useFocusEffect: (effect: () => void) => {
+    const { useEffect } = jest.requireActual<typeof import('react')>('react')
+    useEffect(effect, [effect])
+  },
+}))
 
 /** A tenants page in express's envelope. */
 const page = (items: unknown[]) => ({
@@ -35,6 +42,22 @@ afterEach(() => {
 })
 
 describe('Workspaces list', () => {
+  it('drops the cache of a workspace the person left when it gains focus, once', async () => {
+    serve(() => page([row('other', 'Other')]))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(tenantKeys.detail('acme'), { slug: 'acme' })
+    client.setQueryData(tenantKeys.detail('other'), { slug: 'other' })
+    markLeft('acme')
+    await renderScreen(<Tenants />, client)
+    await screen.findByText('Other')
+    expect(client.getQueryData(tenantKeys.detail('acme'))).toBeUndefined()
+    expect(client.getQueryData(tenantKeys.detail('other'))).toEqual({ slug: 'other' })
+    // The record is cleared: a second focus drops nothing more.
+    client.setQueryData(tenantKeys.detail('acme'), { slug: 'acme' })
+    await renderScreen(<Tenants />, client)
+    expect(client.getQueryData(tenantKeys.detail('acme'))).toEqual({ slug: 'acme' })
+  })
+
   it('keeps the loaded list when a background read fails', async () => {
     let fail = false
     serve(() => (fail ? 'network-error' : page([row('acme', 'Acme')])))

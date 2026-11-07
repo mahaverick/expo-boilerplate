@@ -66,6 +66,10 @@ jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), push: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: () => ({ slug: 'acme' }),
   Stack: { Screen: () => null },
+  useFocusEffect: (effect: () => void) => {
+    const { useEffect } = jest.requireActual<typeof import('react')>('react')
+    useEffect(effect, [effect])
+  },
 }))
 /** The in-memory stand-in for MMKV. */
 const mockStorage = new Map<string, string>()

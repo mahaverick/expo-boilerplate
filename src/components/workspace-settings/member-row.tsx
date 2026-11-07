@@ -17,6 +17,7 @@ import { PLATFORM_TENANT_SLUG } from '@/constants/routes'
 import { STEP_UP_WAITING_LABEL, useStepUp, useStepUpWaiting } from '@/hooks/use-step-up'
 import { statusFrom } from '@/lib/api-error'
 import { fullName } from '@/lib/format'
+import { markLeft } from '@/lib/left-workspaces'
 import { toast } from '@/lib/toast'
 import { writeFailureMessage } from '@/lib/write-failure'
 import {
@@ -68,6 +69,23 @@ function memberWriteFailureMessage(error: unknown): string {
 }
 
 /**
+ * Lands on the workspace list so no screen of the left workspace stays in the
+ * stack. With screens beneath, it pops to the stack's first screen and pushes
+ * the list there, so Back reaches the first screen and never an overview of
+ * the workspace. `dismissTo` cannot do this: it pops only to a list already in
+ * the stack, and otherwise replaces just the current screen. With nothing
+ * beneath, it replaces the screen.
+ */
+function landOnWorkspaces(): void {
+  if (router.canDismiss()) {
+    router.dismissAll()
+    router.push('/tenants')
+  } else {
+    router.replace('/tenants')
+  }
+}
+
+/**
  * What the Leave dialog says.
  * @param isPlatform - True on the platform workspace.
  * @param manages - True for an owner or admin, whose sent invitations are revoked.
@@ -109,11 +127,6 @@ interface MemberRowProps {
   ownersKnown: boolean
   /** True for staff through platform access: no controls. */
   readOnly: boolean
-  /**
-   * Called once the person has left, just before the screen navigates to the
-   * list. The screen drops the workspace's cache when it unmounts.
-   */
-  onLeft: () => void
 }
 
 /**
@@ -121,7 +134,7 @@ interface MemberRowProps {
  * change is a `ChoiceSheet` of the roles the viewer may grant; Remove and
  * Leave confirm through `Alert`. Every write runs through step-up, and a ref
  * per action stops a second press while one runs. Leaving forgets the
- * workspace and lands on the workspace list; the screen drops the cache.
+ * workspace and lands on the workspace list, which drops the cache.
  * @param props - The member and the viewer.
  * @returns The row.
  */
@@ -134,7 +147,6 @@ export function MemberRow({
   otherOwners,
   ownersKnown,
   readOnly,
-  onLeft,
 }: MemberRowProps) {
   const updateRole = useUpdateMemberRole(slug)
   const removeMember = useRemoveMember(slug)
@@ -211,9 +223,10 @@ export function MemberRow({
   /**
    * Leaves through step-up. A 404 means the membership was already gone. On
    * success or a 404 it forgets the workspace when it was the remembered one,
-   * tells the screen through `onLeft`, and lands on the list; any other
-   * failure stays here. After a leave the row sets no state and keeps its
-   * guard, because the screen is on its way out.
+   * records the slug so the list drops the workspace's cache when it gains
+   * focus, and lands on the list; any other failure stays here. After a leave
+   * the row sets no state and keeps its guard, because the screen is on its
+   * way out.
    */
   const leave = () => {
     if (removeInFlight.current) return
@@ -241,8 +254,8 @@ export function MemberRow({
         left = true
         const tenants = useCurrentTenantStore.getState()
         if (myUserId !== undefined && tenants.recall(myUserId) === slug) tenants.forget(myUserId)
-        onLeft()
-        router.replace('/tenants')
+        markLeft(slug)
+        landOnWorkspaces()
       })
       .finally(() => {
         if (left) return

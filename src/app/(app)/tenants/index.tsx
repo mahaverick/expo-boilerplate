@@ -1,4 +1,6 @@
-import { router } from 'expo-router'
+import { useQueryClient } from '@tanstack/react-query'
+import { router, useFocusEffect } from 'expo-router'
+import { useCallback } from 'react'
 import { ActivityIndicator, Pressable, Text, View } from 'react-native'
 import { EmptyState } from '@/components/shared/empty-state'
 import { LoadError } from '@/components/shared/load-error'
@@ -6,9 +8,15 @@ import { Screen } from '@/components/ui/screen'
 import { TOUCH_TARGET } from '@/components/ui/touch-target'
 import { CreateWorkspaceForm } from '@/components/workspaces/create-workspace-form'
 import { cn } from '@/lib/cn'
+import { takeLeft } from '@/lib/left-workspaces'
 import { TENANTS_ERROR } from '@/lib/tenants-error'
 import { toast } from '@/lib/toast'
-import { useTenants, type Tenant, type TenantWithRole } from '@/queries/tenant.queries'
+import {
+  dropTenantCache,
+  useTenants,
+  type Tenant,
+  type TenantWithRole,
+} from '@/queries/tenant.queries'
 
 /**
  * Opens a workspace.
@@ -59,11 +67,18 @@ function WorkspaceRow({ entry }: { entry: TenantWithRole }) {
  * The caller's workspaces and the form to create another. A failed load shows
  * the error with Try again and never the empty state, since the two read alike
  * and the empty state invites a duplicate. A failed background read keeps the
- * loaded list.
+ * loaded list. Each time it gains focus it drops the cache of every workspace
+ * the person left, so no query of a left workspace is refetched.
  * @returns The screen.
  */
 export default function Workspaces() {
   const tenants = useTenants()
+  const queryClient = useQueryClient()
+  useFocusEffect(
+    useCallback(() => {
+      for (const slug of takeLeft()) dropTenantCache(queryClient, slug)
+    }, [queryClient])
+  )
 
   /**
    * Announces the new workspace and opens it.

@@ -222,6 +222,58 @@ describe('useListPages', () => {
     expect(result.current.loadMoreFailed).toBe(false)
   })
 
+  it('offers no Load more while page 1 shows placeholder data', async () => {
+    let release: (() => void) | undefined
+    const held = new Promise<void>(
+      /** @param resolve - Releases the held answer. */
+      (resolve) => {
+        release = resolve
+      }
+    )
+    serve(async (config) => {
+      const params = config.params as ListRequest
+      if (params.cursor === undefined && params.q === 'b') {
+        await held
+        return pageOf(['x', 'y'], 'x')
+      }
+      return pageOf(['a', 'b'], 'b')
+    })
+    const previous = pageOf(['a', 'b'], 'b').data.data
+    /**
+     * The shared options keep the previous view's rows as placeholder data; this stands for that.
+     * @param request - The request, with the cursor the pager adds.
+     * @returns Query options.
+     */
+    const withPlaceholder = (request: ListRequest) => ({
+      ...options(request),
+      placeholderData: request.q === 'b' && request.cursor === undefined ? previous : undefined,
+    })
+    const { result, rerender } = await renderHook(
+      ({ request }: { request: ListRequest }) =>
+        useListPages(withPlaceholder, request, (row) => row.id),
+      {
+        initialProps: { request: { q: 'a' } },
+        wrapper: ({ children }: { children: ReactNode }) => screenTree(<>{children}</>, client),
+      }
+    )
+    await waitFor(() => expect(result.current.hasNext).toBe(true))
+    await rerender({ request: { q: 'b' } })
+    // The old rows show, and their cursor belongs to the old request.
+    expect(result.current.items.map((r) => r.id)).toEqual(['a', 'b'])
+    expect(result.current.hasNext).toBe(false)
+    await act(() => {
+      result.current.loadMore()
+      return Promise.resolve()
+    })
+    expect(result.current.isLoadingMore).toBe(false)
+    await act(async () => {
+      release?.()
+      await held
+    })
+    await waitFor(() => expect(result.current.items.map((r) => r.id)).toEqual(['x', 'y']))
+    expect(result.current.hasNext).toBe(true)
+  })
+
   it('loses no row when a row is added above the boundary and the list refetches', async () => {
     const rows = ['e', 'd', 'c', 'b', 'a']
     const { result } = await loadTwoPages(rows)

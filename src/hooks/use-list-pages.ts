@@ -12,7 +12,7 @@ interface ListPages<T> {
   isError: boolean
   /** The first page's error, for a caller that reads its status. */
   error: Error | null
-  /** True when the last loaded page has a page after it. */
+  /** True when the last loaded page has a page after it. False while page 1 shows placeholder data. */
   hasNext: boolean
   /** Loads the page after the last loaded one. Does nothing while one loads or fails. */
   loadMore: () => void
@@ -93,7 +93,10 @@ export function useListPages<T, K extends QueryKey>(
       return true
     })
   const lastPage = last?.data?.page
-  const hasNext = lastPage !== undefined && lastPage.hasNext && lastPage.nextCursor !== null
+  // Placeholder rows on page 1 carry the previous request's cursor, so none follows them.
+  const placeholder = cursors.length === 1 && first?.isPlaceholderData === true
+  const hasNext =
+    !placeholder && lastPage !== undefined && lastPage.hasNext && lastPage.nextCursor !== null
   const later = cursors.length > 1
   const loadMoreFailed = later && last?.isError === true && last.data === undefined
 

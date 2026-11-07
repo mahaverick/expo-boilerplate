@@ -156,7 +156,7 @@ export default function AcceptInvitation() {
   const queryClient = useQueryClient()
   const verify = useVerifyInvitation()
   const accept = useAcceptInvitation()
-  const { signOut, isPending: isSigningOut } = useSignOut()
+  const { signOut } = useSignOut()
   /** Who was signed in when the restore settled; null until it settles. */
   const [started, setStarted] = useState<{ user: User | null } | null>(null)
   const [joining, setJoining] = useState<Joining | null>(null)
@@ -357,12 +357,11 @@ export default function AcceptInvitation() {
         <Button
           variant="primary"
           label={`Continue as ${invitation.email}`}
-          loading={isSigningOut}
           onPress={() => {
             continueAs(invitation)
           }}
         />
-        <Button variant="secondary" label="Cancel" disabled={isSigningOut} onPress={goHome} />
+        <Button variant="secondary" label="Cancel" onPress={goHome} />
       </Screen>
     )
   }
