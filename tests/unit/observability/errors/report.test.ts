@@ -30,11 +30,7 @@ import {
   type ExceptionEvent,
 } from '@/observability/errors/report'
 import { ANALYTICS_APP } from '@/observability/telemetry/config'
-import {
-  analyticsSettledNow,
-  getAnalyticsSessionIdFor,
-  whenAnalyticsSettled,
-} from '@/observability/telemetry/telemetry'
+import { getAnalyticsSessionIdFor, whenAnalyticsSettled } from '@/observability/telemetry/telemetry'
 import { currentRoutePattern } from '@/observability/telemetry/use-screen-views'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
@@ -43,7 +39,6 @@ jest.mock('expo-application', () => ({
   nativeBuildVersion: '42',
 }))
 jest.mock('@/observability/telemetry/telemetry', () => ({
-  analyticsSettledNow: jest.fn(),
   whenAnalyticsSettled: jest.fn(),
   getAnalyticsSessionIdFor: jest.fn(),
 }))
@@ -72,7 +67,6 @@ type Settled = Awaited<ReturnType<typeof whenAnalyticsSettled>>
 const IDENTIFIED: Settled = { distinctId: 'user-a', capturing: true, identified: true }
 
 const settled = jest.mocked(whenAnalyticsSettled)
-const settledNow = jest.mocked(analyticsSettledNow)
 const sessionFor = jest.mocked(getAnalyticsSessionIdFor)
 const routePattern = jest.mocked(currentRoutePattern)
 const fetchMock = jest.fn<(url: string, init: RequestInit) => Promise<{ status: number }>>()
@@ -136,8 +130,6 @@ beforeEach(() => {
   process.env.EXPO_PUBLIC_APP_ENV = 'test'
   settled.mockReset()
   settled.mockResolvedValue(IDENTIFIED)
-  settledNow.mockReset()
-  settledNow.mockReturnValue(IDENTIFIED)
   mockStored.clear()
   sessionFor.mockReset()
   sessionFor.mockReturnValue('session-1')
@@ -635,15 +627,21 @@ describe('a fatal crash', () => {
     return JSON.parse(mockStored.get(PENDING_REPORTS_KEY) ?? '[]') as ExceptionEvent[]
   }
 
-  it('is built, scrubbed and kept at once, with the identity known now, and not posted', () => {
+  it('is built, scrubbed and kept at once, anonymous, and not posted', () => {
     const error = appError('No account for ada@example.com')
     reportFatal(error, 'global')
     const [event] = pending()
     expect(event).toMatchObject({
       event: '$exception',
-      distinct_id: 'user-a',
-      properties: { origin: 'global', release: '1.4.0+42', route_id: '/tenants/[slug]' },
+      properties: {
+        origin: 'global',
+        release: '1.4.0+42',
+        route_id: '/tenants/[slug]',
+        $process_person_profile: false,
+      },
     })
+    expect(event?.distinct_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-/)
+    expect(event?.properties).not.toHaveProperty('$session_id')
     expect(JSON.stringify(event)).not.toContain('ada@example.com')
     const [exception] = event!.properties.$exception_list as { mechanism: { handled: boolean } }[]
     expect(exception?.mechanism.handled).toBe(false)
@@ -652,12 +650,14 @@ describe('a fatal crash', () => {
     expect(jest.getTimerCount()).toBe(0)
   })
 
-  it('is anonymous unless the person is identified now', () => {
-    settledNow.mockReturnValue({ distinctId: 'anon-1', capturing: true, identified: false })
-    reportFatal(appError('signed out'), 'global')
-    const [event] = pending()
-    expect(event?.distinct_id).not.toBe('anon-1')
-    expect(event?.properties.$process_person_profile).toBe(false)
+  it('never stores an identified person’s id or session, since it is sent days later', () => {
+    reportFatal(appError('signed in'), 'global')
+    reportFatal(appError('signed in again', 'other'), 'global')
+    const stored = mockStored.get(PENDING_REPORTS_KEY) ?? ''
+    expect(stored).not.toContain('user-a')
+    expect(stored).not.toContain('session-1')
+    const [first, second] = pending()
+    expect(first?.distinct_id).not.toBe(second?.distinct_id)
   })
 
   it('keeps at most five, dropping the oldest', () => {

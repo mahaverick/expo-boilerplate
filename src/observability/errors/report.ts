@@ -33,7 +33,6 @@ import { apiUrl } from '@/http/client'
 import { storage } from '@/lib/storage'
 import { ANALYTICS_APP, analyticsConfig } from '@/observability/telemetry/config'
 import {
-  analyticsSettledNow,
   getAnalyticsSessionIdFor,
   whenAnalyticsSettled,
   type AnalyticsSettled,
@@ -518,9 +517,11 @@ function writePending(events: ExceptionEvent[]): void {
  * Keeps a fatal crash for the next launch. React Native's handler ends the
  * process right after this returns, before a promise or a timer could run,
  * so everything here is synchronous: the event is built, scrubbed and
- * throttled, takes the identity analytics holds now (anonymous unless the
- * person is identified and capturing), and joins the MMKV list, which keeps
- * the newest `MAX_PENDING_REPORTS`. Nothing is posted. Does nothing without
+ * throttled, and joins the MMKV list, which keeps the newest
+ * `MAX_PENDING_REPORTS`. It is saved anonymous, with a fresh distinct id, no
+ * person profile and no session: the next launch sends it hours or days
+ * later, after the person may have opted out or signed out, as react sends
+ * an error older than `STALE_ERROR_MS`. Nothing is posted. Does nothing without
  * a PostHog key. Never throws.
  * @param error - The thrown error.
  * @param origin - Where it was noticed.
@@ -529,7 +530,7 @@ export function reportFatal(error: unknown, origin: ErrorOrigin): void {
   try {
     const event = buildEvent(error, origin, false, Date.now(), false)
     if (!event) return
-    const kept = [...readPending(), withIdentity(event, analyticsSettledNow())]
+    const kept = [...readPending(), withIdentity(event, null)]
     writePending(kept.slice(-MAX_PENDING_REPORTS))
   } catch {
     // Error tracking never fails the app, and never reports itself.

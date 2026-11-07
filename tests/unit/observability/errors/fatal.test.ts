@@ -21,10 +21,13 @@ jest.mock('expo-application', () => ({
 }))
 /** What the fake MMKV instance holds. */
 const mockStored = new Map<string, string>()
+/** Makes every write throw, as a full or failing store would. */
+const mockStorage = { setThrows: false }
 jest.mock('@/lib/storage', () => ({
   storage: {
     getString: (key: string) => mockStored.get(key),
     set: (key: string, value: string) => {
+      if (mockStorage.setThrows) throw new Error('storage full')
       mockStored.set(key, value)
     },
     remove: (key: string) => mockStored.delete(key),
@@ -77,6 +80,7 @@ function launch(): void {
 beforeEach(() => {
   jest.useFakeTimers()
   mockStored.clear()
+  mockStorage.setThrows = false
   process.env.EXPO_PUBLIC_POSTHOG_KEY = 'phc_test_key_not_real'
   previous.mockReset()
   fetchMock.mockReset()
@@ -120,6 +124,15 @@ describe('a fatal crash', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(apiUrl('/collect/batch/'))
     const [event] = sentEvents()
     expect(event?.properties).toMatchObject({ origin: 'global' })
+    expect(mockStored.has(PENDING_REPORTS_KEY)).toBe(false)
+  })
+
+  it('still calls the previous handler when the store throws', () => {
+    mockStorage.setThrows = true
+    launch()
+    const error = appError('fatal with a failing store')
+    current(error, true)
+    expect(previous).toHaveBeenCalledWith(error, true)
     expect(mockStored.has(PENDING_REPORTS_KEY)).toBe(false)
   })
 
