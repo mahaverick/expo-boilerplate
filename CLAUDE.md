@@ -784,6 +784,163 @@ listed in [ARCHITECTURE.md](ARCHITECTURE.md#notifications-plan-and-deletion).
   the README's review notes record the gap; the passkeys plan closes it. The
   owner chose this on 7 November 2026.
 
+## Analytics, errors, flags and privacy
+
+The rules below cover usage analytics, exception reports, the flags client and
+the Privacy settings. They are plan 3d's. The files are listed in
+[ARCHITECTURE.md](ARCHITECTURE.md#analytics-errors-flags-and-privacy), and the
+data the app sends is in [SECURITY.md](SECURITY.md).
+
+Analytics and exception reporting need `EXPO_PUBLIC_POSTHOG_KEY`. With no key,
+both are inert and make no request. The events go to PostHog through express's
+collect proxy at `apiUrl('/collect')`, and the app never holds a PostHog host.
+
+**Analytics**
+
+- **The facade is the only importer.** Only `src/observability/` imports
+  `posthog-react-native` or `@posthog/core`, and the rest of the app calls
+  `src/observability/telemetry/telemetry.ts`. One file means one place that
+  guards, queues and swallows errors, and a screen cannot send an event around
+  it. The port, `src/observability/telemetry/index.ts`, exports only the four
+  names the manifest lists.
+- **Every event passes `guardEvent`.** It runs in the SDK's `before_send` hook,
+  drops the personal keys (`PERSONAL_DATA_PROPERTIES`) at every depth, and
+  sanitises every URL-like string with the shared `sanitizeUrl`, keeping only
+  the query keys in `ANALYTICS_URL_QUERY_ALLOWLIST`. A guard that throws drops
+  the event. The SDK's own events (the app lifecycle events included) pass it
+  too. Without a guard, a link's `?token=` or `?email=` would reach PostHog.
+- **`track` takes a registered event.** `event-registry.ts` lists the events
+  expo sends and fails to compile on a property that admits a free string. A
+  free string is how a name, an address or a search term ends up in an event.
+  A shared call site may pass a wider type than the registry lists, so the
+  registry widens to accept it: shared rows cannot change, and the typecheck
+  must pass.
+- **The opt-out is applied before `identify`, and it fails closed.**
+  `installAnalyticsIdentity` applies `analyticsOptOut` first and identifies
+  only when the profile says `false`. A profile that lacks the field counts as
+  opted out, so a sign-in answer without it never identifies an opted-out
+  person. A stored opt-out stands from the SDK's first moment.
+- **Turning analytics off clears the SDK's stored queue.** The SDK checks the
+  opt-out only when an event joins its queue, and its flush sends whatever the
+  queue holds, so a backlog of up to 1,000 offline events would otherwise leave
+  after the choice. The cost is up to 10 seconds of already consented events.
+  A flush already in flight can still send its one batch.
+- **Before the session restore applies the stored choice, a cold start can
+  capture under the last opt-in.** React has the same window. The facade queues
+  calls made before `initAnalytics` (100 captures at most) and replays them in
+  order, so identity reaches the SDK before any event.
+- **`forgetStaleIdentity` runs after a failed restore.** The SDK stores its
+  person in MMKV. When the restore leaves nobody signed in, that person is
+  stale, and `forgetStaleIdentityWithoutUser` resets it, keeping the opt-out
+  and an anonymous install's id. A sign-out, forced or chosen, and a change of
+  person run `resetAnalytics`, which also forgets the workspace group and the
+  `$feature/*` properties.
+- **Screen views come from the root layout, as route patterns.**
+  `useScreenViews` runs in `src/app/_layout.tsx`, so the root routes (login,
+  `auth/*`, `invitations/*`, passkey-required) send views too. The screen is
+  the pattern (`/settings/workspace/[slug]/members`), never the filled-in
+  path, so a slug or a token never leaves the device. The SDK's screen
+  autocapture needs `PostHogProvider`, which the app never mounts.
+- **The workspace group waits for sign-in.** `useTenantGroup` reads nothing
+  while restoring or signed out, because the workspace list needs a token. A
+  member of the platform workspace is never grouped there. The group carries
+  the workspace id and `tenant_access` and no group properties.
+
+**Exceptions**
+
+- **Exceptions follow react's pipeline, not the SDK's `captureException`.**
+  `src/observability/errors/report.ts` builds the `$exception` with
+  `@posthog/core`, scrubs it, throttles it and posts it to
+  `/collect/batch/`. One builder gives one scrub, one throttle and an anonymous
+  path. `scrub.ts` and its vectors test are react's text, copied as expo's
+  own files.
+- **An axios error is never reported, nested ones included.** Its
+  `config.data` can hold the refresh token. `isIgnoredError` looks through
+  `cause` chains, an `AggregateError`'s members and a plain object's
+  Error-valued properties. It also drops aborts, cancels and a `fetch` that
+  never reached the network.
+- **Only named fields are sent, scrubbed.** `prepareExceptionList` copies the
+  type, value and frames field by field through `scrubText`, so a field a
+  later `@posthog/core` adds never leaves unscrubbed. A frame carries its
+  scrubbed filename and function and its position, and no source line or
+  variable. An error with no frame of the app's own is dropped.
+- **The throttle is 5 events per fingerprint and 30 per launch.** A request
+  carries at most 10 events and at most 60 KiB. A second error with the same
+  name, message and stack within a second counts as a re-throw of the first.
+- **An exception is anonymous unless identified.** It names the person only
+  when capture is on and the facade identified that distinct id
+  (`AnalyticsSettled.identified`). Otherwise it carries a fresh id and
+  `$process_person_profile: false`, because the SDK's anonymous id would
+  create a person profile for a signed-out crash. An exception waits at most
+  10 seconds for analytics to settle. One handed over more than 10 seconds
+  after it was noted is anonymous and has no route. Exceptions send whatever
+  the analytics choice, as react's do.
+- **A fatal crash is saved, anonymous, for the next launch.** React Native
+  ends a release process right after a fatal error, before a promise or a
+  timer runs. The handler builds and scrubs the event synchronously and
+  writes it to the MMKV list `error-report:pending` (5 events at most, the
+  oldest dropped). The next launch's `installErrorListeners` sends the list.
+  The event is stored with a fresh distinct id, `$process_person_profile:
+  false` and no `$session_id`, because it can be sent after the person has
+  opted out or signed out.
+- **With no key, nothing is installed.** `installErrorListeners` wraps
+  `ErrorUtils`' global handler, calls the handler it replaced with the same
+  arguments, and enables Hermes's rejection tracker in a release build only.
+  A development build already enables the tracker with React Native's options,
+  and a second call would replace them, so a development build reports no
+  unhandled rejection.
+- **The error boundary's copy is "The app hit a problem".** The title is not
+  "Something went wrong", which the shared copy-style test bans, and the body
+  ("Try again, and if it keeps happening, restart the app.") does not repeat
+  it. `root-error-boundary.tsx` is expo's file in `src/components/shared/`,
+  inside the scan, so the guard still reads it. It renders outside the query
+  client and the gates and uses no hook that needs them.
+- **A render error outside the root boundary goes unreported.** An error above
+  the root layout, inside the boundary itself or in a nested boundary reaches
+  React Native's `ExceptionsManager`, never `ErrorUtils`. The follow-ups list
+  the fix.
+- **A report names the release as `version+build`** from `expo-application`
+  and the route as a pattern. It has no page URL.
+
+**Flags**
+
+- **The scope comes from the route or from a slug a screen passes.**
+  `useFlagValues` and `useVariant` take an optional `slug`. The Workspace tab
+  renders the overview with a `slug` prop and has no route param, so the
+  overview and Getting started pass theirs, and the tab reads the workspace's
+  flags, not the account's. A read that ends in error returns the fallbacks.
+- **`$feature/*` properties follow the person.** `useFeaturePropertiesSync`
+  registers them as super properties in a layout effect, so a screen's first
+  event carries them. A change of person forgets the registered names and
+  re-syncs, because the reset drops them from the SDK while an equal read keeps
+  its data reference.
+- **Exposures are independent of consent, deduped per launch and dropped with
+  the person.** The app posts keys, never values, and express evaluates the
+  key again and records the exposure. `clearExposureDedupe` runs on a change
+  of person and drops the batch still gathering, so one person's report never
+  posts under the next person's token. A failed post is dropped.
+
+**Privacy**
+
+- **The Privacy row shows when analytics are available or a policy URL is
+  set.** `hasPrivacyContent` hides it with neither, because the screen would
+  be empty. The switch shows only with a key, and reads as off when the profile
+  lacks the value. The link shows only with a policy URL.
+- **`PRIVACY_POLICY_URL` is a build-time value.** `app.config.ts` reads it into
+  `extra.privacyPolicyUrl` and fails the build on a value that is not an https
+  URL. Each store build must set it, because a store listing needs a policy
+  address.
+- **The privacy manifest matches what the app sends.** Product interaction
+  and user ID (both linked, for analytics) and crash data (not linked, for app
+  functionality), with no tracking. The user ID is declared because an
+  identified event carries the user's id. The README holds the store answers.
+- **The remote-config request is not opt-out aware.** The SDK reads
+  `/collect/array/<key>/config` on every launch with a key, opted out or not,
+  and no option turns it off.
+- **Consent follows react's default.** Analytics are on for a signed-in person
+  until they turn "Share usage analytics" off. The choice is stored through
+  `PATCH /profile` (`analyticsOptOut`). There is no prompt.
+
 ## Copy
 
 - **Customers read "workspace", never "tenant", and "web address", never
@@ -839,9 +996,9 @@ Each item is a change for react or for a later plan, with the reason it waits.
   The shared tests alone (31 manifest rows, 29 of them test files) cover
   statements 43.78%, branches 46.00%, functions 31.47% and lines 42.51% of
   `src/`, because they exercise only part of the 75 shared files. The full
-  suite measures statements 90.14%, branches 85.94%, functions 87.27% and lines
-  90.94% on 7 November 2026, and `jest.config.ts` and `ci.yml` hold 90, 85, 87
-  and 90. The margin comes from expo's own screens and hooks. React should mark
+  suite measures statements 92.67%, branches 87.42%, functions 89.42% and lines
+  93.47% on 8 November 2026, and `jest.config.ts` and `ci.yml` hold 92, 87, 89
+  and 93. The margin comes from expo's own screens and hooks. React should mark
   more of its tests for expo, so the shared rows carry their own share.
 - **One copy-style case is skipped by name.** `test` and `test:coverage` pass
   `--testNamePattern` with a negative lookahead that skips only "finds the copy
@@ -904,9 +1061,6 @@ Each item is a change for react or for a later plan, with the reason it waits.
 - **Activity filters by search and by access only.** The Access filter offers
   Staff, Member and System. The Action and Actor filters wait for a later
   plan.
-- **The CTA experiment reports no exposure.** `example_cta_experiment` takes
-  its control arm, a link, so no exposure event leaves the app. A later plan
-  reports the exposure.
 - **The shared schema's `Intl` checks are unchecked on Hermes.** The time
   zone check in `src/schemas/tenant.schemas.ts` builds an
   `Intl.DateTimeFormat` and treats any throw as a bad name. The locale check
@@ -923,8 +1077,42 @@ Each item is a change for react or for a later plan, with the reason it waits.
 - **Continue on both invitation screens waits for the whole sign-out.**
   `retryPendingRevoke` can take up to the client timeout of 30 seconds before
   the screen posts. The post could start once the local sign-out is done.
-- **The Privacy (usage analytics) section waits for plan 3d.** The telemetry
-  port is a stub, and react hides the section when analytics are unavailable.
+- **Session replay, `<Pii>` and the PII probe wait for a device.** Replay needs
+  PostHog's native plugin and a device. Wireframe-only mode cannot be forced
+  from JavaScript, and express has no replay flag. `PostHogMaskView` also
+  replaces a child's accessibility label and hides it from TalkBack, so it
+  lands with replay, once a device can check it. The app sets
+  `enableSessionReplay: false`. The same plan adds react's `<Pii>` wrapper and
+  its probe, which checks that no personally identifiable information (PII)
+  reaches a replay.
+- **Source maps, `expo-updates` and the per-profile network settings belong to
+  plan 3e.** Release stack frames carry bundle positions until a build
+  uploads source maps, and the PostHog CLI keys a release by app version and
+  build, not by update ID, so plan 3e decides the keying with `eas.json`. That
+  plan also sets cleartext traffic and App Transport Security (ATS) for each
+  build profile. When it adds `expo-updates`, remove it from `knip.ts`'s
+  `ignoreDependencies`: knip reports the entry as unneeded once the package is
+  a dependency.
+- **Express is asked for three things.** A replay flag in its flag registry,
+  so replay can follow a server switch. A `FlagApp` of `'expo'`, so a flag
+  can name this app in `apps` and exposures record the origin `expo`, not
+  `react`; `CLIENT_FLAGS` mirrors the entries that name `react` until then.
+  And the collect proxy's limit of
+  3,000 requests a minute per IP address: a mobile carrier puts many phones
+  behind one address through network address translation (NAT), so a busy
+  carrier can exhaust it.
+- **Render errors outside the root boundary are unreported.** An error above
+  the root layout, inside `RootErrorBoundary` or in a nested boundary reaches
+  React Native's `ExceptionsManager`, not `ErrorUtils`. Reporting it means
+  patching `ExceptionsManager.handleException`, which depends on React Native's
+  internals, so it waits for a device to confirm the hook.
+- **A development build reports no unhandled rejection.** React Native
+  enables Hermes's rejection tracker with its own options in development, and
+  a second call would replace them. Chaining to those options needs an untyped
+  import of React Native's internals.
+- **`privacy-policy.ts` casts `extra.privacyPolicyUrl` without a check.**
+  `app.config.ts` accepts only an https URL, so a built app holds a string
+  or nothing. A runtime check would cover a config edited by hand.
 - **The iOS App Store ID is unset.** Plan 3e sets `IOS_APP_STORE_ID` for each
   build profile; until then the iOS update screen has no store button.
 - **Every "Mark done" button has the same accessible label.** The web app

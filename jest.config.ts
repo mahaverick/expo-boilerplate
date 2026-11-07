@@ -24,13 +24,13 @@ const config: Config = {
   collectCoverageFrom: ['src/**/*.{ts,tsx}'],
   /**
    * React's thresholds are statements 88, branches 82, functions 86 and lines
-   * 89. Expo's full suite measured statements 90.14%, branches 85.94%,
-   * functions 87.27% and lines 90.94% on 7 November 2026, so these are the
+   * 89. Expo's full suite measured statements 92.67%, branches 87.42%,
+   * functions 89.42% and lines 93.47% on 8 November 2026, so these are the
    * measured values, rounded down. The shared tests alone cover less (CLAUDE.md,
    * "Follow-ups").
    */
   coverageThreshold: {
-    global: { statements: 90, branches: 85, functions: 87, lines: 90 },
+    global: { statements: 92, branches: 87, functions: 89, lines: 93 },
   },
 }
 
