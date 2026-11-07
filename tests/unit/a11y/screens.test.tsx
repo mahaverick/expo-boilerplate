@@ -1,5 +1,8 @@
 import { jest } from '@jest/globals'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { screen } from '@testing-library/react-native'
+import Constants from 'expo-constants'
+import { useEffect, useState } from 'react'
 import { Pressable, Text, TextInput } from 'react-native'
 import Home from '@/app/(app)/(tabs)/index'
 import Notifications from '@/app/(app)/(tabs)/notifications'
@@ -59,10 +62,13 @@ import {
   type TenantMember,
   type TenantWithRole,
 } from '@/queries/tenant.queries'
+import { useAuthStore } from '@/states/auth.store'
 import { A11Y_SCREENS, assertAccessible, renderWithProviders } from '@/tests/support/a11y'
 import { describe, expect, it } from '@/tests/support/runner'
 import type { TenantInvitation } from '@/types/api.types'
 import type { ListPage } from '@/types/list.types'
+
+jest.mock('expo-constants', () => ({ __esModule: true, default: { expoConfig: { extra: {} } } }))
 
 jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), push: jest.fn(), setParams: jest.fn() },
@@ -663,11 +669,49 @@ A11Y_SCREENS.push({
   ),
 })
 
+/**
+ * Renders Privacy as a build with analytics and a policy URL, and a signed-in
+ * person, would show it: the switch and the link are both on screen. The
+ * settings return when the screen unmounts.
+ * @returns The screen.
+ */
+function PrivacyWithSwitchAndLink() {
+  const [ready] = useState(() => {
+    const saved = {
+      key: process.env.EXPO_PUBLIC_POSTHOG_KEY,
+      config: Constants.expoConfig,
+      auth: useAuthStore.getState(),
+    }
+    process.env.EXPO_PUBLIC_POSTHOG_KEY = 'phc_test_key_not_real'
+    Constants.expoConfig = { extra: { privacyPolicyUrl: 'https://example.com/privacy' } } as never
+    useAuthStore.getState().login('a', {
+      id: 'u1',
+      email: 'ada@example.com',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      createdAt: '2026-01-05T00:00:00.000Z',
+      platformRole: null,
+      analyticsOptOut: false,
+    })
+    return saved
+  })
+  useEffect(
+    () => () => {
+      if (ready.key === undefined) delete process.env.EXPO_PUBLIC_POSTHOG_KEY
+      else process.env.EXPO_PUBLIC_POSTHOG_KEY = ready.key
+      Constants.expoConfig = ready.config
+      useAuthStore.setState(ready.auth, true)
+    },
+    [ready]
+  )
+  return <Privacy />
+}
+
 A11Y_SCREENS.push({
   name: 'Privacy',
   element: (
     <QueryClientProvider client={deleteClient}>
-      <Privacy />
+      <PrivacyWithSwitchAndLink />
     </QueryClientProvider>
   ),
 })
@@ -756,6 +800,13 @@ describe('A11Y_SCREENS', () => {
       assertAccessible()
     })
   }
+
+  it('renders the Privacy switch and link, so the harness checks them', async () => {
+    const entry = A11Y_SCREENS.find((candidate) => candidate.name === 'Privacy')
+    await renderWithProviders(entry?.element as never)
+    expect(screen.getByLabelText('Share usage analytics')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Read our privacy policy' })).toBeTruthy()
+  })
 
   it('is a list', () => {
     expect(Array.isArray(A11Y_SCREENS)).toBe(true)
