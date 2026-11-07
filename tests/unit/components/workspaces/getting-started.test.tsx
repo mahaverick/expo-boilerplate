@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals'
 import { fireEvent, screen, waitFor } from '@testing-library/react-native'
+import { router, type Href } from 'expo-router'
 import { Alert, type AlertButton } from 'react-native'
 import { GettingStarted } from '@/components/workspaces/getting-started'
 import type { MembershipRole } from '@/constants/roles'
@@ -14,6 +15,8 @@ import {
   step,
 } from '@/tests/support/workspace-api'
 import type { TenantAccess } from '@/types/api.types'
+
+jest.mock('expo-router', () => ({ router: { push: jest.fn() } }))
 
 const LOAD_ERROR = 'We couldn’t load getting started because the request failed. Select Try again.'
 
@@ -170,22 +173,39 @@ describe('GettingStarted', () => {
     expect(screen.queryByText('An owner or admin can do this')).toBeNull()
   })
 
-  it('shows no link for the steps that need Settings or Members', async () => {
+  it.each([
+    ['configure_settings', 'Open settings', 'general'],
+    ['invite_teammate', 'Open members', 'members'],
+  ])('%s offers %s to an owner or admin, and pushes the screen', async (key, label, leaf) => {
+    serveOnboarding(onboarding({ steps: [step(key, { title: 'Do it', kind: 'auto' })] }))
+    await open('admin')
+    await fireEvent.press(await screen.findByRole('button', { name: label }))
+    expect(router.push).toHaveBeenCalledWith(`/settings/workspace/acme/${leaf}` as Href)
+    expect(screen.queryByRole('button', { name: 'Mark done' })).toBeNull()
+  })
+
+  it('shows a member who cannot manage the owner-or-admin note, not the links', async () => {
     serveOnboarding(
       onboarding({
         steps: [
           step('configure_settings', { title: 'Configure', kind: 'auto' }),
           step('invite_teammate', { title: 'Invite', kind: 'auto' }),
         ],
-        requiredTotal: 2,
       })
     )
-    await open()
+    await open('viewer')
     expect(await screen.findByText('Configure')).toBeTruthy()
-    expect(screen.queryByText('Open settings')).toBeNull()
-    expect(screen.queryByText('Open members')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Mark done' })).toBeNull()
-    expect(screen.queryByRole('link')).toBeNull()
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getAllByText('An owner or admin can do this')).toHaveLength(2)
+  })
+
+  it('shows staff with platform access no link', async () => {
+    serveOnboarding(
+      onboarding({ steps: [step('configure_settings', { title: 'Configure', kind: 'auto' })] })
+    )
+    await open('owner', 'platform')
+    expect(await screen.findByText('Configure')).toBeTruthy()
+    expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('confirms Dismiss with an alert, then dismisses', async () => {

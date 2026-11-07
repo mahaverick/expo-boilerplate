@@ -6,14 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Screen } from '@/components/ui/screen'
 import { CreateWorkspaceForm } from '@/components/workspaces/create-workspace-form'
 import { useSignOut } from '@/hooks/use-sign-out'
+import { TENANTS_ERROR } from '@/lib/tenants-error'
 import { toast } from '@/lib/toast'
 import { isEligibleTenant, useTenants, type Tenant } from '@/queries/tenant.queries'
 import { useAuthStore } from '@/states/auth.store'
 import { useCurrentTenantStore } from '@/states/current-tenant.store'
-
-/** What a failed list says: a claim about the request, not the account. */
-const TENANTS_ERROR =
-  'We couldn’t load your workspaces, so none are listed. Select Try again to load them.'
 
 /**
  * The first-workspace step, where a new account lands. A person who already

@@ -24,6 +24,16 @@ const PALETTE_CLASS =
 const PALETTE_MESSAGE =
   'Use a STYLESEED token class (bg-background, text-primary-foreground), not a Tailwind palette class. The tokens are in STYLESEED.md.'
 
+/**
+ * An opacity modifier on a colour class, such as `bg-foreground/40`. The
+ * theme's colours are `var(--token)` strings, so Tailwind emits no class for
+ * the modifier. Line-height modifiers (`text-sm/6`) are not colours.
+ */
+const OPACITY_CLASS =
+  '/(^|[\\s:])-?(bg|text|border|border-[trblxyse]|divide|outline|ring|fill|stroke|shadow|decoration|accent|caret|placeholder|from|via|to)-(?!(xs|sm|base|lg|[0-9]?xl)\\x2f)[a-z][a-z-]*\\x2f[0-9]+([\\s]|$)/'
+const OPACITY_MESSAGE =
+  'An opacity modifier on a colour class emits no style. Use a whole token class (bg-card, border-border).'
+
 /** A colour literal: a hex colour, or a CSS colour function such as `rgb(` or `oklch(`. */
 const COLOUR_LITERAL =
   '/^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$|(^|[^a-zA-Z-])(rgba?|hsla?|hwb|lab|lch|oklab|oklch)\\(/'
@@ -127,6 +137,10 @@ module.exports = tseslint.config(
             {
               selector: `${node}[${value}=${ARBITRARY_COLOUR}]`,
               message: COLOUR_MESSAGE,
+            },
+            {
+              selector: `${node}[${value}=${OPACITY_CLASS}]`,
+              message: OPACITY_MESSAGE,
             },
           ]
         }),

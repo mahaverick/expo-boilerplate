@@ -6,14 +6,15 @@ developer who changes the code. The rules for changing it are in
 [SECURITY.md](SECURITY.md).
 
 The app is the iOS and Android client for the same account, workspaces and API
-as react-boilerplate. As of 6 November 2026 it signs a person in with an emailed
-link and keeps the session on the device. It has four tabs (Home, Workspace,
-Notifications and Settings), the account screens under Settings (Profile,
-Security and notification preferences), the "Confirm it’s you" dialog for an
-action that needs a recent sign-in, a workspace's overview, the list and creation of
-workspaces, the screens that block the app for an update or maintenance, the
-shared core, the theme, and the ports that connect the two. The design for the
-screens that follow is in
+as react-boilerplate. As of 7 November 2026 it signs a person in with an
+emailed link and keeps the session on the device. It has four tabs (Home,
+Workspace, Notifications and Settings), the account screens under Settings
+(Profile, Security and notification preferences), the "Confirm it’s you"
+dialog for an action that needs a recent sign-in, a workspace's overview, the
+list and creation of workspaces, the workspace settings (General, Members and
+Activity), the two invitation screens, Insights and Beta, the screens that
+block the app for an update or maintenance, the shared core, the theme, and
+the ports that connect the two. The design for the screens that follow is in
 [the spec](docs/superpowers/specs/2026-11-03-expo-boilerplate-design.md).
 
 | Concern | Choice                                                                       |
@@ -31,15 +32,25 @@ screens that follow is in
 ```
 src/
   app/              Expo Router routes (see "The route tree"), +native-intent
-  components/       auth/ (the sign-in form), shared/ (banners, update and maintenance screens, load error, empty state, tab-bar height), ui/ (the UI kit: Screen, Button, TextField, InlineError, Toaster, TOUCH_TARGET), workspaces/ (switcher, gate, overview, getting started, create form)
+  components/       auth/ (the sign-in form), invitations/ (the signed-in
+                    person's inbox), settings/ (rows, the read-only note, the
+                    legacy redirect), shared/ (banners, update and maintenance
+                    screens, load error, empty state, tab-bar height), ui/ (the
+                    UI kit: Screen, Button, TextField, InlineError, Toaster,
+                    ChoiceSheet, TOUCH_TARGET), workspace-settings/ (the
+                    General, Members and invite pieces), workspaces/ (switcher,
+                    gate, overview, platform-access banner, getting started,
+                    create form)
   constants/        shared: routes, roles, audit actions; frontend-app.ts is a port
-  hooks/            shared hooks; use-sign-out, use-current-tenant, use-is-online and use-top-banner are expo's own
+  hooks/            shared hooks; use-sign-out, use-current-tenant,
+                    use-is-online, use-list-pages and use-top-banner are
+                    expo's own
   http/             shared: interceptors, refresh core; client.ts and session.ts are ports; token-store, revoke, body-token, session-lifecycle and maintenance are expo's
   lib/              shared pure logic; toast.ts is a port; app-links, minimum-version, query-managers and safe-path are expo's
   observability/    flags/ and telemetry/: both are ports
   polyfills.ts      the Web APIs Hermes may lack, loaded first
   ports/            navigation.ts, runtime.ts, webauthn.ts
-  queries/          shared TanStack Query hooks
+  queries/          shared TanStack Query hooks; flags.queries.ts is expo's
   schemas/          shared Zod schemas
   states/           auth, maintenance-mode (ports), theme, toast-queue, current-tenant, own-sign-out and tab-bar (expo's own)
   types/            shared types
@@ -75,7 +86,8 @@ a shared file imports.
    for as `redirect`, and sends an account that must add a passkey to
    `/passkey-required`. Home is `src/app/(app)/(tabs)/index.tsx`.
 5. The same layout also installs `installQueryManagers()` and
-   `installMaintenanceRecovery()` ([Workspaces and the shell](#workspaces-and-the-shell)).
+   `installMaintenanceRecovery()`
+   ([Workspaces and the shell](#workspaces-and-the-shell)).
 
 ## Polyfills
 
@@ -160,7 +172,8 @@ event. These expo-owned modules hold the session:
   `refreshToken` from a failed request's `error.config.data`, and set the
   passkey-setup flag.
 - `src/http/session-lifecycle.ts`: `restoreSession` (reinstall check, then
-  the refresh, with the pending revokes beside it), `useSessionStatus` and `installForegroundRefresh`.
+  the refresh, with the pending revokes beside it), `useSessionStatus` and
+  `installForegroundRefresh`.
 - `src/hooks/use-sign-out.ts`: expo's sign-out, which replaces the shared
   `useLogout`.
 - `src/lib/app-links.ts`: `TOKEN_PATHS`, the paths whose query holds a one-time
@@ -198,10 +211,13 @@ in. A forced sign-out (`signOut` in `client.ts`, after a 401 that is not an
 expiry) clears the same state.
 
 App links: the Android intent filter claims only `/auth/link`, `/tenants/`,
-`/auth/confirm` and `/settings/account/security`, the paths with a screen.
-Each later plan adds its paths with its screens. iOS claims the paths in react's apple-app-site-association file. The passkey screen opens the
-website through `expo-web-browser`, since `Linking.openURL` would hand a
-verified app link back to the app.
+`/auth/confirm`, `/settings/account/security`, `/invitations/accept` and
+`/invitations/confirm`, the paths with a screen. `/settings/workspace/…` is
+not claimed, because react's apple-app-site-association file does not list it.
+Each later plan adds its paths with its screens. iOS claims the paths in
+react's apple-app-site-association file. The passkey screen opens the website
+through `expo-web-browser`, since `Linking.openURL` would hand a verified app
+link back to the app.
 
 The body transport sends `refreshToken` in the body of these routes:
 `/auth/logout`, `/auth/sessions/revoke-others`, `/auth/link/verify`,
@@ -223,6 +239,8 @@ src/app/
                                redirect to /login?notice=sign-in-link
   auth/link.tsx                the mailed link's landing
   auth/confirm.tsx             the mailed "Confirm it’s you" link; posts the token, then goes back
+  invitations/accept.tsx       the invitation link: previews, then mails a link or joins
+  invitations/confirm.tsx      the confirmation link mailed to the invited address: signs in and joins
   passkey-required.tsx         the blocking screen for an account that must add a passkey
   +native-intent.tsx, +not-found.tsx
   (app)/                       the session guard
@@ -234,24 +252,34 @@ src/app/
       index.tsx                Home
       workspace.tsx            the current workspace's overview, in place
       notifications.tsx        placeholder
-      settings.tsx             the Account rows, the Workspace group as text, and Sign out
+      settings.tsx             the Account rows, the Workspace rows, and Sign out
     profile.tsx                redirects to /settings/account/profile
     settings/account/
       index.tsx                redirects to Profile
       profile.tsx              edit the name (header with Back)
       security.tsx             sign-in methods, signed-in devices, Sign out other devices
       notifications.tsx        how each kind of notification reaches you
+    settings/workspace/[slug]/
+      index.tsx                redirects to General
+      general.tsx              details, time zone, language and region
+      members.tsx              members and roles, the invite form, pending invitations
+      activity.tsx             the audit log, newest first, with search and an access filter
     tenants/
       index.tsx                all workspaces, and Create (header with Back)
       [slug]/index.tsx         one workspace's overview (header with Back)
-      [slug]/[...rest].tsx     any deeper path: redirects to the overview
+      [slug]/insights.tsx      the advanced-example feature, or its locked card
+      [slug]/beta.tsx          the reference screen behind the beta flag
+      [slug]/settings.tsx      legacy: redirects to General
+      [slug]/members.tsx       legacy: redirects to Members
+      [slug]/activity.tsx      legacy: redirects to Activity
+      [slug]/[...rest].tsx     any other deeper path: redirects to the overview
 ```
 
 ### The modules
 
 - **The query managers.** `src/lib/query-managers.ts` ties TanStack Query's
-  focus to `AppState` and its online state to NetInfo. `src/hooks/use-is-online.ts`
-  reads the online state for the offline banner.
+  focus to `AppState` and its online state to NetInfo.
+  `src/hooks/use-is-online.ts` reads the online state for the offline banner.
 - **Maintenance.** `src/http/maintenance.ts` holds the response interceptor
   (installed on `apiClient` in `src/http/client.ts`), the recovery after
   `full`, and `useMaintenanceMode`. `src/components/shared/` draws the
@@ -286,9 +314,13 @@ src/app/
   resolves it against the list of workspaces the API returns.
 - **The workspace screens.** `src/components/workspaces/` holds the switcher
   (`workspace-switcher.tsx`), the gate for loading, missing and suspended
-  states (`workspace-gate.tsx`), the overview shared by the Workspace tab and
+  states (`workspace-gate.tsx`), the missing and suspended panel it shares
+  with the stack screens (`missing-workspace.tsx`, which also holds
+  `StackWorkspaceGate` for Insights and Beta), the overview shared by the Workspace tab and
   `/tenants/[slug]` (`workspace-overview.tsx`), Getting started, the trial
-  explainer (`trial-explainer.ts`) and the create form.
+  explainer (`trial-explainer.ts`), the create form and the platform-access
+  banner (`platform-access-banner.tsx`), which every workspace screen draws
+  for staff.
 - **The frame.** `Screen` draws the one header-role title and owns the top
   safe-area inset, unless a navigator header or a top banner takes it
   (`useTopBanner`). The update and maintenance screens cover the banners, so
@@ -298,7 +330,9 @@ src/app/
 
 - **The Settings tab.** `src/constants/settings.ts` lists the groups and the
   Account rows, and `src/components/settings/settings-row.tsx` draws a row.
-  The Workspace group shows text only.
+  The Workspace group lists General, Members and Activity for the current
+  workspace (`WORKSPACE_SECTIONS`), and asks for a workspace first when none
+  resolves.
 - **Profile.** `src/hooks/use-changed-fields.ts` tracks what the form started
   from, so a save sends only the changed fields.
 - **Notifications preferences.** `src/components/ui/switch.tsx` is the kit's
@@ -317,6 +351,53 @@ src/app/
   a dialog waited. The dialog hears the confirmation through
   `subscribeAuthMessage` in the session port, and a failed verify through
   `subscribeStepUpLinkFailed`, expo's own channel beside it.
+
+## Workspace settings and invitations
+
+- **The Workspace rows.** `WORKSPACE_SECTIONS` in `src/constants/settings.ts`
+  lists General, Members and Activity, each with a typed path for a slug. The
+  legacy `/tenants/{slug}/settings`, `/members` and `/activity` routes and
+  `/settings/workspace/{slug}` render `WorkspaceSettingsRedirect`
+  (`src/components/settings/workspace-settings-redirect.tsx`), which keeps the
+  query and drops `token`.
+- **General.** `src/components/workspace-settings/` holds `DetailsForm` (the
+  workspace's details, for owners and admins), `SettingsForm` (time zone,
+  language and region, and the custom data), `DetailRow`, and
+  `form-errors.ts`, which sorts a failed save's messages into field errors and
+  one form line. A staff view shows `ReadOnlyNote`
+  (`src/components/settings/read-only-note.tsx`) and no controls.
+- **Members.** `member-row.tsx` draws a member with the role sheet, Remove and
+  Leave. `invite-form.tsx` posts an invite, and `pending-invitations.tsx` lists
+  invitations with Resend and Revoke. `members-limit-note.tsx` shows the
+  counts. `row-button.tsx` is the one row button. Every write runs through
+  `useStepUp().run`.
+- **Activity.** `src/app/(app)/settings/workspace/[slug]/activity.tsx` lists
+  the audit log with a search box and an access filter (Staff, Member,
+  System). `src/lib/audit-targets.ts` names what an entry acted on.
+- **Paging.** `src/hooks/use-list-pages.ts` pages a list with "Load more": one
+  query per page, keyed by its cursor, from the shared `listQueryOptions`.
+  It shows each row key once, and starts again at page 1 when page 1's rows
+  change after page 2 was asked for.
+- **The kit's additions.** `src/components/ui/choice-sheet.tsx` is a bottom
+  sheet in a `Modal` with no scrim. `TextField` takes `multiline`.
+  `src/lib/link-lifetime.ts` writes a link's lifetime and expiry the way the
+  mail does, in minutes for a sign-in link and days for an invitation.
+- **The invitation screens.** `src/app/invitations/accept.tsx` previews the
+  invitation, then verifies (signed out: express mails a confirmation link to
+  the invited address) or accepts (signed in as the invitee).
+  `src/app/invitations/confirm.tsx` posts the mailed token and `email`; express
+  signs the invitee in and joins them. `InvitationInbox`
+  (`src/components/invitations/invitation-inbox.tsx`) draws the "Check your
+  inbox" state, and
+  `src/lib/invitation-token.ts` holds the token's shape. Both screens end in
+  `landJoined` (`src/lib/land-joined.ts`), which remembers an eligible
+  workspace and replaces to the Workspace tab.
+- **Insights and Beta.** `src/app/(app)/tenants/[slug]/insights.tsx` reads the
+  entitlements and the insights through the shared billing and insights
+  queries. `beta.tsx` reads the beta page behind `example_beta_page`.
+  `src/queries/flags.queries.ts` holds `useTenantFlags`, which reads
+  `GET /tenants/:slug/flags` and returns the fallbacks on any error. The
+  overview reads it to show the Insights and Beta rows.
 
 ## The theme and the splash screen
 

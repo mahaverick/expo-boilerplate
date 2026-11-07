@@ -135,12 +135,14 @@ token uses it up, so a second open shows the dead-link state.
   the Android intent filter with `autoVerify`, and `extra.webUrl`
   (`https://<host>`), which the passkey screen opens in an in-app browser
   (`expo-web-browser`). A value that is not a bare hostname fails the build.
-- **Android claims only `/auth/link`, `/tenants/`, `/auth/confirm` and
-  `/settings/account/security`.** They are the paths with a screen. A verified link to any other path would open
-  the app on Page not found, so
-  each later plan adds its paths with its screens. iOS claims the paths in
-  the web app's association file, so a link to a path with no screen there
-  opens the app too, until that plan ships.
+- **Android claims only `/auth/link`, `/tenants/`, `/auth/confirm`,
+  `/settings/account/security`, `/invitations/accept` and
+  `/invitations/confirm`.** They are the paths with a screen. A verified link
+  to any other path would open the app on Page not found, so each later plan
+  adds its paths with its screens. `/settings/workspace/…` is not claimed,
+  because the web app's association file does not list it. iOS claims the
+  paths in that file, so a link to a path with no screen there opens the app
+  too, until that plan ships.
 - **Unset, the app has no app links.** The custom scheme
   (`expo-boilerplate://`) still opens the app, but `src/app/+native-intent.tsx`
   drops its query and fragment, so a token never arrives that way. The
@@ -194,9 +196,9 @@ messages follow Conventional Commits, and commits are GPG-signed.
   react's, unchanged; expo's own cover the ports, the polyfills, the entry
   order, the theme, the root layout, the tokens, the session modules, the
   screens, the UI kit and the accessibility harness.
-- **The coverage thresholds** are statements 73, branches 73, functions 63 and
-  lines 72. They sit below react's until more shared tests run here
-  ([CLAUDE.md](CLAUDE.md#follow-ups)).
+- **The coverage thresholds** are statements 87, branches 83, functions 82 and
+  lines 87. Statements, functions and lines sit below react's until more
+  shared tests run here ([CLAUDE.md](CLAUDE.md#follow-ups)).
 - **One copy-style case is skipped by name**, for the reason CLAUDE.md gives.
 
 ## Device checklist
@@ -331,8 +333,8 @@ date, the device and the OS version beside each.
       that fails. The dialog refreshes only when the stored token is no newer
       than the one it opened with, so use a debugging proxy: let the verify
       through, rewrite its `accessToken` to the bearer token the request
-      carried, and fail the next `/auth/refresh`. Press Back on the email view and on "Confirmed. Continuing…":
-      nothing happens, and only Cancel leaves.
+      carried, and fail the next `/auth/refresh`. Press Back on the email view
+      and on "Confirmed. Continuing…": nothing happens, and only Cancel leaves.
 - [ ] **A failed link shows in the dialog.** With the dialog open on the email
       view, open a used or expired link, then turn on airplane mode and open a
       live one. Each time the app returns to the dialog, which shows the
@@ -350,6 +352,50 @@ date, the device and the OS version beside each.
       system font, open the Settings tab, Profile, Security and Notifications.
       Every row, field, button and switch is reachable by scrolling, no text
       is cut off, and each switch can be toggled.
+- [ ] **An invitation accepted signed out, on both platforms.** Invite an
+      address from Members, then open the mailed
+      `https://<host>/invitations/accept?token=...` link from the mail app on a
+      signed-out phone. The screen names the
+      inviter, the workspace and the role, then shows "Check your inbox". Open
+      the second mail's confirmation link. The app signs the invitee in, toasts
+      "You joined ...", and opens the Workspace tab on that workspace with the
+      tab bar beneath. A second open of the confirmation link shows the
+      dead-link state.
+- [ ] **An invitation accepted signed in as the invitee, on both platforms.**
+      Signed in with the invited address, open the invitation link. The app
+      joins at once, toasts, and opens the Workspace tab on the workspace.
+- [ ] **An invitation opened signed in as someone else, on both platforms.**
+      Open an invitation link while signed in with a different address. The
+      screen asks first and has joined nothing: check the invitation is still
+      pending on the web. Select Continue: the app signs out, mails the
+      confirmation link to the invited address and shows "Check your inbox".
+- [ ] **The router clears an invitation token from the URL, on both
+      platforms.** After either invitation screen reads its link, the route
+      carries no `token` or `email` (`setParams` with `undefined`). Back from
+      the screen never returns to a link with a token.
+- [ ] **The time zone and locale checks work on Hermes.** On Settings, General,
+      enter `Not/AZone` in Time zone and `en-abcde-abcde` in Language and
+      region. Each shows its field error and posts nothing. Both pass the
+      schema's pattern, so the error proves that Hermes's
+      `Intl.DateTimeFormat` and `Intl.getCanonicalLocales` threw (the second
+      value repeats a variant). Enter `Asia/Kolkata` and `en-IN`: the save
+      goes through.
+- [ ] **The role sheets fit at 200% text.** With the largest system font,
+      open Members, select a member's role, then open the invite form's role
+      picker, which is a `ChoiceSheet` too. In each sheet every role is
+      reachable by scrolling, no label is cut off, and Cancel closes it.
+- [ ] **A step-up dialog opens right after the role sheet closes, on iOS.** On
+      the platform workspace's Members, with the last confirmation older than
+      the API's step-up window, change a member's role. A customer workspace
+      asks its members for no step-up, so the check needs the platform
+      workspace. The "Confirm it’s you" dialog opens and stays
+      open. On iOS a `Modal` that opens while another is still closing can be
+      dropped; record whether it is.
+- [ ] **The platform-access banner shows for staff.** Signed in as platform
+      staff, open a customer workspace from the staff console's link. The
+      overview, General, Members, Activity, Insights and Beta each show
+      "You’re viewing ... as platform staff", and Members and General show no
+      write controls.
 
 ## Reporting a problem
 

@@ -22,6 +22,10 @@ const BANNED = [
   'dark:text-white',
   '#fff',
   'rgba(0, 0, 0, 0.5)',
+  'flex-1 bg-foreground/40',
+  'text-muted-foreground/70',
+  'border-border/50 px-2',
+  'hover:bg-primary/90',
 ]
 
 /** Strings the design lock lets through: token classes and non-colour arbitrary values. */
@@ -30,6 +34,7 @@ const ALLOWED = [
   'bg-background text-primary-foreground border-border',
   'w-[120px]',
   'grid-cols-[1fr_2fr]',
+  'w-1/2 text-sm/6 basis-1/3',
 ]
 
 /**

@@ -50,3 +50,37 @@ export const ACCOUNT_SECTIONS: ReadonlyArray<AccountSection> = [
     href: '/settings/account/notifications',
   },
 ]
+
+/** A Workspace row: the words that describe it and the screen it opens. */
+export interface WorkspaceSection {
+  key: 'general' | 'members' | 'activity'
+  title: string
+  description: string
+  /** The route of the section for a workspace. */
+  path(slug: string): Href
+}
+
+/**
+ * The Workspace group's rows, in order. Each path is a typed route, written as
+ * a template literal that Expo Router's generated types accept.
+ */
+export const WORKSPACE_SECTIONS: ReadonlyArray<WorkspaceSection> = [
+  {
+    key: 'general',
+    title: 'General',
+    description: 'The workspace’s details, time zone, and language and region.',
+    path: (slug) => `/settings/workspace/${slug}/general`,
+  },
+  {
+    key: 'members',
+    title: 'Members',
+    description: 'Members, roles and pending invitations.',
+    path: (slug) => `/settings/workspace/${slug}/members`,
+  },
+  {
+    key: 'activity',
+    title: 'Activity',
+    description: 'Every change made in this workspace, newest first.',
+    path: (slug) => `/settings/workspace/${slug}/activity`,
+  },
+]

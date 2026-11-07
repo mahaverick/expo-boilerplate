@@ -8,29 +8,51 @@ import Workspace from '@/app/(app)/(tabs)/workspace'
 import NotificationPreferences from '@/app/(app)/settings/account/notifications'
 import Profile from '@/app/(app)/settings/account/profile'
 import Security from '@/app/(app)/settings/account/security'
+import WorkspaceActivity from '@/app/(app)/settings/workspace/[slug]/activity'
+import WorkspaceGeneral from '@/app/(app)/settings/workspace/[slug]/general'
+import WorkspaceMembers from '@/app/(app)/settings/workspace/[slug]/members'
+import Beta from '@/app/(app)/tenants/[slug]/beta'
 import Overview from '@/app/(app)/tenants/[slug]/index'
+import Insights from '@/app/(app)/tenants/[slug]/insights'
 import Tenants from '@/app/(app)/tenants/index'
 import Welcome from '@/app/(app)/welcome'
 import NotFound from '@/app/+not-found'
 import Confirm from '@/app/auth/confirm'
 import Link from '@/app/auth/link'
+import AcceptInvitation from '@/app/invitations/accept'
+import ConfirmInvitation from '@/app/invitations/confirm'
 import Login from '@/app/login'
 import PasskeyRequired from '@/app/passkey-required'
 import { SigningInScreen } from '@/components/auth/signing-in-screen'
+import { InvitationInbox } from '@/components/invitations/invitation-inbox'
 import { SettingsRow } from '@/components/settings/settings-row'
 import { MaintenanceScreen } from '@/components/shared/maintenance-screen'
 import { UpdateScreen } from '@/components/shared/update-screen'
 import { StepUpDialog } from '@/components/step-up/step-up-dialog'
 import { StepUpProvider } from '@/components/step-up/step-up-provider'
 import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
+import type { MembershipRole } from '@/constants/roles'
+import { tenantAuditListOptions } from '@/queries/audit.queries'
 import { authKeys } from '@/queries/auth.queries'
 import { billingKeys } from '@/queries/billing.queries'
 import { clientSettingsKeys } from '@/queries/client-settings.queries'
+import { tenantFlagsKey } from '@/queries/flags.queries'
+import { insightsKey } from '@/queries/insights.queries'
 import { notificationKeys, type NotificationPreference } from '@/queries/notification.queries'
 import { sessionKeys } from '@/queries/sessions.queries'
-import { tenantKeys, tenantsQueryOptions, type TenantWithRole } from '@/queries/tenant.queries'
+import {
+  invitationsListOptions,
+  membersListOptions,
+  ownersQueryOptions,
+  tenantKeys,
+  tenantsQueryOptions,
+  type TenantMember,
+  type TenantWithRole,
+} from '@/queries/tenant.queries'
 import { A11Y_SCREENS, assertAccessible, renderWithProviders } from '@/tests/support/a11y'
 import { describe, expect, it } from '@/tests/support/runner'
+import type { TenantInvitation } from '@/types/api.types'
+import type { ListPage } from '@/types/list.types'
 
 jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), push: jest.fn(), setParams: jest.fn() },
@@ -63,6 +85,21 @@ const SCREENS: Array<[string, () => React.JSX.Element]> = [
   ['Login', () => <Login />],
   ['Link (dead link)', () => <Link />],
   ['Confirm (incomplete link)', () => <Confirm />],
+  ['Invitation (incomplete link)', () => <AcceptInvitation />],
+  ['Invitation confirm (incomplete link)', () => <ConfirmInvitation />],
+  [
+    'Invitation (check your inbox)',
+    () => (
+      <InvitationInbox
+        email="ada@example.com"
+        workspace="Acme"
+        resendAt={Date.now() + 60_000}
+        resending={false}
+        onResend={() => undefined}
+        onHome={() => undefined}
+      />
+    ),
+  ],
   ['Home', () => <Home />],
   ['Workspace tab', () => <Workspace />],
   ['Notifications', () => <Notifications />],
@@ -97,6 +134,10 @@ function seeded(detail: unknown, list: TenantWithRole[]): QueryClient {
   seed.setQueryData(tenantKeys.detail('acme'), detail)
   seed.setQueryData(tenantsQueryOptions().queryKey, list)
   seed.setQueryData(billingKeys.billing('acme'), null)
+  seed.setQueryData(tenantFlagsKey('acme'), {
+    example_beta_page: false,
+    example_cta_experiment: 'control',
+  })
   seed.setQueryData(clientSettingsKeys.all, null)
   seed.setQueryData(tenantKeys.onboarding('acme'), {
     state: 'in_progress',
@@ -163,6 +204,213 @@ for (const [name, workspaceClient, workspaceScreen] of WORKSPACE_SCREENS) {
     name,
     element: (
       <QueryClientProvider client={workspaceClient}>{workspaceScreen()}</QueryClientProvider>
+    ),
+  })
+}
+
+/**
+ * A client holding the Insights and Beta reads for the staff and extra-screen cases.
+ * @param seed - Fills the client.
+ * @returns The seeded client.
+ */
+function extraClient(seed: (client: QueryClient) => void): QueryClient {
+  const extra = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  seed(extra)
+  return extra
+}
+
+/** The Insights and Beta screens, and the overview a staff member sees. */
+const EXTRA_SCREENS: Array<[string, QueryClient, () => React.JSX.Element]> = [
+  [
+    'Workspace Insights (open)',
+    extraClient((extra) => {
+      extra.setQueryData(billingKeys.entitlements('acme'), {
+        plan: { key: 'paid', name: 'Paid' },
+        features: { advanced_example: true },
+        limits: {},
+      })
+      extra.setQueryData(insightsKey('acme'), {
+        membersJoinedLast30Days: 4,
+        invitationsSentLast30Days: 9,
+      })
+    }),
+    () => <Insights />,
+  ],
+  [
+    'Workspace Insights (locked)',
+    extraClient((extra) => {
+      extra.setQueryData(billingKeys.entitlements('acme'), {
+        plan: { key: 'free', name: 'Free' },
+        features: {},
+        limits: {},
+      })
+    }),
+    () => <Insights />,
+  ],
+  [
+    'Workspace Beta',
+    extraClient((extra) => {
+      extra.setQueryData([...tenantKeys.detail('acme'), 'beta'], {
+        slug: 'acme',
+        enabledAt: '2026-11-07T00:00:00.000Z',
+      })
+    }),
+    () => <Beta />,
+  ],
+  [
+    'Workspace overview (staff banner)',
+    seeded({ ...ACME, access: 'platform' }, []),
+    () => <Overview />,
+  ],
+]
+for (const [name, extra, extraScreen] of EXTRA_SCREENS) {
+  A11Y_SCREENS.push({
+    name,
+    element: <QueryClientProvider client={extra}>{extraScreen()}</QueryClientProvider>,
+  })
+}
+
+/** The settings the General screen shows. */
+const GENERAL_SETTINGS = {
+  tenantId: 't-acme',
+  timezone: 'Europe/London',
+  locale: 'en-GB',
+  metadata: { plan: 'x' },
+  updatedAt: '2026-01-05T00:00:00.000Z',
+}
+
+/** The General screen as a manager, a viewer and staff with platform access sees it. */
+const GENERAL_SCREENS: Array<[string, Record<string, unknown>]> = [
+  ['Workspace General (manager)', ACME],
+  ['Workspace General (viewer)', { ...ACME, role: 'viewer' }],
+  ['Workspace General (staff)', { ...ACME, access: 'platform' }],
+]
+for (const [name, tenant] of GENERAL_SCREENS) {
+  const generalClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  generalClient.setQueryData(tenantKeys.detail('acme'), tenant)
+  generalClient.setQueryData(tenantKeys.settings('acme'), GENERAL_SETTINGS)
+  A11Y_SCREENS.push({
+    name,
+    element: (
+      <QueryClientProvider client={generalClient}>
+        <WorkspaceGeneral />
+      </QueryClientProvider>
+    ),
+  })
+}
+
+/**
+ * One member row of the API.
+ * @param id - The user's id.
+ * @param role - The membership role.
+ * @param firstName - The first name, or null.
+ * @returns The row.
+ */
+function memberRow(id: string, role: MembershipRole, firstName: string | null): TenantMember {
+  return {
+    membership: {
+      id: `m-${id}`,
+      userId: id,
+      tenantId: 't-acme',
+      role,
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01',
+    },
+    user: { id, email: `${id}@example.com`, firstName, lastName: null },
+  }
+}
+
+/** One page of members: two with names, one without. */
+const MEMBERS_PAGE: ListPage<TenantMember> = {
+  items: [
+    memberRow('u1', 'owner', 'Ada'),
+    memberRow('u2', 'viewer', 'Bob'),
+    memberRow('u3', 'admin', null),
+  ],
+  page: { hasNext: true, nextCursor: 'c2', prevCursor: null, hasPrev: false, limit: 20 },
+}
+
+/** One page of pending invitations: one the viewer may act on, one for an admin role. */
+const INVITATIONS_PAGE: ListPage<TenantInvitation> = {
+  items: ['viewer', 'admin'].map((role, index) => ({
+    id: `i${String(index)}`,
+    email: `${role}-invite@example.com`,
+    role: role as MembershipRole,
+    invitedBy: { id: 'u1', firstName: 'Ada', lastName: null },
+    expiresAt: '2030-01-10T10:00:00.000Z',
+    createdAt: '2030-01-01T10:00:00.000Z',
+    lastSentAt: null,
+    resendAvailableAt: null,
+  })),
+  page: { hasNext: true, nextCursor: 'c2', prevCursor: null, hasPrev: false, limit: 20 },
+}
+
+/** The Members screen as a manager, a viewer and staff with platform access sees it. */
+const MEMBERS_SCREENS: Array<[string, Record<string, unknown>]> = [
+  ['Workspace Members (manager)', ACME],
+  ['Workspace Members (viewer)', { ...ACME, role: 'viewer' }],
+  ['Workspace Members (staff)', { ...ACME, access: 'platform' }],
+]
+for (const [name, tenant] of MEMBERS_SCREENS) {
+  const membersClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  membersClient.setQueryData(tenantKeys.detail('acme'), tenant)
+  membersClient.setQueryData(membersListOptions('acme', {}).queryKey, MEMBERS_PAGE)
+  membersClient.setQueryData(ownersQueryOptions('acme').queryKey, MEMBERS_PAGE)
+  membersClient.setQueryData(clientSettingsKeys.all, null)
+  membersClient.setQueryData(invitationsListOptions('acme', {}).queryKey, INVITATIONS_PAGE)
+  membersClient.setQueryData(billingKeys.entitlements('acme'), {
+    plan: { key: 'free', name: 'Free' },
+    features: {},
+    limits: { members: { limit: 3, used: 3, approaching: false } },
+  })
+  A11Y_SCREENS.push({
+    name,
+    element: (
+      <QueryClientProvider client={membersClient}>
+        <StepUpProvider>
+          <WorkspaceMembers />
+        </StepUpProvider>
+      </QueryClientProvider>
+    ),
+  })
+}
+
+/** The Activity screen as an owner and a viewer sees it. */
+const ACTIVITY_SCREENS: Array<[string, Record<string, unknown>]> = [
+  ['Workspace Activity (owner)', ACME],
+  ['Workspace Activity (viewer)', { ...ACME, role: 'viewer' }],
+]
+for (const [name, tenant] of ACTIVITY_SCREENS) {
+  const activityClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  activityClient.setQueryData(tenantKeys.detail('acme'), tenant)
+  activityClient.setQueryData(tenantAuditListOptions('acme', {}).queryKey, {
+    items: [
+      {
+        id: 'e1',
+        occurredAt: '2026-11-01T10:00:00.000Z',
+        action: 'tenant.updated',
+        access: 'platform',
+        actor: { id: 'u1', name: 'Ada Lovelace', email: 'ada@example.com' },
+        target: { type: 'tenant', id: 't-acme' },
+        metadata: {},
+      },
+    ],
+    page: { hasNext: false, nextCursor: null, prevCursor: null, hasPrev: false, limit: 20 },
+  })
+  A11Y_SCREENS.push({
+    name,
+    element: (
+      <QueryClientProvider client={activityClient}>
+        <WorkspaceActivity />
+      </QueryClientProvider>
     ),
   })
 }

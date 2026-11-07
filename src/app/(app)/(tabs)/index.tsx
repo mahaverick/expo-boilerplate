@@ -4,12 +4,9 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { LoadError } from '@/components/shared/load-error'
 import { Button } from '@/components/ui/button'
 import { Screen } from '@/components/ui/screen'
+import { TENANTS_ERROR } from '@/lib/tenants-error'
 import { isEligibleTenant, useTenants } from '@/queries/tenant.queries'
 import { useAuthStore } from '@/states/auth.store'
-
-/** What a failed list says: a claim about the request, not the account. */
-const TENANTS_ERROR =
-  'We couldn’t load your workspaces, so none are listed. Select Try again to load them.'
 
 /**
  * Home: a greeting and a line for derived projects to replace. It never

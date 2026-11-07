@@ -1,9 +1,12 @@
 import { Text, View } from 'react-native'
+import { SettingsRow } from '@/components/settings/settings-row'
 import { GettingStarted } from '@/components/workspaces/getting-started'
+import { PlatformAccessBanner } from '@/components/workspaces/platform-access-banner'
 import { useTrialExplainer } from '@/components/workspaces/trial-explainer'
 import { WorkspaceGate } from '@/components/workspaces/workspace-gate'
 import { ROLE_LABELS } from '@/constants/roles'
 import { formatDate } from '@/lib/format'
+import { useTenantFlags } from '@/queries/flags.queries'
 import type { TenantDetail } from '@/queries/tenant.queries'
 
 /** Props of `WorkspaceOverview`. */
@@ -35,7 +38,34 @@ function DetailRow({ label, value }: { label: string; value: string | null }) {
 }
 
 /**
- * The open workspace: the role and web address under the title, the trial
+ * The rows that open a workspace's extra screens: Insights for every member,
+ * and Beta while the workspace's `example_beta_page` flag is on.
+ * @param props - The workspace.
+ * @param props.slug - The workspace's web address.
+ * @returns The rows.
+ */
+function EntryRows({ slug }: { slug: string }) {
+  const flags = useTenantFlags(slug)
+  return (
+    <View>
+      <SettingsRow
+        title="Insights"
+        description="Members joined and invitations sent, last 30 days."
+        href={`/tenants/${slug}/insights`}
+      />
+      {flags.example_beta_page ? (
+        <SettingsRow
+          title="Beta"
+          description="Features this workspace sees before everyone else."
+          href={`/tenants/${slug}/beta`}
+        />
+      ) : null}
+    </View>
+  )
+}
+
+/**
+ * The open workspace: the platform-access banner for staff, the role and web address under the title, the trial
  * explainer (an alert, once), Getting started, then Details.
  * @param props - The workspace as the API returns it.
  * @param props.tenant - The workspace.
@@ -46,11 +76,13 @@ function Content({ tenant }: { tenant: TenantDetail }) {
   useTrialExplainer(slug, tenant)
   return (
     <>
+      <PlatformAccessBanner slug={slug} />
       <View className="flex-row flex-wrap items-center gap-2">
         <Text className="text-base font-medium text-foreground">{ROLE_LABELS[tenant.role]}</Text>
         <Text className="text-base text-muted-foreground">{`/${slug}`}</Text>
       </View>
       <GettingStarted slug={slug} role={tenant.role} access={tenant.access} />
+      <EntryRows slug={slug} />
       <View className="gap-3">
         <Text className="text-lg font-semibold text-foreground">Details</Text>
         <DetailRow label="Name" value={tenant.name} />
