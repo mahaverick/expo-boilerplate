@@ -10,8 +10,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { apiClient } from '@/http/client'
 import { METRICS } from '@/tests/support/a11y'
 
-/** What the fake adapter answers: a status and a body, or a network failure. */
-export type FakeAnswer = { status: number; data: unknown } | 'network-error'
+/** What the fake adapter answers: a status, a body and any extra headers, or a network failure. */
+export type FakeAnswer =
+  | { status: number; data: unknown; headers?: Record<string, string> }
+  | 'network-error'
 
 /** Picks the answer for a request. May return a promise to hold the answer back. */
 export type FakeHandler = (config: InternalAxiosRequestConfig) => FakeAnswer | Promise<FakeAnswer>
@@ -35,7 +37,7 @@ export function serve(handler: FakeHandler): InternalAxiosRequestConfig[] {
       data: answer.data,
       status: answer.status,
       statusText: '',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...answer.headers },
       config,
     }
     if (answer.status >= 200 && answer.status < 300) return response

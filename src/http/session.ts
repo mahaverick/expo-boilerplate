@@ -1,7 +1,8 @@
 /**
  * @file The session port. The refresh token lives in SecureStore and a
- * restore posts it in the body. There is one process, so nothing is
- * broadcast and the core takes no lock.
+ * restore posts it in the body. There is one process, so the core takes no
+ * lock, a logout is told to no one, and an auth message reaches only the
+ * subscribers in this process (`subscribeAuthMessage`).
  *
  * A refresh can still overlap a sign-out or a sign-in on this device. The
  * core reads the token, posts it, writes the rotated one, then signs in. A
@@ -30,6 +31,9 @@ let readAt = 0
 
 /** The core's in-flight refresh, and the same refresh checked for a session change. */
 let checked: { source: Promise<string>; result: Promise<string> } | null = null
+
+/** The refresh in flight, until it settles; `refreshSettled()` waits on it. */
+let pending: Promise<string> | null = null
 
 /** What a refresh that overlapped a sign-out or a sign-in rejects with. Not a verdict. */
 const SESSION_CHANGED = 'The session changed during the refresh.'
@@ -111,9 +115,30 @@ export function ensureSession(): Promise<string> {
   if (checked?.source !== source) {
     // The core calls read() before ensureSession() returns, so readAt belongs to this refresh.
     const since = readAt
-    checked = { source, result: source.then((token) => keepUnlessChanged(token, since)) }
+    const result = source.then((token) => keepUnlessChanged(token, since))
+    checked = { source, result }
+    pending = result
+    /** Forgets the refresh once it settles, unless a newer one took its place. */
+    const forget = () => {
+      if (pending === result) pending = null
+    }
+    result.then(forget, forget)
   }
   return checked.result
+}
+
+/**
+ * Waits for the refresh in flight, if any, to settle. A screen that swaps in
+ * a token of its own, such as `/auth/confirm`, awaits it first, so an older
+ * refresh cannot land after the swap and overwrite the token.
+ * @returns Resolves at once when no refresh is in flight. Never rejects.
+ */
+export function refreshSettled(): Promise<void> {
+  if (!pending) return Promise.resolve()
+  return pending.then(
+    () => undefined,
+    () => undefined
+  )
 }
 
 /** Drops the cached core, so the next `ensureSession()` builds a new one. */
@@ -121,13 +146,65 @@ export function resetSessionForTests(): void {
   core?.reset()
   core = null
   checked = null
+  pending = null
 }
 
 /** Does nothing: there is no other tab to tell. */
 export function broadcastLogout(): void {}
 
-/** Does nothing with the message: there is no other tab to tell. */
-export const broadcastAuthMessage: (type: AuthMessageType) => void = () => {}
+/** The handlers subscribed to each auth message, in this process. */
+const authMessageHandlers: Record<AuthMessageType, Set<() => void>> = {
+  signed_in: new Set(),
+  step_up_confirmed: new Set(),
+}
+
+/**
+ * Tells this process's subscribers of `type`, such as a "Confirm it’s you"
+ * dialog waiting on `step_up_confirmed`. There is no other tab to tell.
+ * @param type - The message.
+ */
+export const broadcastAuthMessage: (type: AuthMessageType) => void = (type) => {
+  for (const handler of authMessageHandlers[type]) handler()
+}
+
+/**
+ * Calls `handler` each time `broadcastAuthMessage(type)` runs in this process.
+ * @param type - The message to hear.
+ * @param handler - Called with no arguments.
+ * @returns Unsubscribes the handler.
+ */
+export function subscribeAuthMessage(type: AuthMessageType, handler: () => void): () => void {
+  authMessageHandlers[type].add(handler)
+  return () => {
+    authMessageHandlers[type].delete(handler)
+  }
+}
+
+/** The handlers waiting to hear that an emailed step-up link failed to confirm, in this process. */
+const linkFailedHandlers = new Set<(message: string) => void>()
+
+/**
+ * Tells this process's "Confirm it’s you" dialog that `/auth/confirm` could not
+ * confirm, with the copy to show. Expo's own channel beside
+ * `broadcastAuthMessage`, whose signature is react's port: the screen opens
+ * beneath the full-screen dialog, so its own failure states are out of sight.
+ * @param message - What the dialog shows inline.
+ */
+export function broadcastStepUpLinkFailed(message: string): void {
+  for (const handler of linkFailedHandlers) handler(message)
+}
+
+/**
+ * Calls `handler` with the message each time `broadcastStepUpLinkFailed` runs.
+ * @param handler - Called with the copy to show.
+ * @returns Unsubscribes the handler.
+ */
+export function subscribeStepUpLinkFailed(handler: (message: string) => void): () => void {
+  linkFailedHandlers.add(handler)
+  return () => {
+    linkFailedHandlers.delete(handler)
+  }
+}
 
 /** Sends the app to the sign-in screen once a session has ended. */
 export function redirectToLogin(): void {

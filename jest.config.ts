@@ -27,7 +27,7 @@ const config: Config = {
    * more of its tests for expo (CLAUDE.md, "Follow-ups").
    */
   coverageThreshold: {
-    global: { statements: 73, branches: 73, functions: 63, lines: 72 },
+    global: { statements: 78, branches: 76, functions: 70, lines: 78 },
   },
 }
 

@@ -1,29 +1,35 @@
 import { Text, View } from 'react-native'
+import { SettingsRow } from '@/components/settings/settings-row'
 import { Button } from '@/components/ui/button'
 import { Screen } from '@/components/ui/screen'
+import { ACCOUNT_SECTIONS, SETTINGS_GROUPS } from '@/constants/settings'
 import { useSignOut } from '@/hooks/use-sign-out'
 
 /**
- * The settings tab: the two groups as text, and Sign out. The groups carry no
- * links until their screens exist.
+ * The settings tab: the Account rows that open the account screens, the
+ * Workspace group as text, and Sign out.
  * @returns The screen.
  */
 export default function Settings() {
   const { signOut, isPending } = useSignOut()
   return (
     <Screen title="Settings" bottomInset={false}>
-      <View className="gap-1">
-        <Text className="text-lg font-semibold text-foreground">Account</Text>
-        <Text className="text-base text-muted-foreground">
-          Your profile, sign-in and notifications.
-        </Text>
-      </View>
-      <View className="gap-1">
-        <Text className="text-lg font-semibold text-foreground">Workspace</Text>
-        <Text className="text-base text-muted-foreground">
-          The current workspace’s details, members and activity.
-        </Text>
-      </View>
+      {SETTINGS_GROUPS.map((group) => (
+        <View key={group.key} className="gap-1">
+          <Text className="text-lg font-semibold text-foreground">{group.title}</Text>
+          <Text className="text-base text-muted-foreground">{group.description}</Text>
+          {group.key === 'account'
+            ? ACCOUNT_SECTIONS.map((section) => (
+                <SettingsRow
+                  key={section.key}
+                  title={section.title}
+                  description={section.description}
+                  href={section.href}
+                />
+              ))
+            : null}
+        </View>
+      ))}
       <Button
         variant="secondary"
         label="Sign out"

@@ -48,7 +48,7 @@ describe('app.config', () => {
     expect(config.plugins).toContain('expo-web-browser')
   })
 
-  it('wires app links to APP_LINK_HOST', () => {
+  it('wires app links to APP_LINK_HOST, claiming /auth/link, /tenants/, /auth/confirm and /settings/account/security', () => {
     const config = configFor('app.example.com')
     expect(config.ios?.associatedDomains).toEqual([
       'applinks:app.example.com',
@@ -62,6 +62,8 @@ describe('app.config', () => {
         data: [
           { scheme: 'https', host: 'app.example.com', pathPrefix: '/auth/link' },
           { scheme: 'https', host: 'app.example.com', pathPrefix: '/tenants/' },
+          { scheme: 'https', host: 'app.example.com', pathPrefix: '/auth/confirm' },
+          { scheme: 'https', host: 'app.example.com', pathPrefix: '/settings/account/security' },
         ],
         category: ['BROWSABLE', 'DEFAULT'],
       },
