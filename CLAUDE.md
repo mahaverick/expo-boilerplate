@@ -595,10 +595,16 @@ screens, Insights and Beta. They are plan 3c3's. The files are listed in
   still closing; the README's device checklist covers that on iOS.
 - **Lists page with "Load more", through `useListPages`.** The shared
   `listQueryOptions` serves one page per request, so `useListPages` makes
-  each page its own query, keyed by its cursor, and joins the rows. It never
-  uses `useInfiniteQuery`, and phones have no table. A request that changes by
-  value starts again at page 1. A failed later page keeps the loaded rows and
-  offers Try again beside them.
+  each page its own query, keyed by its cursor, and joins the rows, each key
+  once (`keyOf`). It never uses `useInfiniteQuery`, and phones have no table.
+  A request that changes by value starts again at page 1. So does a page 1
+  that refetches after page 2 was asked for (a write's invalidation or a
+  refocus): express's cursors seek after the boundary row
+  (`list-page.utilities.ts`), so later pages fetched with the old cursors
+  would drop or repeat rows. The signal is page 1's `dataUpdateCount`, not
+  `dataUpdatedAt`, which two fetches in one millisecond share. The cost: a
+  refetch folds the list back to page 1. A failed later page keeps the loaded
+  rows and offers Try again beside them.
 - **Legacy workspace paths redirect to the new screens.**
   `/tenants/{slug}/settings`, `/members` and `/activity` go to General,
   Members and Activity under `/settings/workspace/{slug}/`, and

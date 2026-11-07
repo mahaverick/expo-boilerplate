@@ -58,10 +58,57 @@ let client: QueryClient
  * @returns The render result.
  */
 function renderPages(initial: ListRequest = {}) {
-  return renderHook(({ request }: { request: ListRequest }) => useListPages(options, request), {
-    initialProps: { request: initial },
-    wrapper: ({ children }: { children: ReactNode }) => screenTree(<>{children}</>, client),
+  return renderHook(
+    ({ request }: { request: ListRequest }) => useListPages(options, request, (row) => row.id),
+    {
+      initialProps: { request: initial },
+      wrapper: ({ children }: { children: ReactNode }) => screenTree(<>{children}</>, client),
+    }
+  )
+}
+
+/**
+ * A keyset server like express's: rows newest first, two per page, and a
+ * cursor that names the row the page starts after.
+ * @param rows - The stored rows' ids, in list order. The test edits it.
+ * @returns The requests the adapter saw.
+ */
+function serveKeyset(rows: string[]) {
+  return serve((config) => {
+    const cursor = (config.params as ListRequest).cursor
+    const start = cursor === undefined ? 0 : rows.indexOf(cursor) + 1
+    const ids = rows.slice(start, start + 2)
+    const more = start + 2 < rows.length
+    return pageOf(ids, more ? (ids.at(-1) ?? null) : null)
   })
+}
+
+/**
+ * Loads page 1, then page 2, of a keyset list.
+ * @param rows - The stored rows.
+ * @returns The hook's render result.
+ */
+async function loadTwoPages(rows: string[]) {
+  serveKeyset(rows)
+  const rendered = await renderPages()
+  const { result } = rendered
+  await waitFor(() => expect(result.current.items.map((r) => r.id)).toEqual(rows.slice(0, 2)))
+  await act(() => {
+    result.current.loadMore()
+    return Promise.resolve()
+  })
+  await waitFor(() => expect(result.current.items.map((r) => r.id)).toEqual(rows.slice(0, 4)))
+  return rendered
+}
+
+/**
+ * Asserts the shown rows are the stored list's first rows: none lost, none twice.
+ * @param shown - The ids the hook returns.
+ * @param rows - The stored rows.
+ */
+function expectWhole(shown: string[], rows: string[]) {
+  expect(new Set(shown).size).toBe(shown.length)
+  expect(shown).toEqual(rows.slice(0, shown.length))
 }
 
 beforeEach(() => {
@@ -173,6 +220,59 @@ describe('useListPages', () => {
     })
     await waitFor(() => expect(result.current.items.map((r) => r.id)).toEqual(['a', 'b', 'c']))
     expect(result.current.loadMoreFailed).toBe(false)
+  })
+
+  it('loses no row when a row is added above the boundary and the list refetches', async () => {
+    const rows = ['e', 'd', 'c', 'b', 'a']
+    const { result } = await loadTwoPages(rows)
+    rows.unshift('f')
+    await act(() => client.invalidateQueries({ queryKey: ['things'] }))
+    await waitFor(() => expect(result.current.items[0]?.id).toBe('f'))
+    await waitFor(() => expect(result.current.isLoadingMore).toBe(false))
+    expectWhole(
+      result.current.items.map((r) => r.id),
+      rows
+    )
+    expect(result.current.hasNext).toBe(true)
+  })
+
+  it('shows no row twice when a row above the boundary goes and the list refetches', async () => {
+    const rows = ['e', 'd', 'c', 'b', 'a']
+    const { result } = await loadTwoPages(rows)
+    rows.shift()
+    await act(() => client.invalidateQueries({ queryKey: ['things'] }))
+    await waitFor(() => expect(result.current.items[0]?.id).toBe('d'))
+    await waitFor(() => expect(result.current.isLoadingMore).toBe(false))
+    expectWhole(
+      result.current.items.map((r) => r.id),
+      rows
+    )
+  })
+
+  it('keeps the loaded pages when only a later page refetches', async () => {
+    const rows = ['e', 'd', 'c', 'b', 'a']
+    const { result } = await loadTwoPages(rows)
+    await act(() =>
+      client.invalidateQueries({
+        predicate: (query) => JSON.stringify(query.queryKey).includes('"cursor":"d"'),
+      })
+    )
+    expect(result.current.items.map((r) => r.id)).toEqual(['e', 'd', 'c', 'b'])
+  })
+
+  it('shows a row that two pages hold only once', async () => {
+    serve((config) =>
+      (config.params as ListRequest).cursor === 'c2'
+        ? pageOf(['b', 'c'], null)
+        : pageOf(['a', 'b'], 'c2')
+    )
+    const { result } = await renderPages()
+    await waitFor(() => expect(result.current.items).toHaveLength(2))
+    await act(() => {
+      result.current.loadMore()
+      return Promise.resolve()
+    })
+    await waitFor(() => expect(result.current.items.map((r) => r.id)).toEqual(['a', 'b', 'c']))
   })
 
   it('ignores loadMore while a page is loading or none follows', async () => {

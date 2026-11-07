@@ -58,7 +58,11 @@ interface MembersListProps {
  * @returns The list.
  */
 function MembersList({ slug, tenantName, myRole, readOnly }: MembersListProps) {
-  const members = useListPages((request) => membersListOptions(slug, request), REQUEST)
+  const members = useListPages(
+    (request) => membersListOptions(slug, request),
+    REQUEST,
+    (member) => member.membership.id
+  )
   const myUserId = useAuthStore((state) => state.user?.id)
   // Only an owner can act on an owner row, so only an owner needs the count.
   const owners = useQuery({

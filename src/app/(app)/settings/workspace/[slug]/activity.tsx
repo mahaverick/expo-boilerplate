@@ -98,7 +98,11 @@ function ActivityLog({ slug }: { slug: string }) {
   const request: ListRequest = {}
   if (search !== '') request.search = search
   if (access !== '') request.access = access
-  const log = useListPages((listRequest) => tenantAuditListOptions(slug, listRequest), request)
+  const log = useListPages(
+    (listRequest) => tenantAuditListOptions(slug, listRequest),
+    request,
+    (entry) => entry.id
+  )
   const forbidden = log.isError && statusFrom(log.error) === 403
   useEffect(() => {
     if (forbidden) {

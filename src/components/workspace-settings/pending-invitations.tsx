@@ -222,7 +222,11 @@ interface PendingInvitationsProps {
  * @returns The card.
  */
 export function PendingInvitations({ slug, myRole, readOnly = false }: PendingInvitationsProps) {
-  const invitations = useListPages((request) => invitationsListOptions(slug, request), REQUEST)
+  const invitations = useListPages(
+    (request) => invitationsListOptions(slug, request),
+    REQUEST,
+    (invitation) => invitation.id
+  )
   let body
   if (invitations.isError) {
     body = <LoadError message={INVITATIONS_ERROR} onRetry={invitations.retry} />
