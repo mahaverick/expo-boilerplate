@@ -249,6 +249,24 @@ describe('useListPages', () => {
     )
   })
 
+  it('Load more never shrinks the list after page 1 refetches the same rows', async () => {
+    const rows = ['f', 'e', 'd', 'c', 'b', 'a']
+    const { result } = await loadTwoPages(rows)
+    await act(() => client.invalidateQueries({ queryKey: ['things'] }))
+    await waitFor(() => expect(result.current.isLoadingMore).toBe(false))
+    const shown = result.current.items.length
+    await act(() => {
+      result.current.loadMore()
+      return Promise.resolve()
+    })
+    await waitFor(() => expect(result.current.isLoadingMore).toBe(false))
+    expect(result.current.items.length).toBeGreaterThan(shown)
+    expectWhole(
+      result.current.items.map((r) => r.id),
+      rows
+    )
+  })
+
   it('keeps the loaded pages when only a later page refetches', async () => {
     const rows = ['e', 'd', 'c', 'b', 'a']
     const { result } = await loadTwoPages(rows)

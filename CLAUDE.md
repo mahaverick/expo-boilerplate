@@ -602,13 +602,17 @@ screens, Insights and Beta. They are plan 3c3's. The files are listed in
   each page its own query, keyed by its cursor, and joins the rows, each key
   once (`keyOf`). It never uses `useInfiniteQuery`, and phones have no table.
   A request that changes by value starts again at page 1. So does a page 1
-  that refetches after page 2 was asked for (a write's invalidation or a
-  refocus): express's cursors seek after the boundary row
+  whose rows change after page 2 was asked for, through a write's
+  invalidation or a refocus. Express's cursors seek after the boundary row
   (`list-page.utilities.ts`), so later pages fetched with the old cursors
-  would drop or repeat rows. The signal is page 1's `dataUpdateCount`, not
-  `dataUpdatedAt`, which two fetches in one millisecond share. The cost: a
-  refetch folds the list back to page 1. A failed later page keeps the loaded
-  rows and offers Try again beside them.
+  would drop or repeat rows. The signal is page 1's data object, a field
+  the hook subscribes to. Structural sharing keeps that object when a
+  refetch brings the same rows, and then the pages stay, because the boundary
+  row holds. `dataUpdatedAt` moves on every refetch and is shared by two
+  fetches in one millisecond, and a count read from the cache during render
+  re-renders nothing. The cost: new rows on page 1 fold the list back to
+  page 1. A failed later page keeps the loaded rows and offers Try again
+  beside them.
 - **Legacy workspace paths redirect to the new screens.**
   `/tenants/{slug}/settings`, `/members` and `/activity` go to General,
   Members and Activity under `/settings/workspace/{slug}/`, and

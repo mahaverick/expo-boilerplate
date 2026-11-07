@@ -376,8 +376,8 @@ src/app/
   System). `src/lib/audit-targets.ts` names what an entry acted on.
 - **Paging.** `src/hooks/use-list-pages.ts` pages a list with "Load more": one
   query per page, keyed by its cursor, from the shared `listQueryOptions`.
-  It shows each row key once, and starts again at page 1 when page 1
-  refetches after page 2 was asked for.
+  It shows each row key once, and starts again at page 1 when page 1's rows
+  change after page 2 was asked for.
 - **The kit's additions.** `src/components/ui/choice-sheet.tsx` is a bottom
   sheet in a `Modal` with no scrim. `TextField` takes `multiline`.
   `src/lib/link-lifetime.ts` writes a link's lifetime and expiry the way the
