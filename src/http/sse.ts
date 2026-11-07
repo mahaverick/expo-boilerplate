@@ -154,14 +154,21 @@ export async function openEventStream(options: {
   const parser = createSseParser(options.onFrame)
   const decoder = new TextDecoder()
   const reader = response.body.getReader()
+  let finished = false
   try {
     for (;;) {
       const { value, done } = await reader.read()
-      if (done) break
+      if (done) {
+        finished = true
+        break
+      }
       parser.push(decoder.decode(value, { stream: true }))
     }
   } finally {
+    // A failed read or parse leaves the connection open; cancelling frees the server's stream slot.
+    if (!finished) await reader.cancel().catch(() => undefined)
     reader.releaseLock()
   }
+  if (options.signal.aborted) throw options.signal.reason
   return { kind: 'ended' }
 }

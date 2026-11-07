@@ -232,4 +232,61 @@ describe('openEventStream', () => {
     controller.abort()
     await expect(pending).rejects.toThrow('aborted')
   })
+
+  it('cancels the body when the parser overflows', async () => {
+    let cancelled = false
+    const response = fakeResponse({})
+    ;(response as unknown as { body: ReadableStream }).body = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode('data: ' + 'x'.repeat(SSE_MAX_BUFFER)))
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    await expect(
+      openEventStream({
+        url,
+        headers: {},
+        signal: new AbortController().signal,
+        onFrame: () => undefined,
+        fetch: () => Promise.resolve(response),
+      })
+    ).rejects.toThrow(SseOverflowError)
+    expect(cancelled).toBe(true)
+  })
+
+  it('rejects when the stream closes cleanly after the abort', async () => {
+    const controller = new AbortController()
+    const response = fakeResponse({})
+    ;(response as unknown as { body: ReadableStream }).body = new ReadableStream({
+      start(c) {
+        controller.signal.addEventListener('abort', () => {
+          c.close()
+        })
+      },
+    })
+    const pending = openEventStream({
+      url,
+      headers: {},
+      signal: controller.signal,
+      onFrame: () => undefined,
+      fetch: () => Promise.resolve(response),
+    })
+    controller.abort(new Error('stopped'))
+    await expect(pending).rejects.toThrow('stopped')
+  })
+
+  it('delivers no frame for a body that ends mid-frame', async () => {
+    const frames: SseFrame[] = []
+    const result = await openEventStream({
+      url,
+      headers: {},
+      signal: new AbortController().signal,
+      onFrame: (f) => frames.push(f),
+      fetch: () => Promise.resolve(fakeResponse({ chunks: ['data: x\n'] })),
+    })
+    expect(result).toEqual({ kind: 'ended' })
+    expect(frames).toEqual([])
+  })
 })
