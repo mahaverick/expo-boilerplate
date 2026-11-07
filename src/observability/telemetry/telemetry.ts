@@ -94,13 +94,19 @@ const LIFECYCLE_EVENTS: ReadonlySet<string> = new Set([
   'Application Backgrounded',
 ])
 
+/**
+ * The property the SDK stamps on every event of a session with the last
+ * screen. `captureScreen` passes a route pattern, so it carries no slug.
+ */
+const SCREEN_NAME_PROPERTY = '$screen_name'
+
 /** An absolute http(s) URL, the one shape whose host the lifecycle cut keeps. */
 const HTTP_URL = /^https?:\/\//i
 
 /**
  * A lifecycle event's value with every URL cut to its scheme and host, to
- * `MAX_SANITIZE_DEPTH` levels. An app path has no host, so it is dropped; a
- * custom-scheme URL is already its scheme alone.
+ * `MAX_SANITIZE_DEPTH` levels. An app path has no host, so it is dropped,
+ * except the screen pattern; a custom-scheme URL is already its scheme alone.
  * @param value - A value the guard has already sanitised.
  * @param depth - How deep the walk is.
  * @returns The cut value, or undefined to drop it.
@@ -114,8 +120,8 @@ function originOnly(value: unknown, depth: number): unknown {
   if (typeof value !== 'object' || value === null || depth >= MAX_SANITIZE_DEPTH) return value
   if (Array.isArray(value)) return value.map((item: unknown) => originOnly(item, depth + 1))
   const result: Record<string, unknown> = {}
-  for (const [key, child] of Object.entries(value)) {
-    const cut = originOnly(child, depth + 1)
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    const cut = key === SCREEN_NAME_PROPERTY ? child : originOnly(child, depth + 1)
     if (cut !== undefined) result[key] = cut
   }
   return result

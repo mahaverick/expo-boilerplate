@@ -230,6 +230,21 @@ describe('analytics with a key', () => {
     })
   })
 
+  it('keeps the screen pattern the SDK stamps on a lifecycle event', () => {
+    initAnalytics()
+    const guarded = beforeSend({
+      event: 'Application Backgrounded',
+      properties: {
+        $screen_name: '/(app)/tenants/[slug]/index',
+        url: 'https://app.example.test/tenants/acme-corp',
+      },
+    })
+    expect(guarded?.properties).toMatchObject({
+      $screen_name: '/(app)/tenants/[slug]/index',
+      url: 'https://app.example.test',
+    })
+  })
+
   it('sends only the scheme and host of a cold-start https app link', () => {
     initAnalytics()
     client().capture('Application Opened', {
