@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocalSearchParams } from 'expo-router'
+import { useEffect, useState } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
 import { ReadOnlyNote } from '@/components/settings/read-only-note'
 import { LoadError } from '@/components/shared/load-error'
@@ -15,6 +16,7 @@ import { PLATFORM_TENANT_SLUG } from '@/constants/routes'
 import { useListPages } from '@/hooks/use-list-pages'
 import { ROLE_ERROR } from '@/lib/role-error'
 import {
+  dropTenantCache,
   membersListOptions,
   ownersBesides,
   ownersQueryOptions,
@@ -42,6 +44,8 @@ interface MembersListProps {
   tenantName: string | undefined
   myRole: MembershipRole
   readOnly: boolean
+  /** Called once the person has left the workspace. */
+  onLeft: () => void
 }
 
 /**
@@ -55,9 +59,10 @@ interface MembersListProps {
  * @param props.tenantName - The workspace's name, for the leave toasts.
  * @param props.myRole - The viewer's role.
  * @param props.readOnly - True for staff through platform access.
+ * @param props.onLeft - Called once the person has left the workspace.
  * @returns The list.
  */
-function MembersList({ slug, tenantName, myRole, readOnly }: MembersListProps) {
+function MembersList({ slug, tenantName, myRole, readOnly, onLeft }: MembersListProps) {
   const members = useListPages(
     (request) => membersListOptions(slug, request),
     REQUEST,
@@ -101,6 +106,7 @@ function MembersList({ slug, tenantName, myRole, readOnly }: MembersListProps) {
             otherOwners={otherOwners}
             ownersKnown={owners.isSuccess}
             readOnly={readOnly}
+            onLeft={onLeft}
           />
         ))}
         {members.loadMoreFailed ? <LoadError message={MORE_ERROR} onRetry={members.retry} /> : null}
@@ -134,13 +140,25 @@ function MembersList({ slug, tenantName, myRole, readOnly }: MembersListProps) {
  * Settings, Workspace, Members: who has access, with role changes, removal
  * and leaving. Staff with platform access get a read-only list. A role still
  * loading shows a spinner; a 404 shows `MissingWorkspace`; a failed role read
- * with nothing loaded shows `ROLE_ERROR`. The invitation sections sit below the list card.
+ * with nothing loaded shows `ROLE_ERROR`. The invitation sections sit below
+ * the list card. After a leave the screen drops the workspace's cache when it
+ * unmounts, once the list has replaced it, so none of its queries refetches
+ * the workspace the person left.
  * @returns The screen.
  */
 export default function WorkspaceMembers() {
   const { slug } = useLocalSearchParams<{ slug: string }>()
   const tenant = useTenant(slug)
   const { role, access, isPending, isError, retry } = useMyRole(slug)
+  const queryClient = useQueryClient()
+  const [left, setLeft] = useState(false)
+  // Drops the left workspace's cache once this screen is gone, so no mounted query refetches it.
+  useEffect(
+    () => () => {
+      if (left) dropTenantCache(queryClient, slug)
+    },
+    [left, queryClient, slug]
+  )
   if (tenant.data === null) return <MissingWorkspace slug={slug} topInset={false} />
   let body
   if (tenant.data === undefined && isError) {
@@ -162,6 +180,9 @@ export default function WorkspaceMembers() {
             tenantName={tenant.data.name}
             myRole={role}
             readOnly={readOnly}
+            onLeft={() => {
+              setLeft(true)
+            }}
           />
         </View>
         {manager && !readOnly ? <InviteForm slug={slug} myRole={role} /> : null}

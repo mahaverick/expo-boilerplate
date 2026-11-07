@@ -1,4 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { useRef, useState } from 'react'
 import { Alert, Text, View } from 'react-native'
@@ -21,7 +20,6 @@ import { fullName } from '@/lib/format'
 import { toast } from '@/lib/toast'
 import { writeFailureMessage } from '@/lib/write-failure'
 import {
-  dropTenantCache,
   isMemberNotFound,
   memberName,
   useLeaveTenant,
@@ -111,6 +109,11 @@ interface MemberRowProps {
   ownersKnown: boolean
   /** True for staff through platform access: no controls. */
   readOnly: boolean
+  /**
+   * Called once the person has left, just before the screen navigates to the
+   * list. The screen drops the workspace's cache when it unmounts.
+   */
+  onLeft: () => void
 }
 
 /**
@@ -118,7 +121,7 @@ interface MemberRowProps {
  * change is a `ChoiceSheet` of the roles the viewer may grant; Remove and
  * Leave confirm through `Alert`. Every write runs through step-up, and a ref
  * per action stops a second press while one runs. Leaving forgets the
- * workspace, drops its cache and lands on the workspace list.
+ * workspace and lands on the workspace list; the screen drops the cache.
  * @param props - The member and the viewer.
  * @returns The row.
  */
@@ -131,13 +134,13 @@ export function MemberRow({
   otherOwners,
   ownersKnown,
   readOnly,
+  onLeft,
 }: MemberRowProps) {
   const updateRole = useUpdateMemberRole(slug)
   const removeMember = useRemoveMember(slug)
   const leaveTenant = useLeaveTenant(slug)
   const stepUp = useStepUp()
   const waiting = useStepUpWaiting()
-  const queryClient = useQueryClient()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [busy, setBusy] = useState<'role' | 'remove' | null>(null)
   const roleInFlight = useRef(false)
@@ -208,12 +211,15 @@ export function MemberRow({
   /**
    * Leaves through step-up. A 404 means the membership was already gone. On
    * success or a 404 it forgets the workspace when it was the remembered one,
-   * drops its cache and lands on the list; any other failure stays here.
+   * tells the screen through `onLeft`, and lands on the list; any other
+   * failure stays here. After a leave the row sets no state and keeps its
+   * guard, because the screen is on its way out.
    */
   const leave = () => {
     if (removeInFlight.current) return
     removeInFlight.current = true
     setBusy('remove')
+    let left = false
     void stepUp
       .run(() => leaveTenant.mutateAsync())
       .then(
@@ -232,12 +238,14 @@ export function MemberRow({
       )
       .then((gone) => {
         if (!gone) return
+        left = true
         const tenants = useCurrentTenantStore.getState()
         if (myUserId !== undefined && tenants.recall(myUserId) === slug) tenants.forget(myUserId)
-        dropTenantCache(queryClient, slug)
+        onLeft()
         router.replace('/tenants')
       })
       .finally(() => {
+        if (left) return
         removeInFlight.current = false
         setBusy(null)
       })
