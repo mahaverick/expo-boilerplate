@@ -215,6 +215,15 @@ describe('InviteForm', () => {
     expect(posts(sent)).toHaveLength(1)
   })
 
+  it('a cancelled step-up shows inline and queues no toast', async () => {
+    serveInvite(REAUTH_ANSWER)
+    await renderForm()
+    await invite('ada@example.com')
+    await fireEvent.press(await screen.findByRole('button', { name: 'Cancel' }))
+    expect(await screen.findByText('Confirm it’s you to continue.')).toBeTruthy()
+    expect(useToastQueueStore.getState().toasts).toHaveLength(0)
+  })
+
   it('sends one invite for two quick presses', async () => {
     const sent = serveInvite()
     await renderForm()

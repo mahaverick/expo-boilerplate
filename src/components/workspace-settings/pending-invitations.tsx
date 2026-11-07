@@ -1,14 +1,13 @@
 import { useRef, useState } from 'react'
-import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native'
+import { ActivityIndicator, Alert, Text, View } from 'react-native'
 import { LoadError } from '@/components/shared/load-error'
 import { Button } from '@/components/ui/button'
-import { TOUCH_TARGET } from '@/components/ui/touch-target'
+import { RowButton } from '@/components/workspace-settings/row-button'
 import { canActorGrantRole, ROLE_LABELS, type MembershipRole } from '@/constants/roles'
 import { useListPages } from '@/hooks/use-list-pages'
 import { useSecondsLeft } from '@/hooks/use-seconds-left'
 import { STEP_UP_WAITING_LABEL, useStepUp, useStepUpWaiting } from '@/hooks/use-step-up'
 import { codeFrom, retryAfterSecondsFrom } from '@/lib/api-error'
-import { cn } from '@/lib/cn'
 import { formatTimeLeft } from '@/lib/countdown'
 import { formatDateTime } from '@/lib/format'
 import { isMembersLimitRefusal, NOT_SENT_AT_LIMIT } from '@/lib/members-limit'
@@ -64,53 +63,6 @@ function resendDeadline(
   const server = resendAvailableAt === null ? Number.NaN : Date.parse(resendAvailableAt)
   const times = [server, localUntil ?? Number.NaN].filter(Number.isFinite)
   return times.length === 0 ? null : Math.max(...times)
-}
-
-/** Props of `RowButton`. */
-interface RowButtonProps {
-  label: string
-  text: string
-  onPress: () => void
-  disabled?: boolean
-  destructive?: boolean
-}
-
-/**
- * A compact outlined button for an invitation's row. The accessible label
- * names the invitee, since a list holds one of these per row.
- * @param props - The label, text and handler.
- * @param props.label - The accessibility label, with the address.
- * @param props.text - The visible text.
- * @param props.onPress - Called on a press.
- * @param props.disabled - Ignores presses when true.
- * @param props.destructive - Draws the text in the destructive colour.
- * @returns The button.
- */
-function RowButton({
-  label,
-  text,
-  onPress,
-  disabled = false,
-  destructive = false,
-}: RowButtonProps) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={disabled ? undefined : onPress}
-      className={cn(
-        TOUCH_TARGET,
-        'items-center justify-center rounded-md border border-input px-3',
-        disabled && 'opacity-60'
-      )}
-    >
-      <Text className={cn('text-base', destructive ? 'text-destructive' : 'text-foreground')}>
-        {text}
-      </Text>
-    </Pressable>
-  )
 }
 
 /** Props of `InvitationRow`. */

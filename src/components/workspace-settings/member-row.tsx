@@ -1,9 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { useRef, useState } from 'react'
-import { Alert, Pressable, Text, View } from 'react-native'
+import { Alert, Text, View } from 'react-native'
 import { ChoiceSheet } from '@/components/ui/choice-sheet'
-import { TOUCH_TARGET } from '@/components/ui/touch-target'
+import { RowButton } from '@/components/workspace-settings/row-button'
 import {
   canActorGrantRole,
   canActorModifyTarget,
@@ -17,7 +17,6 @@ import {
 import { PLATFORM_TENANT_SLUG } from '@/constants/routes'
 import { STEP_UP_WAITING_LABEL, useStepUp, useStepUpWaiting } from '@/hooks/use-step-up'
 import { statusFrom } from '@/lib/api-error'
-import { cn } from '@/lib/cn'
 import { fullName } from '@/lib/format'
 import { toast } from '@/lib/toast'
 import { writeFailureMessage } from '@/lib/write-failure'
@@ -96,53 +95,6 @@ function removeMessage(name: string, isPlatform: boolean): string {
     ? PLATFORM_INVITATIONS_REVOKED_ON_REMOVE
     : INVITATIONS_REVOKED_ON_REMOVE
   return `${name} ${loses} ${revoked}`
-}
-
-/** Props of `RowButton`. */
-interface RowButtonProps {
-  label: string
-  text?: string
-  onPress: () => void
-  disabled?: boolean
-  destructive?: boolean
-}
-
-/**
- * A compact outlined button for a member's row. The accessible label names
- * the member, since a list holds one of these per row.
- * @param props - The label, text and handler.
- * @param props.label - The accessibility label, with the member's name.
- * @param props.text - The visible text; the label by default.
- * @param props.onPress - Called on a press.
- * @param props.disabled - Ignores presses when true.
- * @param props.destructive - Draws the text in the destructive colour.
- * @returns The button.
- */
-function RowButton({
-  label,
-  text,
-  onPress,
-  disabled = false,
-  destructive = false,
-}: RowButtonProps) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={disabled ? undefined : onPress}
-      className={cn(
-        TOUCH_TARGET,
-        'items-center justify-center rounded-md border border-input px-3',
-        disabled && 'opacity-60'
-      )}
-    >
-      <Text className={cn('text-base', destructive ? 'text-destructive' : 'text-foreground')}>
-        {text ?? label}
-      </Text>
-    </Pressable>
-  )
 }
 
 /** Props of `MemberRow`. */

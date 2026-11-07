@@ -101,7 +101,7 @@ export function InviteForm({ slug, myRole }: InviteFormProps) {
         if (code === ALREADY_MEMBER) setEmailError(messageFrom(error))
         else if (code === INVITATION_CONFLICT) setFormError(RACED)
         else if (isMembersLimitRefusal(error)) setFormError(NOT_SENT_AT_LIMIT)
-        else if (isReauthRequired(error)) toast.error(stepUpRefusal(error))
+        else if (isReauthRequired(error)) setFormError(stepUpRefusal(error))
         else setFormError(messageFrom(error))
       } finally {
         inFlight.current = false
