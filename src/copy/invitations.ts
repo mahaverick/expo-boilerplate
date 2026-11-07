@@ -5,7 +5,7 @@ import { retryableFailureMessage } from '@/lib/retry'
  * What an invitee reads when a full workspace refuses the join. Express's own
  * message asks for an upgrade, which the app never shows (spec section 6).
  */
-export const JOIN_AT_LIMIT =
+const JOIN_AT_LIMIT =
   'This workspace is at its members limit, so you can’t join it yet. Ask an owner of the workspace.'
 
 /**
