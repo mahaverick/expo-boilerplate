@@ -63,7 +63,7 @@ function OpenRequest({ request }: { request: DeletionRequest }) {
   const asked = formatDate(request.requestedAt, 'long') ?? request.requestedAt
   const due = formatDateTime(request.dueAt) ?? request.dueAt
   return (
-    <Text className="text-base text-foreground">
+    <Text accessibilityLiveRegion="polite" className="text-base text-foreground">
       {`You asked us to delete your account on ${asked}. We’ll delete it by ${due}. To withdraw the request, ${writeToSupport(supportEmail)} before then.`}
     </Text>
   )

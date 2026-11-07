@@ -191,6 +191,39 @@ describe('Delete account screen', () => {
     expect(screen.queryByLabelText('Why are you leaving?')).toBeNull()
   })
 
+  it.each([
+    [
+      'Cancel',
+      (call: Parameters<typeof Alert.alert>) => {
+        call[2]?.find((b) => b.text === 'Cancel')?.onPress?.()
+      },
+    ],
+    [
+      'a dismiss',
+      (call: Parameters<typeof Alert.alert>) => {
+        call[3]?.onDismiss?.()
+      },
+    ],
+  ])('%s in the Alert lets Request deletion open it again', async (_name, close) => {
+    const sent = serveAll(null)
+    await renderCaller(<DeleteAccount />, SETTINGS)
+    await fireEvent.press(await screen.findByRole('button', { name: 'Request deletion' }))
+    expect(alert).toHaveBeenCalledTimes(1)
+    await act(() => {
+      close(alert.mock.calls[0] as Parameters<typeof Alert.alert>)
+    })
+    await fireEvent.press(screen.getByRole('button', { name: 'Request deletion' }))
+    expect(alert).toHaveBeenCalledTimes(2)
+    expect(posts(sent)).toHaveLength(0)
+  })
+
+  it('announces the open request politely', async () => {
+    serveAll(REQUEST)
+    await renderCaller(<DeleteAccount />, SETTINGS)
+    const line = await screen.findByText(/^You asked us to delete your account on /)
+    expect(line.props.accessibilityLiveRegion).toBe('polite')
+  })
+
   it('a step-up Cancel shows the refusal inline and keeps the reason', async () => {
     serveAll(null, REAUTH_ANSWER)
     await renderCaller(<DeleteAccount />, SETTINGS)
