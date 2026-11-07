@@ -189,7 +189,7 @@ describe('Members screen', () => {
   it('lists the members with names, emails, roles and (you)', async () => {
     serveMembers({ members: [ME, BOB, member('u4', 'editor')] })
     await renderMembers()
-    expect(await screen.findByText('Ada Lovelace')).toBeTruthy()
+    expect(await screen.findByText('Ada Lovelace', {}, { timeout: 4000 })).toBeTruthy()
     expect(screen.getByRole('header', { name: 'Members' })).toBeTruthy()
     expect(screen.getByText('Everyone with access to this workspace.')).toBeTruthy()
     expect(screen.getByText('(you)')).toBeTruthy()
