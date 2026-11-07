@@ -18,6 +18,7 @@ import NotFound from '@/app/+not-found'
 import Confirm from '@/app/auth/confirm'
 import Link from '@/app/auth/link'
 import AcceptInvitation from '@/app/invitations/accept'
+import ConfirmInvitation from '@/app/invitations/confirm'
 import Login from '@/app/login'
 import PasskeyRequired from '@/app/passkey-required'
 import { SigningInScreen } from '@/components/auth/signing-in-screen'
@@ -81,6 +82,7 @@ const SCREENS: Array<[string, () => React.JSX.Element]> = [
   ['Link (dead link)', () => <Link />],
   ['Confirm (incomplete link)', () => <Confirm />],
   ['Invitation (incomplete link)', () => <AcceptInvitation />],
+  ['Invitation confirm (incomplete link)', () => <ConfirmInvitation />],
   [
     'Invitation (check your inbox)',
     () => (

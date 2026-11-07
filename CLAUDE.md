@@ -277,8 +277,8 @@ candidate, and each has a reason. The files are listed in
   alternative is a session that dies 10 seconds later. After a sign-in, the
   sign-in fails and the new token is revoked.
 - **The Android intent filter claims only the paths with a screen.** Those are
-  `/auth/link`, `/tenants/`, `/auth/confirm`, `/settings/account/security`
-  and `/invitations/accept`
+  `/auth/link`, `/tenants/`, `/auth/confirm`, `/settings/account/security`,
+  `/invitations/accept` and `/invitations/confirm`
   (`ANDROID_APP_LINK_PATH_PREFIXES` in `app.config.ts`): the sign-in link, a
   workspace's overview and the "Confirm it’s you" link. A verified link to
   a path with no screen loops back into the app and lands on Page not found.

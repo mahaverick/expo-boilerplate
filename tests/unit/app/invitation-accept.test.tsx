@@ -70,6 +70,17 @@ function userOf(email: string): User {
 /** What `GET /tenants` lists. */
 let memberships: unknown[] = []
 
+/** When true, `GET /tenants` fails. */
+let listFails = false
+
+/** An eligible membership in Acme. */
+const ACME_MEMBERSHIP = {
+  tenant: { slug: 'acme', name: 'Acme', lifecycleState: 'active' },
+  role: 'editor',
+  joinedAt: '2026-01-05',
+  isPlatform: false,
+}
+
 /**
  * Serves the invitation routes and records them, leaving out the settings read.
  * @param routes - Answers by `"POST /path"`; the preview and verify default to a live invitation.
@@ -79,6 +90,9 @@ function serveInvitation(routes: Record<string, FakeHandler | FakeAnswer> = {}) 
   const seen: InternalAxiosRequestConfig[] = []
   serve(async (config) => {
     if (config.url === '/status/client-settings') return NOT_FOUND
+    if (config.url === '/tenants' && listFails) {
+      return { status: 500, data: { success: false, message: 'Boom', code: 'INTERNAL' } }
+    }
     if (config.url === '/tenants')
       return envelope({ items: memberships, page: { hasNext: false, nextCursor: null } })
     seen.push(config)
@@ -129,6 +143,8 @@ function signInAs(email: string): void {
 beforeEach(() => {
   resetSecureStore()
   memberships = []
+  listFails = false
+  useCurrentTenantStore.setState({ remembered: {} })
   mockStorage.clear()
   useToastQueueStore.getState().remove()
   setStatus('signed-out')
@@ -182,6 +198,7 @@ describe('AcceptInvitation', () => {
 
   it('signed in as the invitee, it accepts, toasts and lands on the Workspace tab', async () => {
     signInAs('Ada@Example.com')
+    memberships = [ACME_MEMBERSHIP]
     const seen = serveInvitation({
       'POST /invitations/accept': envelope({
         tenant: { name: 'Acme', slug: 'acme' },
@@ -199,6 +216,42 @@ describe('AcceptInvitation', () => {
     expect(useToastQueueStore.getState().toasts[0]?.title).toBe(
       'You joined Acme as Ada@Example.com.'
     )
+  })
+
+  it('remembers nothing when the workspace list cannot be read', async () => {
+    signInAs('ada@example.com')
+    listFails = true
+    serveInvitation({
+      'POST /invitations/accept': envelope({
+        tenant: { name: 'Acme', slug: 'acme' },
+        role: 'editor',
+        alreadyMember: false,
+      }),
+    })
+    await renderScreen(<AcceptInvitation />)
+    await waitFor(() => {
+      expect(router.replace).toHaveBeenCalledWith('/workspace', { withAnchor: true })
+    })
+    expect(useCurrentTenantStore.getState().recall('id-ada@example.com')).toBeNull()
+    expect(useToastQueueStore.getState().toasts[0]?.title).toBe(
+      'You joined Acme as ada@example.com.'
+    )
+  })
+
+  it('remembers nothing for a workspace the list does not show', async () => {
+    signInAs('ada@example.com')
+    serveInvitation({
+      'POST /invitations/accept': envelope({
+        tenant: { name: 'Acme', slug: 'acme' },
+        role: 'editor',
+        alreadyMember: false,
+      }),
+    })
+    await renderScreen(<AcceptInvitation />)
+    await waitFor(() => {
+      expect(router.replace).toHaveBeenCalledWith('/workspace', { withAnchor: true })
+    })
+    expect(useCurrentTenantStore.getState().recall('id-ada@example.com')).toBeNull()
   })
 
   it('does not remember the platform workspace', async () => {

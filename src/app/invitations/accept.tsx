@@ -7,12 +7,12 @@ import { Button } from '@/components/ui/button'
 import { InlineError } from '@/components/ui/inline-error'
 import { Screen } from '@/components/ui/screen'
 import { ROLE_LABELS } from '@/constants/roles'
-import { PLATFORM_TENANT_SLUG } from '@/constants/routes'
 import { useSignOut } from '@/hooks/use-sign-out'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import { retryAfterSecondsFrom, statusFrom } from '@/lib/api-error'
 import { fullName } from '@/lib/format'
 import { invitationTokenSchema } from '@/lib/invitation-token'
+import { landJoined } from '@/lib/land-joined'
 import { retryableFailureMessage } from '@/lib/retry'
 import { toast } from '@/lib/toast'
 import {
@@ -21,13 +21,7 @@ import {
   useInvitationPreview,
   useVerifyInvitation,
 } from '@/queries/invitation.queries'
-import {
-  invalidateTenantList,
-  isEligibleTenant,
-  tenantsQueryOptions,
-} from '@/queries/tenant.queries'
 import { useAuthStore } from '@/states/auth.store'
-import { useCurrentTenantStore } from '@/states/current-tenant.store'
 import type { InvitationConfirmationSent, InvitationPreview, User } from '@/types/api.types'
 
 /** How long Resend stays closed after a link is mailed, in seconds. */
@@ -193,34 +187,6 @@ export default function AcceptInvitation() {
   const startedAs = started?.user ?? null
   const nextCall = started ? joinCallFor(invitation, gone, startedAs) : null
 
-  /**
-   * Toasts the join and opens the Workspace tab in place of this screen. It
-   * remembers the workspace only when it is eligible: never the platform
-   * workspace, never a suspended one. The answer names neither, so the list
-   * is read once; a failed read falls back to the web address alone.
-   */
-  const land = async (
-    tenant: { name: string; slug: string },
-    account: User,
-    alreadyMember: boolean
-  ) => {
-    setFailure(null)
-    // Offline the read fails at once and never waits.
-    const listed = await queryClient
-      .fetchQuery({ ...tenantsQueryOptions(), staleTime: 0, networkMode: 'always' })
-      .catch(() => undefined)
-    const entry = listed?.find((item) => item.tenant.slug === tenant.slug)
-    const eligible = entry ? isEligibleTenant(entry) : tenant.slug !== PLATFORM_TENANT_SLUG
-    if (eligible) useCurrentTenantStore.getState().remember(account.id, tenant.slug)
-    void invalidateTenantList(queryClient)
-    toast.success(
-      alreadyMember
-        ? `You’ve already joined ${tenant.name} as ${account.email}.`
-        : `You joined ${tenant.name} as ${account.email}.`
-    )
-    router.replace('/workspace', { withAnchor: true })
-  }
-
   /** Keeps a failure in screen state: a 404 (and, for accept, a 403) is the dead invitation, anything else may pass. */
   const failWith = (call: JoinCall, error: unknown) => {
     busy.current = false
@@ -249,7 +215,8 @@ export default function AcceptInvitation() {
       accept.mutate(token ?? '', {
         onSuccess: ({ tenant, alreadyMember }) => {
           busy.current = false
-          void land(tenant, account, alreadyMember)
+          setFailure(null)
+          void landJoined(queryClient, tenant, account, alreadyMember)
         },
         onError: (error) => failWith(call, error),
       })
