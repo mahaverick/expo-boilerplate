@@ -441,6 +441,28 @@ describe('Members screen', () => {
     expect(screen.getByRole('button', { name: 'Change role for Bob Stone' })).toBeEnabled()
   })
 
+  it('keeps owner controls and hides the owners error when a refetch fails over a good count', async () => {
+    const serving: Serving = { owners: [ME, member('u9', 'owner')] }
+    serveMembers(serving)
+    const client = await renderMembers()
+    expect(await screen.findByRole('button', { name: 'Leave' })).toBeEnabled()
+    serving.owners_answer = { status: 500, data: { success: false, message: 'Broke' } }
+    await act(async () => {
+      await client.refetchQueries({ queryKey: [...tenantKeys.members('acme'), 'owners'] })
+    })
+    await waitFor(
+      () => {
+        expect(client.getQueryState([...tenantKeys.members('acme'), 'owners'])?.status).toBe(
+          'error'
+        )
+      },
+      { timeout: 4000 }
+    )
+    expect(screen.queryByText('Owners didn’t load, so owner changes are locked.')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Leave' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Change role for Ada Lovelace' })).toBeEnabled()
+  })
+
   it('staff with platform access see no member controls', async () => {
     serveMembers({ tenant: acme({ role: 'owner', access: 'platform' }) })
     await renderMembers()

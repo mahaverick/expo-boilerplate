@@ -53,7 +53,8 @@ interface MembersListProps {
  * failed, the empty state only for a list that answered with no rows, and
  * "Load more" while another page follows. A failed owners read, which the
  * last-owner rule needs, shows its own `LoadError` and keeps the owner's
- * controls locked.
+ * controls locked until a count has loaded; a failed refetch over a loaded
+ * count keeps that count.
  * @param props - The workspace and the viewer.
  * @param props.slug - The workspace's web address.
  * @param props.tenantName - The workspace's name, for the leave toasts.
@@ -104,7 +105,7 @@ function MembersList({ slug, tenantName, myRole, readOnly, onLeft }: MembersList
             myRole={myRole}
             myUserId={myUserId}
             otherOwners={otherOwners}
-            ownersKnown={owners.isSuccess}
+            ownersKnown={owners.data !== undefined}
             readOnly={readOnly}
             onLeft={onLeft}
           />
@@ -123,7 +124,7 @@ function MembersList({ slug, tenantName, myRole, readOnly, onLeft }: MembersList
   }
   return (
     <View className="gap-3">
-      {owners.isError ? (
+      {owners.isError && owners.data === undefined ? (
         <LoadError
           message="Owners didn’t load, so owner changes are locked."
           onRetry={() => {
