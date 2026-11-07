@@ -47,7 +47,6 @@ jest.mock('expo-router', () => {
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }))
-jest.mock('@/observability/telemetry/use-screen-views', () => ({ useScreenViews: jest.fn() }))
 jest.mock('@/observability/telemetry/use-tenant-group', () => ({ useTenantGroup: jest.fn() }))
 jest.mock('@/http/session-lifecycle', () => ({ useSessionStatus: jest.fn(() => 'signed-in') }))
 jest.mock('@/components/notifications/notification-stream', () => {

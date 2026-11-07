@@ -6,6 +6,7 @@ import { useEffect } from 'react'
 import { PLATFORM_TENANT_SLUG } from '@/constants/routes'
 import { useCurrentTenant } from '@/hooks/use-current-tenant'
 import { tenantQueryOptions } from '@/queries/tenant.queries'
+import { useAuthStore } from '@/states/auth.store'
 import { setTenantGroup } from './telemetry'
 
 /**
@@ -15,8 +16,10 @@ import { setTenantGroup } from './telemetry'
  * workspace.
  */
 export function useTenantGroup(): void {
-  const current = useCurrentTenant()
-  const slug = current.status === 'ready' ? current.slug : null
+  // The workspace list needs a token: nothing is read while restoring or signed out.
+  const isSignedIn = useAuthStore((state) => state.isAuthenticated)
+  const current = useCurrentTenant(undefined, isSignedIn)
+  const slug = isSignedIn && current.status === 'ready' ? current.slug : null
   const tenant = useQuery({ ...tenantQueryOptions(slug ?? ''), enabled: slug !== null })
   const detail = slug === null ? null : (tenant.data ?? null)
   const isPlatformMember =

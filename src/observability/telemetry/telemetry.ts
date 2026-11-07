@@ -323,6 +323,21 @@ export function identifyUser(id: string): void {
   })
 }
 
+/**
+ * Forgets a person the SDK stored from an earlier launch, when nobody is
+ * signed in. It resets only while the SDK still holds an identified person,
+ * so an anonymous install keeps its id. The opt-out survives.
+ */
+export function forgetStaleIdentity(): void {
+  run((ph) => {
+    if (ph.getPersistedProperty(PostHogPersistedProperty.PersonMode) !== 'identified') return
+    signedInUserId = null
+    appliedTenant = null
+    lastTenantId = null
+    resetKeepingOptOut(ph)
+  })
+}
+
 /** Forgets the person and the workspace group: sign-out, forced or chosen. The opt-out survives. */
 export function resetAnalytics(): void {
   run((ph) => {

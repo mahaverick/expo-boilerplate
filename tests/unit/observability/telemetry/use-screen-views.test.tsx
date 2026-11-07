@@ -31,6 +31,7 @@ describe('useScreenViews', () => {
       useScreenViews()
     })
     expect(mockScreens).toEqual([['/invitations/accept']])
+    expect(JSON.stringify(mockScreens)).not.toContain('"t"')
     await first.unmount()
     mockScreens.length = 0
     mockRoute.segments = ['(app)', 'settings', 'workspace', '[slug]', 'members']

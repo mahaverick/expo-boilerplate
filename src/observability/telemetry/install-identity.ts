@@ -3,7 +3,7 @@
  */
 import { useAuthStore } from '@/states/auth.store'
 import type { User } from '@/types/api.types'
-import { identifyUser, resetAnalytics, setAnalyticsOptOut } from './telemetry'
+import { forgetStaleIdentity, identifyUser, resetAnalytics, setAnalyticsOptOut } from './telemetry'
 
 /**
  * Brings analytics in step with a change of the signed-in user. A different
@@ -16,9 +16,19 @@ import { identifyUser, resetAnalytics, setAnalyticsOptOut } from './telemetry'
 function apply(user: User | null, previous: User | null): void {
   if (previous && previous.id !== user?.id) resetAnalytics()
   if (!user) return
-  const isOptedOut = user.analyticsOptOut === true
+  // Fails closed: a profile without the field is treated as opted out.
+  const isOptedOut = user.analyticsOptOut !== false
   setAnalyticsOptOut(isOptedOut)
   if (!isOptedOut) identifyUser(user.id)
+}
+
+/**
+ * Forgets the person the SDK stored from an earlier launch. Call it once the
+ * session restore settles: with no user left, the SDK's stored person is
+ * stale. A restored user is left alone.
+ */
+export function forgetStaleIdentityWithoutUser(): void {
+  if (useAuthStore.getState().user === null) forgetStaleIdentity()
 }
 
 /**

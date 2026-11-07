@@ -1,11 +1,11 @@
 import { jest } from '@jest/globals'
 import { QueryClient } from '@tanstack/react-query'
-import { renderHook, waitFor } from '@testing-library/react-native'
+import { act, renderHook, waitFor } from '@testing-library/react-native'
 import type { ReactNode } from 'react'
 import { useTenantGroup } from '@/observability/telemetry/use-tenant-group'
 import { useAuthStore } from '@/states/auth.store'
 import { useCurrentTenantStore } from '@/states/current-tenant.store'
-import { restoreApi, screenTree } from '@/tests/support/api'
+import { restoreApi, screenTree, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 import {
   acme,
@@ -59,6 +59,19 @@ afterEach(() => {
 })
 
 describe('useTenantGroup', () => {
+  it('sends no request while restoring or signed out', async () => {
+    useAuthStore.getState().logout()
+    const sent = serve(() => ({ status: 401, data: { success: false } }))
+    await renderGroup()
+    // The query would have started on mount; let its request reach the adapter.
+    await act(async () => {
+      for (let tick = 0; tick < 20; tick += 1) await Promise.resolve()
+    })
+    expect(client.isFetching()).toBe(0)
+    expect(sent).toHaveLength(0)
+    expect(mockGroups.every((group) => group === null)).toBe(true)
+  })
+
   it('groups the current workspace by id, with the access the API reports', async () => {
     serveWorkspace()
     await renderGroup()

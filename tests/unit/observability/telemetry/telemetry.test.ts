@@ -3,6 +3,7 @@ import type { BeforeSendFn, CaptureEvent } from '@posthog/core'
 import { apiUrl } from '@/http/client'
 import {
   captureScreen,
+  forgetStaleIdentity,
   identifyUser,
   initAnalytics,
   registerFeatureProperties,
@@ -354,6 +355,24 @@ describe('analytics with a key', () => {
     expect(client().distinctId).toBe('user-1')
     identifyUser('user-1')
     expect(client().reset).toHaveBeenCalledTimes(1)
+  })
+
+  it('forgets a stored identified person, keeping the opt-out', () => {
+    initAnalytics()
+    client().identify('stale-user')
+    setAnalyticsOptOut(true)
+    forgetStaleIdentity()
+    expect(client().reset).toHaveBeenCalledTimes(1)
+    expect(client().distinctId).not.toBe('stale-user')
+    expect(client().optedOut).toBe(true)
+  })
+
+  it('does not reset an anonymous person', () => {
+    initAnalytics()
+    const before = client().distinctId
+    forgetStaleIdentity()
+    expect(client().reset).not.toHaveBeenCalled()
+    expect(client().distinctId).toBe(before)
   })
 
   it('groups events by tenant and reports a switch', () => {

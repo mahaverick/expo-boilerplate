@@ -13,7 +13,11 @@ import {
 import type { SessionStatus } from '@/http/session-lifecycle'
 import { queryClient } from '@/lib/query-client'
 import * as queryManagers from '@/lib/query-managers'
-import { initAnalytics } from '@/observability/telemetry/telemetry'
+import {
+  captureScreen,
+  forgetStaleIdentity,
+  initAnalytics,
+} from '@/observability/telemetry/telemetry'
 import { useThemeStore } from '@/states/theme.store'
 import { METRICS } from '@/tests/support/a11y'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
@@ -43,6 +47,8 @@ jest.mock('@/observability/telemetry/telemetry', () => ({
     '@/observability/telemetry/telemetry'
   ),
   initAnalytics: jest.fn(),
+  captureScreen: jest.fn(),
+  forgetStaleIdentity: jest.fn(),
 }))
 jest.mock('expo-router', () => {
   const { useQueryClient } =
@@ -51,6 +57,8 @@ jest.mock('expo-router', () => {
   const { StepUpContext } =
     jest.requireActual<typeof import('@/hooks/use-step-up')>('@/hooks/use-step-up')
   return {
+    useSegments: () => mockRoute.segments,
+    usePathname: () => mockRoute.pathname,
     /** Records the query client and the step-up runner the screens would read. */
     Stack: function Stack() {
       mockSeenClients.push(useQueryClient())
@@ -59,6 +67,9 @@ jest.mock('expo-router', () => {
     },
   }
 })
+
+/** What the mocked router reports. */
+const mockRoute = { segments: [] as string[], pathname: '/' }
 
 /** The layout inside the provider expo-router supplies in the app. */
 function Root() {
@@ -264,5 +275,20 @@ describe('RootLayout', () => {
     expect(initCallsAtImport).toBe(1)
     await render(<Root />)
     expect(initAnalytics).not.toHaveBeenCalled()
+  })
+})
+
+describe('RootLayout analytics', () => {
+  it('sends the route pattern of a root route, never the path', async () => {
+    mockRoute.segments = ['invitations', 'accept']
+    mockRoute.pathname = '/invitations/accept'
+    await render(<Root />)
+    expect(jest.mocked(captureScreen).mock.calls).toEqual([['/invitations/accept']])
+    expect(JSON.stringify(jest.mocked(captureScreen).mock.calls)).not.toMatch(/acme|"t"/)
+  })
+
+  it('forgets a stale identity once the restore settles with no user', async () => {
+    await render(<Root />)
+    await waitFor(() => expect(forgetStaleIdentity).toHaveBeenCalledTimes(1))
   })
 })

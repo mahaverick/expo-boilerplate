@@ -17,8 +17,12 @@ import {
 } from '@/http/session-lifecycle'
 import { queryClient } from '@/lib/query-client'
 import { installQueryManagers } from '@/lib/query-managers'
-import { installAnalyticsIdentity } from '@/observability/telemetry/install-identity'
+import {
+  forgetStaleIdentityWithoutUser,
+  installAnalyticsIdentity,
+} from '@/observability/telemetry/install-identity'
 import { initAnalytics } from '@/observability/telemetry/telemetry'
+import { useScreenViews } from '@/observability/telemetry/use-screen-views'
 import { resolvedScheme, useThemeStore } from '@/states/theme.store'
 
 /**
@@ -64,6 +68,7 @@ export default function RootLayout() {
   const { colorScheme: applied } = useColorScheme()
   const status = useSessionStatus()
   const splash = useRef<SplashState>({ isHidden: false, fallback: undefined })
+  useScreenViews()
 
   useEffect(() => {
     colorScheme.set(preference)
@@ -84,7 +89,7 @@ export default function RootLayout() {
   useEffect(() => installAnalyticsIdentity(), [])
 
   useEffect(() => {
-    void restoreSession()
+    void restoreSession().then(forgetStaleIdentityWithoutUser)
     return installForegroundRefresh()
   }, [])
 
