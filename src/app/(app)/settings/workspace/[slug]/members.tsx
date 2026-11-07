@@ -8,6 +8,7 @@ import { Screen } from '@/components/ui/screen'
 import { InviteForm } from '@/components/workspace-settings/invite-form'
 import { MemberRow } from '@/components/workspace-settings/member-row'
 import { PendingInvitations } from '@/components/workspace-settings/pending-invitations'
+import { MissingWorkspace } from '@/components/workspaces/missing-workspace'
 import { PlatformAccessBanner } from '@/components/workspaces/platform-access-banner'
 import { canManageTenant, type MembershipRole } from '@/constants/roles'
 import { PLATFORM_TENANT_SLUG } from '@/constants/routes'
@@ -128,16 +129,17 @@ function MembersList({ slug, tenantName, myRole, readOnly }: MembersListProps) {
 /**
  * Settings, Workspace, Members: who has access, with role changes, removal
  * and leaving. Staff with platform access get a read-only list. A role still
- * loading shows a spinner; a failed role read with nothing loaded shows
- * `ROLE_ERROR`. The invitation sections sit below the list card.
+ * loading shows a spinner; a 404 shows `MissingWorkspace`; a failed role read
+ * with nothing loaded shows `ROLE_ERROR`. The invitation sections sit below the list card.
  * @returns The screen.
  */
 export default function WorkspaceMembers() {
   const { slug } = useLocalSearchParams<{ slug: string }>()
   const tenant = useTenant(slug)
   const { role, access, isPending, isError, retry } = useMyRole(slug)
+  if (tenant.data === null) return <MissingWorkspace slug={slug} topInset={false} />
   let body
-  if (tenant.data == null && (isError || !isPending)) {
+  if (tenant.data === undefined && isError) {
     body = <LoadError message={ROLE_ERROR} onRetry={retry} />
   } else if (isPending || role === undefined || tenant.data == null) {
     body = <ActivityIndicator accessibilityLabel="Loading workspace" />

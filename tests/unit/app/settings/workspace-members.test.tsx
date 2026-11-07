@@ -12,7 +12,7 @@ import { useToastQueueStore } from '@/states/toast-queue.store'
 import { bodyOf, renderScreen, restoreApi, serve, type FakeAnswer } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 import { REAUTH_ANSWER, tokenWith } from '@/tests/support/step-up'
-import { acme, envelope } from '@/tests/support/workspace-api'
+import { acme, envelope, membership } from '@/tests/support/workspace-api'
 
 const mockReplace = jest.fn()
 jest.mock('expo-router', () => ({
@@ -246,6 +246,27 @@ describe('Members screen', () => {
         'We couldn’t load your role in this workspace, so its controls are hidden. Select Try again to show them.'
       )
     ).toBeTruthy()
+  })
+
+  it('shows the not-available panel, not the role error, when the workspace answers 404', async () => {
+    const sent = serve((config) => {
+      if (config.url === '/tenants') {
+        return envelope({
+          items: [membership('acme', 'Acme')],
+          page: { hasNext: false, nextCursor: null },
+        })
+      }
+      return { status: 404, data: { success: false, message: 'Not found' } }
+    })
+    await renderMembers()
+    expect(await screen.findByRole('header', { name: 'Workspace not available' })).toBeTruthy()
+    expect(
+      screen.getByText('We couldn’t open /acme. It doesn’t exist, or you aren’t a member.')
+    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Back to your workspaces' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+    expect(screen.getAllByRole('header')).toHaveLength(1)
+    expect(sent.some((config) => config.url === '/tenants/acme/members')).toBe(false)
   })
 
   it('offers an owner only the roles an owner may grant, and sends the choice through step-up', async () => {

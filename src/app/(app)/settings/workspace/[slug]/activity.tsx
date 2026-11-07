@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Screen } from '@/components/ui/screen'
 import { TextField } from '@/components/ui/text-field'
 import { TOUCH_TARGET } from '@/components/ui/touch-target'
+import { MissingWorkspace } from '@/components/workspaces/missing-workspace'
 import { PlatformAccessBanner } from '@/components/workspaces/platform-access-banner'
 import { APP_NAME } from '@/constants/app'
 import { actorName, auditSentence } from '@/constants/audit-actions'
@@ -181,15 +182,17 @@ function ActivityLog({ slug }: { slug: string }) {
 /**
  * Settings, Workspace, Activity: the workspace's audit log, newest first.
  * Owners and admins (by effective role) see it; everyone else sees a note and
- * no request is made.
+ * no request is made. A 404 shows `MissingWorkspace`; a failed role read with
+ * nothing loaded shows `ROLE_ERROR`.
  * @returns The screen.
  */
 export default function WorkspaceActivity() {
   const { slug } = useLocalSearchParams<{ slug: string }>()
   const tenant = useTenant(slug)
   const { role, isPending, isError, retry } = useMyRole(slug)
+  if (tenant.data === null) return <MissingWorkspace slug={slug} topInset={false} />
   let body
-  if (tenant.data == null && (isError || !isPending)) {
+  if (tenant.data === undefined && isError) {
     body = <LoadError message={ROLE_ERROR} onRetry={retry} />
   } else if (isPending || role === undefined) {
     body = <ActivityIndicator accessibilityLabel="Loading workspace" />

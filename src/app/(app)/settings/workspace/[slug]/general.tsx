@@ -5,6 +5,7 @@ import { LoadError } from '@/components/shared/load-error'
 import { Screen } from '@/components/ui/screen'
 import { DetailsForm, DetailsRows } from '@/components/workspace-settings/details-form'
 import { SettingsForm, SettingsRows } from '@/components/workspace-settings/settings-form'
+import { MissingWorkspace } from '@/components/workspaces/missing-workspace'
 import { PlatformAccessBanner } from '@/components/workspaces/platform-access-banner'
 import { canManageTenant } from '@/constants/roles'
 import { formatDate } from '@/lib/format'
@@ -83,16 +84,19 @@ function SettingsBody({ slug, manages }: { slug: string; manages: boolean }) {
  * Settings, Workspace, General: the workspace's details and settings. Owner
  * and admin members get the forms. Everyone else, staff with platform access
  * included, gets read-only rows. A role still loading shows a spinner, never
- * the read-only view. A failed role read with nothing loaded shows `ROLE_ERROR`;
- * a failed background refetch keeps the loaded cards and their edits.
+ * the read-only view. A 404 (a suspended workspace, a removed one, or one the
+ * person is not in) shows `MissingWorkspace`. A failed role read with nothing
+ * loaded shows `ROLE_ERROR`; a failed background refetch keeps the loaded
+ * cards and their edits.
  * @returns The screen.
  */
 export default function WorkspaceGeneral() {
   const { slug } = useLocalSearchParams<{ slug: string }>()
   const tenant = useTenant(slug)
   const { role, access, isPending, isError, retry } = useMyRole(slug)
+  if (tenant.data === null) return <MissingWorkspace slug={slug} topInset={false} />
   let body
-  if (tenant.data == null && (isError || !isPending)) {
+  if (tenant.data === undefined && isError) {
     body = <LoadError message={ROLE_ERROR} onRetry={retry} />
   } else if (isPending || role === undefined || tenant.data == null) {
     body = <ActivityIndicator accessibilityLabel="Loading workspace" />

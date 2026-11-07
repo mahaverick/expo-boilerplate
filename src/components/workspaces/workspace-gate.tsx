@@ -1,18 +1,12 @@
-import { router } from 'expo-router'
 import { useEffect, type ReactNode } from 'react'
-import { ActivityIndicator, Text } from 'react-native'
+import { ActivityIndicator } from 'react-native'
 import { LoadError } from '@/components/shared/load-error'
-import { Button } from '@/components/ui/button'
 import { Screen } from '@/components/ui/screen'
+import { MissingWorkspace, WORKSPACE_LOAD_ERROR } from '@/components/workspaces/missing-workspace'
 import { WorkspaceSwitcher } from '@/components/workspaces/workspace-switcher'
-import { useClientSettings } from '@/queries/client-settings.queries'
-import { useTenant, useTenants, type TenantDetail } from '@/queries/tenant.queries'
+import { useTenant, type TenantDetail } from '@/queries/tenant.queries'
 import { useAuthStore } from '@/states/auth.store'
 import { useCurrentTenantStore } from '@/states/current-tenant.store'
-
-/** What a failed read says. It claims the request failed, not that the workspace is gone. */
-const WORKSPACE_LOAD_ERROR =
-  'We couldn’t load this workspace because the request failed. Select Try again.'
 
 /** Props of `WorkspaceGate`. */
 interface WorkspaceGateProps {
@@ -50,72 +44,6 @@ function Frame({ title, slug, inPlace, topInset, bottomInset, children }: FrameP
 }
 
 /**
- * The screen for a workspace the API answered 404 for. The list tells a
- * suspended workspace from a missing one, so it waits for the list to
- * refetch. A failed list claims neither, because the workspace may be fine.
- * @param props - The frame options.
- * @returns The suspended panel, the not-available panel, or the load error.
- */
-function MissingWorkspace(props: Omit<FrameProps, 'title' | 'children'>) {
-  const tenants = useTenants()
-  const supportEmail = useClientSettings()?.supportEmail
-  const { slug } = props
-  const entries = tenants.data
-  if (entries === undefined && tenants.isError) {
-    return (
-      <Frame title="Workspace" {...props}>
-        <LoadError
-          message={WORKSPACE_LOAD_ERROR}
-          onRetry={() => {
-            void tenants.refetch()
-          }}
-        />
-      </Frame>
-    )
-  }
-  if (entries === undefined || (tenants.isFetching && !tenants.isError)) {
-    return (
-      <Frame title="Workspace" {...props}>
-        <ActivityIndicator accessibilityLabel="Loading workspace" />
-      </Frame>
-    )
-  }
-  const listed = entries.find((entry) => entry.tenant.slug === slug)
-  const back = (
-    <Button
-      variant="secondary"
-      label="Back to your workspaces"
-      onPress={() => {
-        router.push('/tenants')
-      }}
-    />
-  )
-  if (listed?.tenant.lifecycleState === 'suspended') {
-    return (
-      <Frame title="Workspace suspended" {...props}>
-        <Text className="text-base text-foreground">
-          {`${listed.tenant.name} is suspended, so its pages are closed.`}
-        </Text>
-        <Text className="text-base text-muted-foreground">
-          {supportEmail === undefined
-            ? 'Contact support to restore access.'
-            : `Contact support at ${supportEmail} to restore access.`}
-        </Text>
-        {back}
-      </Frame>
-    )
-  }
-  return (
-    <Frame title="Workspace not available" {...props}>
-      <Text className="text-base text-foreground">
-        {`We couldn’t open /${slug}. It doesn’t exist, or you aren’t a member.`}
-      </Text>
-      {back}
-    </Frame>
-  )
-}
-
-/**
  * What every workspace screen renders around its content: a spinner while the
  * workspace loads; the load error when the read fails; for a 404 the
  * suspended or not-available panel; otherwise the content, with the
@@ -136,7 +64,16 @@ export function WorkspaceGate({ children, ...frame }: WorkspaceGateProps) {
     if (userId !== undefined && remembers) useCurrentTenantStore.getState().remember(userId, slug)
   }, [userId, remembers, slug])
 
-  if (detail === null) return <MissingWorkspace {...frame} />
+  if (detail === null) {
+    return (
+      <MissingWorkspace
+        slug={slug}
+        topInset={frame.topInset}
+        bottomInset={frame.bottomInset}
+        switcher={<WorkspaceSwitcher currentSlug={slug} inPlace={frame.inPlace} />}
+      />
+    )
+  }
   if (detail !== undefined) {
     // A failed refetch with the workspace on screen is the sections' to show, not a second alert.
     return (

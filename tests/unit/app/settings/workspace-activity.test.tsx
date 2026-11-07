@@ -4,7 +4,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react-nativ
 import Activity from '@/app/(app)/settings/workspace/[slug]/activity'
 import { renderScreen, restoreApi, serve, type FakeAnswer } from '@/tests/support/api'
 import { afterEach, describe, expect, it } from '@/tests/support/runner'
-import { acme, envelope } from '@/tests/support/workspace-api'
+import { acme, envelope, membership } from '@/tests/support/workspace-api'
 
 jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ slug: 'acme' }),
@@ -106,6 +106,27 @@ describe('Activity screen', () => {
     expect(within(screen.getByTestId('activity-e2')).getByText('System')).toBeTruthy()
     expect(screen.getByText('Workspace')).toBeTruthy()
     expect(screen.getByText('—')).toBeTruthy()
+  })
+
+  it('shows the not-available panel, not the role error, when the workspace answers 404', async () => {
+    const sent = serve((config) => {
+      if (config.url === '/tenants') {
+        return envelope({
+          items: [membership('acme', 'Acme')],
+          page: { hasNext: false, nextCursor: null },
+        })
+      }
+      return { status: 404, data: { success: false, message: 'Not found' } }
+    })
+    await renderActivity()
+    expect(await screen.findByRole('header', { name: 'Workspace not available' })).toBeTruthy()
+    expect(
+      screen.getByText('We couldn’t open /acme. It doesn’t exist, or you aren’t a member.')
+    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Back to your workspaces' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+    expect(screen.getAllByRole('header')).toHaveLength(1)
+    expect(logRequests(sent)).toHaveLength(0)
   })
 
   it('a viewer sees the note, and no request is made', async () => {

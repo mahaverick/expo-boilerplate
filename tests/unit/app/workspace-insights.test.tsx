@@ -4,7 +4,7 @@ import Insights from '@/app/(app)/tenants/[slug]/insights'
 import { useAuthStore } from '@/states/auth.store'
 import { renderScreen, restoreApi } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
-import { acme, envelope, serveWorkspace } from '@/tests/support/workspace-api'
+import { acme, envelope, NOT_FOUND, serveWorkspace } from '@/tests/support/workspace-api'
 
 jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), push: jest.fn() },
@@ -39,6 +39,37 @@ afterEach(() => {
 })
 
 describe('Insights', () => {
+  it('shows the not-available panel, and reads no plan, when the workspace answers 404', async () => {
+    const sent = serveWorkspace({
+      'GET /tenants/acme': NOT_FOUND,
+      'GET /tenants/acme/entitlements': entitlements(true),
+    })
+    await renderScreen(<Insights />)
+    expect(await screen.findByRole('header', { name: 'Workspace not available' })).toBeTruthy()
+    expect(
+      screen.getByText('We couldn’t open /acme. It doesn’t exist, or you aren’t a member.')
+    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Back to your workspaces' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+    expect(screen.getAllByRole('header')).toHaveLength(1)
+    expect(sent.some((config) => config.url === '/tenants/acme/entitlements')).toBe(false)
+    expect(sent.some((config) => config.url === '/tenants/acme/insights')).toBe(false)
+  })
+
+  it('shows the workspace load error when the workspace read fails', async () => {
+    serveWorkspace({
+      'GET /tenants/acme': { status: 500, data: { success: false, message: 'x' } },
+      'GET /tenants/acme/entitlements': entitlements(true),
+    })
+    await renderScreen(<Insights />)
+    expect(
+      await screen.findByText(
+        'We couldn’t load this workspace because the request failed. Select Try again.'
+      )
+    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
+  })
+
   it('shows the two counts when the plan includes the feature', async () => {
     serveWorkspace({
       'GET /tenants/acme/entitlements': entitlements(true),

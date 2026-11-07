@@ -77,6 +77,36 @@ describe('Beta', () => {
     })
   })
 
+  it('shows the not-available panel, not Page not found, when the workspace answers 404', async () => {
+    const sent = serveWorkspace({
+      'GET /tenants/acme': NOT_FOUND,
+      'GET /tenants/acme/beta': NOT_FOUND,
+    })
+    await renderScreen(<Beta />)
+    expect(await screen.findByRole('header', { name: 'Workspace not available' })).toBeTruthy()
+    expect(
+      screen.getByText('We couldn’t open /acme. It doesn’t exist, or you aren’t a member.')
+    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Back to your workspaces' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+    expect(screen.getAllByRole('header')).toHaveLength(1)
+    expect(screen.queryByText('Page not found')).toBeNull()
+    expect(sent.some((config) => config.url === '/tenants/acme/beta')).toBe(false)
+    expect(sent.some((config) => config.url === '/tenants/acme/flags')).toBe(false)
+  })
+
+  it('shows the workspace load error when the workspace read fails', async () => {
+    serveWorkspace({
+      'GET /tenants/acme': { status: 500, data: { success: false, message: 'x' } },
+    })
+    await renderScreen(<Beta />)
+    expect(
+      await screen.findByText(
+        'We couldn’t load this workspace because the request failed. Select Try again.'
+      )
+    ).toBeTruthy()
+  })
+
   it('shows Try again, not Page not found, for another failure', async () => {
     serveWorkspace({
       'GET /tenants/acme/beta': { status: 500, data: { success: false, message: 'x' } },

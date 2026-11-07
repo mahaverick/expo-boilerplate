@@ -2,6 +2,7 @@ import { useLocalSearchParams } from 'expo-router'
 import { ActivityIndicator, Text, View } from 'react-native'
 import { LoadError } from '@/components/shared/load-error'
 import { Screen } from '@/components/ui/screen'
+import { StackWorkspaceGate } from '@/components/workspaces/missing-workspace'
 import { PlatformAccessBanner } from '@/components/workspaces/platform-access-banner'
 import { useEntitlements, useFeature } from '@/queries/billing.queries'
 import { INSIGHTS_LOCKED, useTenantInsights } from '@/queries/insights.queries'
@@ -125,15 +126,19 @@ function InsightsBody({ slug }: { slug: string }) {
 
 /**
  * A workspace's Insights, open to every member. The plan decides whether the
- * screen shows the counts or the locked card.
+ * screen shows the counts or the locked card. `StackWorkspaceGate` holds the
+ * plan reads until the workspace has loaded, and shows a 404 as
+ * `MissingWorkspace`.
  * @returns The screen.
  */
 export default function WorkspaceInsights() {
   const { slug } = useLocalSearchParams<{ slug: string }>()
   return (
-    <Screen title="Insights" topInset={false}>
-      <PlatformAccessBanner slug={slug} />
-      <InsightsBody slug={slug} />
-    </Screen>
+    <StackWorkspaceGate slug={slug} title="Insights">
+      <Screen title="Insights" topInset={false}>
+        <PlatformAccessBanner slug={slug} />
+        <InsightsBody slug={slug} />
+      </Screen>
+    </StackWorkspaceGate>
   )
 }

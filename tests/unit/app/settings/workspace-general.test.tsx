@@ -8,7 +8,13 @@ import { tenantKeys } from '@/queries/tenant.queries'
 import { useToastQueueStore } from '@/states/toast-queue.store'
 import { bodyOf, renderScreen, restoreApi, screenTree, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
-import { acme, envelope, serveWorkspace } from '@/tests/support/workspace-api'
+import {
+  acme,
+  envelope,
+  membership,
+  NOT_FOUND,
+  serveWorkspace,
+} from '@/tests/support/workspace-api'
 
 jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ slug: 'acme' }),
@@ -341,6 +347,35 @@ describe('Workspace General screen', () => {
     expect(screen.queryByText('Overview')).toBeNull()
     await fireEvent.press(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByLabelText('Name')).toBeTruthy()
+  })
+
+  it('shows the not-available panel, not ROLE_ERROR, when the workspace answers 404', async () => {
+    serveGeneral({ 'GET /tenants/acme': NOT_FOUND })
+    await renderScreen(<General />)
+    expect(await screen.findByRole('header', { name: 'Workspace not available' })).toBeTruthy()
+    expect(
+      screen.getByText('We couldn’t open /acme. It doesn’t exist, or you aren’t a member.')
+    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Back to your workspaces' })).toBeTruthy()
+    expect(screen.queryByText(ROLE_ERROR)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+    // The stack screens draw no switcher: the switcher would name the workspace.
+    expect(screen.queryByRole('button', { name: 'Acme' })).toBeNull()
+    expect(screen.getAllByRole('header')).toHaveLength(1)
+  })
+
+  it('shows the suspended panel when the list holds the workspace as suspended', async () => {
+    serveGeneral({
+      'GET /tenants/acme': NOT_FOUND,
+      'GET /tenants': envelope({
+        items: [membership('acme', 'Acme', 'suspended')],
+        page: { hasNext: false, nextCursor: null },
+      }),
+    })
+    await renderScreen(<General />)
+    expect(await screen.findByRole('header', { name: 'Workspace suspended' })).toBeTruthy()
+    expect(screen.getByText('Acme is suspended, so its pages are closed.')).toBeTruthy()
+    expect(screen.queryByText(ROLE_ERROR)).toBeNull()
   })
 
   it('keeps the forms and their edits when a background refetch fails', async () => {
