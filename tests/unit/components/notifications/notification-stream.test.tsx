@@ -6,6 +6,7 @@ import { NotificationStream } from '@/components/notifications/notification-stre
 import { NoRefreshTokenError } from '@/http/auth-verdict'
 import { apiUrl } from '@/http/client'
 import * as session from '@/http/session'
+import { switchIdentity } from '@/http/session'
 import { notificationKeys } from '@/queries/notification.queries'
 import { useAuthStore } from '@/states/auth.store'
 import { useMaintenanceModeStore } from '@/states/maintenance-mode.store'
@@ -201,14 +202,16 @@ function invalidated(queryKey: readonly unknown[]): boolean {
 
 /**
  * Renders the stream and settles its first connect.
+ * @returns The render result, for an unmount.
  */
-async function mount(): Promise<void> {
-  await render(
+async function mount(): Promise<Awaited<ReturnType<typeof render>>> {
+  const view = await render(
     <QueryClientProvider client={queryClient}>
       <NotificationStream />
     </QueryClientProvider>
   )
   await flush()
+  return view
 }
 
 /** A notification frame. */
@@ -599,5 +602,50 @@ describe('NotificationStream', () => {
       latest().end()
     })
     expect(latest().headers.Authorization).toBe('Bearer t2')
+  })
+
+  it('restarts for another person who signs in over the open stream', async () => {
+    await mount()
+    await step(() => {
+      latest().accept()
+    })
+    await step(() => {
+      latest().send(notificationFrame('a1'))
+    })
+    const first = latest()
+    await step(() => {
+      switchIdentity(queryClient, 'u2')
+      useAuthStore.getState().login('tokB', { id: 'u2', email: 'b@b.test' } as User)
+    })
+    expect(first.state).toBe('aborted')
+    expect(mockStreams).toHaveLength(2)
+    expect(latest().headers).toEqual({ Authorization: 'Bearer tokB' })
+  })
+
+  it('opens nothing when the app goes to the background while a refresh is pending', async () => {
+    useAuthStore.setState({ accessToken: null })
+    const refresh = Promise.withResolvers<string>()
+    ensureSession.mockReturnValueOnce(refresh.promise)
+    await mount()
+    expect(ensureSession).toHaveBeenCalledTimes(1)
+    await emit('background')
+    await step(() => {
+      useAuthStore.setState({ accessToken: 't2' })
+      refresh.resolve('t2')
+    })
+    await advance(60_000)
+    expect(mockStreams).toHaveLength(0)
+  })
+
+  it('opens nothing after an unmount while a reconnect is pending', async () => {
+    const view = await mount()
+    await step(() => {
+      latest().refuse(503)
+    })
+    await act(async () => {
+      await view.unmount()
+    })
+    await advance(60_000)
+    expect(mockStreams).toHaveLength(1)
   })
 })

@@ -124,14 +124,18 @@ function useForeground(onBackground: () => void): boolean {
  *   capped at 5 minutes, plus jitter. A network failure waits the backoff with
  *   jitter. The backoff doubles each time and resets on a notification frame.
  * - Background, sign-out and maintenance `full` abort the stream and clear the
- *   timer. Sign-out also forgets the last event id and the 429 stop.
+ *   timer. Sign-out, and a sign-in as another person, also forget the last
+ *   event id, the backoff and the 429 stop; the new person gets a new stream.
  */
 function useNotificationStream(): void {
   const queryClient = useQueryClient()
   const signedIn = useAuthStore((state) => state.isAuthenticated)
+  // A sign-in over another person's session flips isAuthenticated within one tick, so the id is what changes.
+  const userId = useAuthStore((state) => state.user?.id ?? null)
   const isFull = useMaintenanceModeStore((state) => state.mode) === 'full'
   const passkeyRequired = usePasskeySetupStore((state) => state.required)
   const lastEventId = useRef<string | undefined>(undefined)
+  const owner = useRef<string | null>(null)
   const backoff = useRef(INITIAL_BACKOFF_MS)
   const quickEnds = useRef(0)
   const blocked = useRef(false)
@@ -143,13 +147,15 @@ function useNotificationStream(): void {
   const foreground = useForeground(onBackground)
 
   useEffect(() => {
-    if (!signedIn) {
+    const person = signedIn ? userId : null
+    if (owner.current !== person) {
+      owner.current = person
       lastEventId.current = undefined
       backoff.current = INITIAL_BACKOFF_MS
       quickEnds.current = 0
       blocked.current = false
-      return
     }
+    if (!signedIn) return
     if (!foreground || isFull || passkeyRequired || blocked.current) return
     let cancelled = false
 
@@ -276,7 +282,7 @@ function useNotificationStream(): void {
       controller.current?.abort()
       controller.current = null
     }
-  }, [signedIn, foreground, isFull, passkeyRequired, queryClient])
+  }, [signedIn, userId, foreground, isFull, passkeyRequired, queryClient])
 }
 
 /**
