@@ -657,7 +657,9 @@ screens, Insights and Beta. They are plan 3c3's. The files are listed in
   fallbacks, not the last good values: a stale `true` keeps a Beta row on
   screen that answers 404. The workspace key sits under the workspace's detail
   key, so `dropTenantCache` removes it. `useFeaturePropertiesSync()` runs once
-  in the `(app)` layout and registers `$feature/<key>`. An experiment's
+  in the `(app)` layout and registers `$feature/<key>` from the route's scope,
+  or from the current workspace's flags on a route with no `slug`, and from
+  `GET /flags` only while no workspace resolves. An experiment's
   exposure posts to `<flags path>/exposures` once per scope, key and value per
   launch, whatever the analytics choice. A change of person clears the dedupe.
 - **`example_cta_experiment` styles the Getting started step button:**
@@ -1153,6 +1155,11 @@ Each item is a change for react or for a later plan, with the reason it waits.
 - **Every "Mark done" button has the same accessible label.** The web app
   reads "Mark done: {title}". `Button` takes no `accessibilityLabel` yet; add
   the prop, then label each button with its step.
+- **A `?slug=` query parameter can set the workspace group.** The group's
+  slug comes from `useGlobalSearchParams`, which also returns query
+  parameters, so `/invitations/accept?slug=x` reads `/tenants/x` and groups
+  under it when the API grants access. Read only the route's own `[slug]`
+  parameter instead.
 - **Jest prints "A worker process has failed to exit gracefully."** It showed
   in plans 3b and 3c1 and on 6 November 2026. Run `pnpm test --detectOpenHandles`
   to find the handle; `tests/setup.ts` already unrefs TanStack Query's timers.
