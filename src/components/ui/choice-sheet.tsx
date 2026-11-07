@@ -46,9 +46,16 @@ export function ChoiceSheet<T extends string>({
   const insets = useSafeAreaInsets()
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1 justify-end bg-foreground/40">
+      <View className="flex-1 justify-end">
+        <Pressable
+          testID="choice-sheet-backdrop"
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss"
+          onPress={onClose}
+          className="flex-1"
+        />
         <ScrollView
-          className="max-h-[80%] rounded-t-2xl bg-background"
+          className="max-h-[80%] flex-none rounded-t-2xl border-t border-border bg-card"
           contentContainerClassName="gap-2 px-4 pt-4"
           contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
         >

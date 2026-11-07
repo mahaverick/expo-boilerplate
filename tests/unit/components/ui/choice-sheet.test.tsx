@@ -63,6 +63,13 @@ describe('ChoiceSheet', () => {
     expect(onChoose).not.toHaveBeenCalled()
   })
 
+  it('closes when the backdrop is pressed', async () => {
+    const { onChoose, onClose } = await open()
+    await fireEvent.press(screen.getByTestId('choice-sheet-backdrop'))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onChoose).not.toHaveBeenCalled()
+  })
+
   it('closes on Android back', async () => {
     const { onClose } = await open()
     const [modal] = screen.container.queryAll(
