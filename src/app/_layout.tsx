@@ -17,6 +17,7 @@ import {
 } from '@/http/session-lifecycle'
 import { queryClient } from '@/lib/query-client'
 import { installQueryManagers } from '@/lib/query-managers'
+import { initAnalytics } from '@/observability/telemetry/telemetry'
 import { resolvedScheme, useThemeStore } from '@/states/theme.store'
 
 /**
@@ -35,6 +36,9 @@ interface SplashState {
 
 // Before the first render, so the splash screen covers every frame until the stored theme paints.
 void SplashScreen.preventAutoHideAsync()
+
+// Before the first render, so the session restore's identity and a sign-in's first event find the SDK started.
+initAnalytics()
 
 /**
  * Hides the splash screen, once, and cancels the pending fallback.

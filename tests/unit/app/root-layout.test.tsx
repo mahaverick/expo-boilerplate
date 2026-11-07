@@ -13,6 +13,7 @@ import {
 import type { SessionStatus } from '@/http/session-lifecycle'
 import { queryClient } from '@/lib/query-client'
 import * as queryManagers from '@/lib/query-managers'
+import { initAnalytics } from '@/observability/telemetry/telemetry'
 import { useThemeStore } from '@/states/theme.store'
 import { METRICS } from '@/tests/support/a11y'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
@@ -37,6 +38,12 @@ jest.mock('@/http/maintenance', () => ({
   installMaintenanceRecovery: jest.fn(() => jest.fn()),
 }))
 jest.mock('@/lib/query-managers', () => ({ installQueryManagers: jest.fn(() => jest.fn()) }))
+jest.mock('@/observability/telemetry/telemetry', () => ({
+  ...jest.requireActual<typeof import('@/observability/telemetry/telemetry')>(
+    '@/observability/telemetry/telemetry'
+  ),
+  initAnalytics: jest.fn(),
+}))
 jest.mock('expo-router', () => {
   const { useQueryClient } =
     jest.requireActual<typeof import('@tanstack/react-query')>('@tanstack/react-query')
@@ -81,6 +88,9 @@ let schemeAtHide: string | undefined
 function setStatus(status: SessionStatus): void {
   jest.mocked(useSessionStatus).mockReturnValue(status)
 }
+
+/** How often importing the layout started analytics, read before any case clears the mocks. */
+const initCallsAtImport = jest.mocked(initAnalytics).mock.calls.length
 
 beforeEach(() => {
   jest.useFakeTimers()
@@ -248,5 +258,11 @@ describe('RootLayout', () => {
     expect(maintenance.installMaintenanceRecovery).toHaveBeenCalledTimes(1)
     await view.unmount()
     expect(remove).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts analytics once, when the layout loads, before any screen renders', async () => {
+    expect(initCallsAtImport).toBe(1)
+    await render(<Root />)
+    expect(initAnalytics).not.toHaveBeenCalled()
   })
 })

@@ -14,6 +14,8 @@ const config: Config = {
     '\\.css$': '<rootDir>/tests/support/stylesheet.ts',
     '^expo-secure-store$': '<rootDir>/tests/mocks/expo-secure-store.ts',
     '^@react-native-community/netinfo$': '<rootDir>/tests/mocks/netinfo.ts',
+    '^posthog-react-native$': '<rootDir>/tests/mocks/posthog-react-native.ts',
+    '^react-native-mmkv$': '<rootDir>/tests/mocks/react-native-mmkv.ts',
     '^@/tests/(.*)$': '<rootDir>/tests/$1',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
