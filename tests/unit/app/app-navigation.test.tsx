@@ -15,6 +15,10 @@ import { METRICS } from '@/tests/support/a11y'
 import { restoreApi, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
+// The stream opens a real connection; its own suite covers it.
+jest.mock('@/components/notifications/notification-stream', () => ({
+  NotificationStream: () => null,
+}))
 jest.mock('@/lib/storage', () => ({
   storage: { getString: () => undefined, set: () => undefined, remove: () => undefined },
 }))

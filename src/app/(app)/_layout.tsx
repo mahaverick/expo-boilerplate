@@ -8,6 +8,7 @@ import {
 } from 'expo-router'
 import { useEffect } from 'react'
 import { SigningInScreen } from '@/components/auth/signing-in-screen'
+import { NotificationStream } from '@/components/notifications/notification-stream'
 import { useMaintenanceMode } from '@/http/maintenance'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import { safePath } from '@/lib/safe-path'
@@ -69,7 +70,8 @@ const STACK_SCREEN_OPTIONS = {
  * A sign-out the person asked for carries no `redirect`, so the next person on
  * the device never lands on the previous person's path.
  * The tabs show no navigator header; the screens above them show an
- * empty-titled header with Back.
+ * empty-titled header with Back. The one notification stream renders beside
+ * the stack, after the redirects, so it never mounts signed out.
  */
 export default function AppLayout() {
   const status = useSessionStatus()
@@ -92,13 +94,16 @@ export default function AppLayout() {
   }
   if (passkeyRequired && !isFull) return <Redirect href="/passkey-required" />
   return (
-    <Stack screenOptions={STACK_SCREEN_OPTIONS}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="tenants/[slug]/[...rest]" options={{ headerShown: false }} />
-      <Stack.Screen name="tenants/[slug]/settings" options={{ headerShown: false }} />
-      <Stack.Screen name="tenants/[slug]/members" options={{ headerShown: false }} />
-      <Stack.Screen name="tenants/[slug]/activity" options={{ headerShown: false }} />
-      <Stack.Screen name="settings/workspace/[slug]/index" options={{ headerShown: false }} />
-    </Stack>
+    <>
+      <NotificationStream />
+      <Stack screenOptions={STACK_SCREEN_OPTIONS}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="tenants/[slug]/[...rest]" options={{ headerShown: false }} />
+        <Stack.Screen name="tenants/[slug]/settings" options={{ headerShown: false }} />
+        <Stack.Screen name="tenants/[slug]/members" options={{ headerShown: false }} />
+        <Stack.Screen name="tenants/[slug]/activity" options={{ headerShown: false }} />
+        <Stack.Screen name="settings/workspace/[slug]/index" options={{ headerShown: false }} />
+      </Stack>
+    </>
   )
 }

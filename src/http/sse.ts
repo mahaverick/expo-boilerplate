@@ -125,7 +125,9 @@ function readRetryAfterMs(value: string | null): number | undefined {
 
 /**
  * Opens an event stream and feeds its frames to `onFrame` until it ends.
- * @param options - The URL, request headers, abort signal, frame callback and an optional `fetch` (default: `expo/fetch`).
+ * @param options - The URL, request headers, abort signal, frame callback, an optional
+ * `onOpen` and an optional `fetch` (default: `expo/fetch`). `onOpen` runs once the server
+ * accepts the stream with a 2xx answer, before any frame; the server sends no frame on connect.
  * @returns `ended` when the body closes; `refused` for a non-2xx answer.
  * @throws On a network failure, an abort, or an `SseOverflowError`.
  */
@@ -134,6 +136,7 @@ export async function openEventStream(options: {
   headers: Record<string, string>
   signal: AbortSignal
   onFrame: (frame: SseFrame) => void
+  onOpen?: () => void
   fetch?: StreamFetch
 }): Promise<StreamEnd> {
   const doFetch: StreamFetch = options.fetch ?? expoFetch
@@ -150,6 +153,7 @@ export async function openEventStream(options: {
     if (retryAfterMs !== undefined) refused.retryAfterMs = retryAfterMs
     return refused
   }
+  options.onOpen?.()
   if (!response.body) return { kind: 'ended' }
   const parser = createSseParser(options.onFrame)
   const decoder = new TextDecoder()

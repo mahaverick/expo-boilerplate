@@ -16,6 +16,10 @@ let mockNavigate: ((path: string) => void) | undefined
 /** The paths the `(app)` guard redirected to. */
 const mockRedirects: string[] = []
 
+// The stream opens a real connection; its own suite covers it.
+jest.mock('@/components/notifications/notification-stream', () => ({
+  NotificationStream: () => null,
+}))
 jest.mock('expo-router', () => {
   const { useEffect: useMockEffect } = jest.requireActual<typeof import('react')>('react')
   return {

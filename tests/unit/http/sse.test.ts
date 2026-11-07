@@ -289,4 +289,32 @@ describe('openEventStream', () => {
     expect(result).toEqual({ kind: 'ended' })
     expect(frames).toEqual([])
   })
+
+  it('calls onOpen once on a 2xx answer, before the first frame', async () => {
+    const log: string[] = []
+    await openEventStream({
+      url,
+      headers: {},
+      signal: new AbortController().signal,
+      onOpen: () => log.push('open'),
+      onFrame: (f) => log.push(f.data),
+      fetch: () => Promise.resolve(fakeResponse({ chunks: ['data: a\n\n'] })),
+    })
+    expect(log).toEqual(['open', 'a'])
+  })
+
+  it('never calls onOpen on a refusal', async () => {
+    let opened = 0
+    await openEventStream({
+      url,
+      headers: {},
+      signal: new AbortController().signal,
+      onOpen: () => {
+        opened += 1
+      },
+      onFrame: () => undefined,
+      fetch: () => Promise.resolve(fakeResponse({ status: 503 })),
+    })
+    expect(opened).toBe(0)
+  })
 })
