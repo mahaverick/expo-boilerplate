@@ -5,6 +5,7 @@ import { Alert, type AlertButton } from 'react-native'
 import { GettingStarted } from '@/components/workspaces/getting-started'
 import type { MembershipRole } from '@/constants/roles'
 import { resetExposureForTests } from '@/observability/flags/exposure'
+import { useAuthStore } from '@/states/auth.store'
 import { useToastQueueStore } from '@/states/toast-queue.store'
 import { renderScreen, restoreApi, type FakeAnswer } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
@@ -47,10 +48,12 @@ function serveOnboarding(body: unknown, more: Record<string, FakeAnswer> = {}) {
 beforeEach(() => {
   useToastQueueStore.setState({ toasts: [] } as never)
   mockTrack.mockClear()
+  useAuthStore.getState().login('a', { id: 'u1' } as never)
   resetExposureForTests()
 })
 
 afterEach(() => {
+  useAuthStore.getState().logout()
   restoreApi()
   jest.restoreAllMocks()
 })

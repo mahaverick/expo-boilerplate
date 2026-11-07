@@ -22,11 +22,13 @@ export const FLAGS_REFETCH_MS = 10 * 60_000
 
 /**
  * The scope of the focused route: the workspace in `slug`, or none.
+ * @param slug - A workspace to read instead of the route's, for a screen that shows one without a route param.
  * @returns The scope, stable while the slug is unchanged.
  */
-export function useFlagScope(): FlagScope {
-  const { slug } = useGlobalSearchParams<{ slug?: string | string[] }>()
-  const workspace = typeof slug === 'string' && slug !== '' ? slug : null
+export function useFlagScope(slug?: string): FlagScope {
+  const params = useGlobalSearchParams<{ slug?: string | string[] }>()
+  const routeSlug = slug ?? params.slug
+  const workspace = typeof routeSlug === 'string' && routeSlug !== '' ? routeSlug : null
   return useMemo(
     () => (workspace === null ? { kind: 'none' } : { kind: 'tenant', slug: workspace }),
     [workspace]

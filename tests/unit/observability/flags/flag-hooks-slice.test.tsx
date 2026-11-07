@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { resetExposureForTests } from '@/observability/flags/exposure'
 import { useVariant } from '@/observability/flags/flag-hooks'
 import type { MultivariateClientFlagKey } from '@/observability/flags/flag-types'
+import { useAuthStore } from '@/states/auth.store'
 import { restoreApi, screenTree, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 import { envelope, NOT_FOUND } from '@/tests/support/workspace-api'
@@ -41,6 +42,7 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
+  useAuthStore.getState().login('tok', { id: 'u1' } as never)
   jest.useFakeTimers({ advanceTimers: true })
   sent = []
   resetExposureForTests()
@@ -55,6 +57,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  useAuthStore.getState().logout()
   jest.useRealTimers()
   restoreApi()
 })

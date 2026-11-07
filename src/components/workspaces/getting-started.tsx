@@ -114,13 +114,22 @@ type StepLinkTarget = NonNullable<ReturnType<(typeof STEP_LINKS)['get']>>
  * variant: secondary for `control`, primary for `bold`. Reading the variant
  * here reports the exposure only for a viewer who sees a button. A press
  * sends `feature_cta_clicked`, the experiment's metric.
- * @param props - The link and what opens its screen.
+ * @param props - The workspace, the link and what opens its screen.
+ * @param props.slug - The workspace's web address, whose flags it reads.
  * @param props.link - The step's link.
  * @param props.onOpen - Opens the settings screen.
  * @returns The button.
  */
-function StepLinkButton({ link, onOpen }: { link: StepLinkTarget; onOpen: () => void }) {
-  const variant = useVariant('example_cta_experiment')
+function StepLinkButton({
+  slug,
+  link,
+  onOpen,
+}: {
+  slug: string
+  link: StepLinkTarget
+  onOpen: () => void
+}) {
+  const variant = useVariant('example_cta_experiment', slug)
   return (
     <Button
       variant={variant === 'bold' ? 'primary' : 'secondary'}
@@ -160,6 +169,7 @@ function StepAction({
     const target = WORKSPACE_SECTIONS.find((s) => s.key === link.section)
     return (
       <StepLinkButton
+        slug={slug}
         link={link}
         onOpen={() => {
           if (target !== undefined) router.push(target.path(slug))

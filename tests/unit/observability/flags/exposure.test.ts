@@ -98,6 +98,13 @@ describe('reportExposure', () => {
 })
 
 describe('clearExposureDedupe', () => {
+  it('drops a batch still gathering, so it never posts under the next person', async () => {
+    reportExposure(NONE, EXP, 'bold')
+    clearExposureDedupe()
+    await pastBatchWindow()
+    expect(posts).toHaveLength(0)
+  })
+
   it('forgets every mark, so the next person reports afresh', async () => {
     reportExposure(NONE, EXP, 'bold')
     await pastBatchWindow()

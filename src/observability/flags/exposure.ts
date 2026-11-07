@@ -66,15 +66,19 @@ export function reportExposure(
   flushTimer ??= setTimeout(flush, EXPOSURE_BATCH_MS)
 }
 
-/** Forgets every reported mark, so the next person on this device reports afresh. */
+/**
+ * Forgets every reported mark and drops the batch still gathering, so the
+ * next person on this device reports afresh and a report of the last person
+ * never posts under the next one's token.
+ */
 export function clearExposureDedupe(): void {
   reported.clear()
+  pending.clear()
+  if (flushTimer !== null) clearTimeout(flushTimer)
+  flushTimer = null
 }
 
 /** Test-only: drop the pending batch, its timer and every mark. */
 export function resetExposureForTests(): void {
-  if (flushTimer !== null) clearTimeout(flushTimer)
-  flushTimer = null
-  pending.clear()
-  reported.clear()
+  clearExposureDedupe()
 }

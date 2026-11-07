@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals'
 import { QueryClient } from '@tanstack/react-query'
-import { renderHook, waitFor } from '@testing-library/react-native'
+import { act, renderHook, waitFor } from '@testing-library/react-native'
 import type { ReactNode } from 'react'
 import { resetExposureForTests } from '@/observability/flags/exposure'
 import { forgetFeatureProperties } from '@/observability/flags/feature-property-names'
@@ -63,15 +63,26 @@ beforeEach(() => {
   resetExposureForTests()
   resetFlagHooksForTests()
   forgetFeatureProperties()
+  useAuthStore.getState().login('tok', { id: 'u1' } as never)
 })
 
 afterEach(() => {
   jest.useRealTimers()
   restoreApi()
   client.clear()
+  useAuthStore.getState().logout()
 })
 
 describe('useFlagValues', () => {
+  it('reads the workspace given by slug over the route', async () => {
+    serveFlags({ 'GET /tenants/acme/flags': flags({ example_beta_page: true }) })
+    const { result } = await renderHook(() => useFlagValues('acme'), { wrapper })
+    await waitFor(() => {
+      expect(result.current.example_beta_page).toBe(true)
+    })
+    expect(sent).toEqual(['GET /tenants/acme/flags'])
+  })
+
   it('returns the fallbacks while pending, then the server’s values', async () => {
     serveFlags({ 'GET /flags': flags({ example_beta_page: true }) })
     const { result } = await renderHook(() => useFlagValues(), { wrapper })
@@ -130,6 +141,29 @@ describe('useFlagValues', () => {
 })
 
 describe('useVariant', () => {
+  it('posts nothing and reads nothing while signed out', async () => {
+    useAuthStore.getState().logout()
+    serveFlags({ 'GET /flags': flags({ example_cta_experiment: 'bold' }) })
+    const { result } = await renderHook(() => useVariant('example_cta_experiment'), { wrapper })
+    await jest.advanceTimersByTimeAsync(200)
+    expect(result.current).toBe('control')
+    expect(sent).toEqual([])
+  })
+
+  it('reads the workspace given by slug over the route', async () => {
+    serveFlags({ 'GET /tenants/acme/flags': flags({ example_cta_experiment: 'bold' }) })
+    const { result } = await renderHook(() => useVariant('example_cta_experiment', 'acme'), {
+      wrapper,
+    })
+    await waitFor(() => {
+      expect(result.current).toBe('bold')
+    })
+    await waitFor(() => {
+      expect(sent).toContain('POST /tenants/acme/flags/exposures')
+    })
+    expect(sent).not.toContain('GET /flags')
+  })
+
   it('returns the fallback variant until loaded, then reports one exposure', async () => {
     serveFlags({ 'GET /flags': flags({ example_cta_experiment: 'bold' }) })
     const { result } = await renderHook(() => useVariant('example_cta_experiment'), { wrapper })
@@ -170,6 +204,42 @@ describe('useFeaturePropertiesSync', () => {
 
   afterEach(() => {
     useAuthStore.getState().logout()
+  })
+
+  it('registers again after an in-place switch of person whose values are equal', async () => {
+    serveFlags({ 'GET /flags': flags({ example_beta_page: true }) })
+    await renderHook(() => useFeaturePropertiesSync(), { wrapper })
+    await waitFor(() => {
+      expect(mockRegister).toHaveBeenCalledTimes(1)
+    })
+    // The identity forgets the registered names, then the next person signs in.
+    forgetFeatureProperties()
+    await act(() => {
+      useAuthStore.getState().login('tok2', { id: 'u2' } as never)
+    })
+    await waitFor(() => {
+      expect(mockRegister).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('unregisters the old workspace’s set when the route moves to one still loading', async () => {
+    mockParams = { slug: 'a' }
+    serve((config) => {
+      if (config.url === '/tenants/a/flags') return flags({ example_beta_page: true })
+      return new Promise(() => {})
+    })
+    const { rerender } = await renderHook(() => useFeaturePropertiesSync(), { wrapper })
+    await waitFor(() => {
+      expect(mockRegister).toHaveBeenCalledTimes(1)
+    })
+    mockParams = { slug: 'b' }
+    await rerender({})
+    await waitFor(() => {
+      expect(mockUnregister).toHaveBeenCalledWith([
+        '$feature/example_beta_page',
+        '$feature/example_cta_experiment',
+      ])
+    })
   })
 
   it('reads and registers nothing while signed out', async () => {

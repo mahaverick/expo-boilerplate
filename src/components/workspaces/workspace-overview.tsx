@@ -45,7 +45,7 @@ function DetailRow({ label, value }: { label: string; value: string | null }) {
  * @returns The rows.
  */
 function EntryRows({ slug }: { slug: string }) {
-  const flags = useFlagValues()
+  const flags = useFlagValues(slug)
   return (
     <View>
       <SettingsRow
