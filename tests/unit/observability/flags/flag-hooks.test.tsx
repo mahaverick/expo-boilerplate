@@ -2,6 +2,7 @@ import { jest } from '@jest/globals'
 import { QueryClient } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react-native'
 import type { ReactNode } from 'react'
+import { storage } from '@/lib/storage'
 import { resetExposureForTests } from '@/observability/flags/exposure'
 import { forgetFeatureProperties } from '@/observability/flags/feature-property-names'
 import {
@@ -13,9 +14,10 @@ import {
 import { flagsKey } from '@/observability/flags/flag-query'
 import { fallbackFlags } from '@/observability/flags/flag-values'
 import { useAuthStore } from '@/states/auth.store'
+import { useCurrentTenantStore } from '@/states/current-tenant.store'
 import { restoreApi, screenTree, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
-import { envelope, NOT_FOUND } from '@/tests/support/workspace-api'
+import { envelope, membership, NOT_FOUND } from '@/tests/support/workspace-api'
 
 const mockRegister = jest.fn()
 const mockUnregister = jest.fn()
@@ -67,6 +69,8 @@ beforeEach(() => {
   resetExposureForTests()
   resetFlagHooksForTests()
   forgetFeatureProperties()
+  useCurrentTenantStore.setState({ remembered: {} })
+  storage.remove('last-tenant:u1')
   useAuthStore.getState().login('tok', { id: 'u1' } as never)
 })
 
@@ -247,6 +251,28 @@ describe('useFeaturePropertiesSync', () => {
         '$feature/example_cta_experiment',
       ])
     })
+  })
+
+  it('registers the current workspace’s values on a route with no slug', async () => {
+    useCurrentTenantStore.setState({ remembered: { u1: 'beta' } })
+    serveFlags({
+      'GET /tenants': envelope({
+        items: [membership('acme', 'Acme'), membership('beta', 'Beta')],
+        page: { hasNext: false, nextCursor: null },
+      }),
+      'GET /tenants/beta/flags': flags({ example_beta_page: true, example_cta_experiment: 'bold' }),
+      'GET /tenants/acme/flags': flags({ example_beta_page: false }),
+      'GET /flags': flags({ example_beta_page: false }),
+    })
+    await renderHook(() => useFeaturePropertiesSync(), { wrapper })
+    await waitFor(() => {
+      expect(mockRegister).toHaveBeenLastCalledWith({
+        '$feature/example_beta_page': true,
+        '$feature/example_cta_experiment': 'bold',
+      })
+    })
+    expect(sent).toContain('GET /tenants/beta/flags')
+    expect(sent).not.toContain('GET /tenants/acme/flags')
   })
 
   it('reads and registers nothing while signed out', async () => {

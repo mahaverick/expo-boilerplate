@@ -2,6 +2,7 @@ import { jest } from '@jest/globals'
 import { QueryClient } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react-native'
 import type { ReactNode } from 'react'
+import { useCurrentTenant } from '@/hooks/use-current-tenant'
 import { useTenantGroup } from '@/observability/telemetry/use-tenant-group'
 import { useAuthStore } from '@/states/auth.store'
 import { useCurrentTenantStore } from '@/states/current-tenant.store'
@@ -18,6 +19,14 @@ import type { User } from '@/types/api.types'
 
 /** The arguments of each `setTenantGroup` call. */
 const mockGroups: unknown[] = []
+/** The focused route's params and path. */
+let mockParams: Record<string, string> = {}
+let mockPathname = '/workspace'
+
+jest.mock('expo-router', () => ({
+  useGlobalSearchParams: () => mockParams,
+  usePathname: () => mockPathname,
+}))
 
 jest.mock('@/lib/storage', () => ({
   storage: { getString: () => undefined, set: () => undefined, remove: () => undefined },
@@ -48,6 +57,8 @@ function list(...items: unknown[]) {
 
 beforeEach(() => {
   mockGroups.length = 0
+  mockParams = {}
+  mockPathname = '/workspace'
   useCurrentTenantStore.setState({ remembered: {} })
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   useAuthStore.getState().login('tok', { id: 'u1' } as User)
@@ -98,6 +109,69 @@ describe('useTenantGroup', () => {
     await waitFor(() => expect(mockGroups.at(-1)).toBeNull())
     expect(mockGroups.every((group) => group === null)).toBe(true)
   })
+
+  it('groups the route’s workspace, not the remembered one, with its access', async () => {
+    useCurrentTenantStore.setState({ remembered: { u1: 'acme' } })
+    mockParams = { slug: 'b' }
+    mockPathname = '/tenants/b'
+    serveWorkspace({
+      'GET /tenants/b': envelope(acme({ id: 't-b', slug: 'b', access: 'platform' })),
+    })
+    await renderGroup()
+    await waitFor(() => expect(mockGroups.at(-1)).toEqual({ id: 't-b', access: 'platform' }))
+    expect(JSON.stringify(mockGroups)).not.toContain('t-acme')
+  })
+
+  it('clears the group while the route’s workspace loads', async () => {
+    mockParams = { slug: 'acme' }
+    mockPathname = '/tenants/acme'
+    let answerB: (() => void) | null = null
+    serve(async (config) => {
+      if (config.url === '/tenants/b') {
+        await new Promise<void>((resolve) => {
+          answerB = resolve
+        })
+        return envelope(acme({ id: 't-b', slug: 'b' }))
+      }
+      if (config.url === '/tenants') return list(membership('acme', 'Acme'))
+      if (config.url === '/tenants/acme') return envelope(acme())
+      return NOT_FOUND
+    })
+    const { rerender } = await renderGroup()
+    await waitFor(() => expect(mockGroups.at(-1)).toEqual({ id: 't-acme', access: 'member' }))
+    mockParams = { slug: 'b' }
+    mockPathname = '/tenants/b'
+    await rerender({})
+    await waitFor(() => expect(answerB).not.toBeNull())
+    expect(mockGroups.at(-1)).toBeNull()
+    await act(async () => {
+      answerB?.()
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(mockGroups.at(-1)).toEqual({ id: 't-b', access: 'member' }))
+  })
+
+  it.each(['/', '/notifications', '/settings', '/settings/account/notifications', '/tenants'])(
+    'clears the group on %s, which is no workspace’s page',
+    async (pathname) => {
+      useCurrentTenantStore.setState({ remembered: { u1: 'acme' } })
+      mockPathname = pathname
+      const sent = serveWorkspace()
+      const { result } = await renderHook(
+        () => {
+          useTenantGroup()
+          return useCurrentTenant()
+        },
+        { wrapper: ({ children }: { children: ReactNode }) => screenTree(<>{children}</>, client) }
+      )
+      // The barrier: the current workspace has resolved, so a group that followed it would read it.
+      await waitFor(() => expect(result.current.status).toBe('ready'))
+      await waitFor(() => expect(client.isFetching()).toBe(0))
+      expect(sent.some((call) => call.url === '/tenants/acme')).toBe(false)
+      expect(mockGroups.length).toBeGreaterThan(0)
+      expect(mockGroups.every((group) => group === null)).toBe(true)
+    }
+  )
 
   it('never groups the platform workspace for a member', async () => {
     serveWorkspace({
