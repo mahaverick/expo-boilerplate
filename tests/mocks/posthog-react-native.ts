@@ -3,9 +3,10 @@
  * `jest.config.ts`. Each client records its options, and each method is a
  * `jest.fn`, so a test can assert on the calls or make one throw. A capture
  * runs the options' `before_send` over the registered properties and the
- * event's own, as the SDK does, and lands in `sent` unless the client is
- * opted out or the hook drops it. `reset()` clears the opt-out, as the SDK's
- * does.
+ * event's own, as the SDK does, and joins the stored queue (`queued`) unless
+ * the client is opted out or the hook drops it. `flush()` delivers the queue
+ * whatever the opt-out, as the SDK's does, and `reset()` clears the opt-out
+ * but keeps the queue, as the SDK's does.
  */
 import { jest } from '@jest/globals'
 import type { BeforeSendFn, CaptureEvent } from '@posthog/core'
@@ -14,6 +15,7 @@ import type { BeforeSendFn, CaptureEvent } from '@posthog/core'
 export const PostHogPersistedProperty = {
   PersonMode: 'person_mode',
   OptedOut: 'opted_out',
+  Queue: 'queue',
 } as const
 
 /** The options the facade passes, as far as the mock reads them. */
@@ -25,8 +27,20 @@ interface MockOptions {
 /** Every client constructed since the last `resetPostHogMock`. */
 export const clients: PostHog[] = []
 
-/** Switches a test can flip: `throwOnConstruct` makes the next `new PostHog` throw. */
-export const mockControl = { throwOnConstruct: false }
+/** What the next client loads from storage when it is built. */
+interface StoredState {
+  queue: CaptureEvent[]
+  optedOut: boolean
+}
+
+/**
+ * Switches a test can flip: `throwOnConstruct` makes the next `new PostHog`
+ * throw, and `stored` is the state the next client loads from storage.
+ */
+export const mockControl: { throwOnConstruct: boolean; stored: StoredState | null } = {
+  throwOnConstruct: false,
+  stored: null,
+}
 
 /** How many anonymous ids and sessions the mock has handed out. */
 let counter = 0
@@ -41,8 +55,10 @@ function nextId(prefix: string): string {
 export class PostHog {
   readonly apiKey: string
   readonly options: MockOptions
-  /** Events that left the client, after `before_send`. */
-  readonly sent: CaptureEvent[] = []
+  /** The stored queue: events captured, after `before_send`, not yet flushed. */
+  readonly queued: CaptureEvent[] = []
+  /** Events a flush delivered. */
+  readonly delivered: CaptureEvent[] = []
   props: Record<string, unknown> = {}
   distinctId = nextId('anon')
   sessionId = nextId('session')
@@ -53,6 +69,10 @@ export class PostHog {
     if (mockControl.throwOnConstruct) throw new Error('construct failed')
     this.apiKey = apiKey
     this.options = options
+    if (mockControl.stored) {
+      this.queued.push(...mockControl.stored.queue)
+      this.isOptedOut = mockControl.stored.optedOut
+    }
     clients.push(this)
   }
 
@@ -118,6 +138,18 @@ export class PostHog {
     key === PostHogPersistedProperty.PersonMode ? this.personMode : undefined
   )
 
+  setPersistedProperty = jest.fn((key: string, value: unknown) => {
+    if (key === PostHogPersistedProperty.Queue && value === null) this.queued.length = 0
+    if (key === PostHogPersistedProperty.OptedOut) this.isOptedOut = value === true
+  })
+
+  /** Sends the stored queue. Like the SDK's, it does not check the opt-out. */
+  flush = jest.fn(() => {
+    this.delivered.push(...this.queued)
+    this.queued.length = 0
+    return Promise.resolve()
+  })
+
   /** Builds the event the SDK would, runs `before_send`, and records what survives. */
   private emit(event: string, properties: Record<string, unknown>): void {
     if (this.isOptedOut) return
@@ -130,7 +162,7 @@ export class PostHog {
       if (captured === null) break
       captured = hook(captured)
     }
-    if (captured !== null) this.sent.push(captured)
+    if (captured !== null) this.queued.push(captured)
   }
 }
 
@@ -138,6 +170,7 @@ export class PostHog {
 export function resetPostHogMock(): void {
   clients.length = 0
   mockControl.throwOnConstruct = false
+  mockControl.stored = null
 }
 
 export default PostHog

@@ -51,9 +51,11 @@ interface QueuedCommand {
 }
 
 /**
- * The most calls held before the SDK starts, react's cap. Past it, the oldest
- * queued capture is dropped to make room (or the new capture, when none is
- * queued); identity, reset, group and opt-out calls are never dropped.
+ * React's cap on the calls held before the SDK starts. It bounds the queued
+ * captures: past it, the oldest queued capture is dropped to make room, or
+ * the new capture when none is queued. Identity, reset, group, flag and
+ * opt-out calls are never dropped, so the queue exceeds the cap only by
+ * those.
  */
 const MAX_QUEUED_COMMANDS = 100
 
@@ -200,6 +202,15 @@ function applyTenant(ph: PostHog): void {
 }
 
 /**
+ * Empties the SDK's stored event queue. The SDK checks the opt-out only when
+ * an event joins the queue, and its flush sends whatever is stored, so the
+ * events captured before an opt-out would otherwise still leave after it.
+ */
+function dropQueuedEvents(ph: PostHog): void {
+  ph.setPersistedProperty(PostHogPersistedProperty.Queue, null)
+}
+
+/**
  * Resets the SDK's person and puts back what `reset()` clears: the opt-out,
  * first, so nothing is captured in between, then the super properties and
  * the workspace group. `reset()` gets no keep-list: a list replaces the
@@ -260,6 +271,8 @@ export function initAnalytics(): void {
     const instance = new PostHog(config.key, posthogOptions())
     client = instance
     status = 'ready'
+    // A stored opt-out stands from the first moment: a queue stored before it never leaves.
+    if (instance.optedOut) execute(dropQueuedEvents, instance)
     execute(registerSuperProperties, instance)
     const pending = queue
     queue = []
@@ -322,12 +335,18 @@ export function resetAnalytics(): void {
 
 /**
  * Applies the signed-in user's own preference. The SDK persists it in MMKV.
+ * Turning capture off also drops the events still queued, so nothing
+ * captured before the choice leaves after it.
  * @param optedOut - The profile's `analyticsOptOut`.
  */
 export function setAnalyticsOptOut(optedOut: boolean): void {
   run((ph) => {
-    if (optedOut && !ph.optedOut) quietly(ph.optOut())
-    if (!optedOut && ph.optedOut) quietly(ph.optIn())
+    if (optedOut) {
+      if (!ph.optedOut) quietly(ph.optOut())
+      dropQueuedEvents(ph)
+    } else if (ph.optedOut) {
+      quietly(ph.optIn())
+    }
   })
 }
 

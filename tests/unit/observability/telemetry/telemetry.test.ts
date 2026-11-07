@@ -56,9 +56,9 @@ function client(): PostHog {
   return clients[0] as PostHog
 }
 
-/** The properties of the last event that left the client. */
+/** The properties of the last event the client queued. */
 function lastSent(): Record<string, unknown> {
-  const sent = client().sent.at(-1)
+  const sent = client().queued.at(-1)
   expect(sent).toBeDefined()
   return (sent as CaptureEvent).properties as Record<string, unknown>
 }
@@ -183,7 +183,7 @@ describe('analytics with a key', () => {
   it('sends the registered event and its properties', () => {
     initAnalytics()
     track('sign_in_completed', { method: 'passkey' })
-    expect(client().sent.at(-1)?.event).toBe('sign_in_completed')
+    expect(client().queued.at(-1)?.event).toBe('sign_in_completed')
     expect(lastSent()).toMatchObject({ method: 'passkey' })
   })
 
@@ -247,15 +247,57 @@ describe('analytics with a key', () => {
     setAnalyticsOptOut(true)
     expect(client().optOut).toHaveBeenCalledTimes(1)
     track('sign_in_link_requested')
-    expect(client().sent).toHaveLength(0)
+    expect(client().queued).toHaveLength(0)
     setAnalyticsOptOut(true)
     expect(client().optOut).toHaveBeenCalledTimes(1)
     setAnalyticsOptOut(false)
     expect(client().optIn).toHaveBeenCalledTimes(1)
     track('sign_in_link_requested')
-    expect(client().sent).toHaveLength(1)
+    expect(client().queued).toHaveLength(1)
     setAnalyticsOptOut(false)
     expect(client().optIn).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops the events still queued when capture turns off', async () => {
+    initAnalytics()
+    track('sign_in_link_requested')
+    captureScreen('/(app)/(tabs)/index')
+    setAnalyticsOptOut(true)
+    await client().flush()
+    expect(client().delivered).toHaveLength(0)
+    expect(client().setPersistedProperty).toHaveBeenCalledWith('queue', null)
+  })
+
+  it('drops a stored queue when an opt-out issued before init runs', async () => {
+    mockControl.stored = {
+      queue: [{ event: 'Application Opened', properties: {} }],
+      optedOut: false,
+    }
+    setAnalyticsOptOut(true)
+    initAnalytics()
+    await client().flush()
+    expect(client().optOut).toHaveBeenCalledTimes(1)
+    expect(client().delivered).toHaveLength(0)
+  })
+
+  it('drops a stored queue when the SDK loads a stored opt-out', async () => {
+    mockControl.stored = {
+      queue: [{ event: 'Application Opened', properties: {} }],
+      optedOut: true,
+    }
+    initAnalytics()
+    await client().flush()
+    expect(client().delivered).toHaveLength(0)
+  })
+
+  it('keeps a stored queue while capture is on', async () => {
+    mockControl.stored = {
+      queue: [{ event: 'Application Opened', properties: {} }],
+      optedOut: false,
+    }
+    initAnalytics()
+    await client().flush()
+    expect(client().delivered.map((event) => event.event)).toEqual(['Application Opened'])
   })
 
   it('resets, puts the super and feature properties back, and keeps the opt-out', () => {
@@ -325,7 +367,7 @@ describe('analytics with a key', () => {
     setTenantGroup({ id: 'tenant-1', access: 'member' })
     expect(client().group).toHaveBeenCalledTimes(1)
     setTenantGroup({ id: 'tenant-2', access: 'platform' })
-    expect(client().sent.at(-1)?.event).toBe('tenant_switched')
+    expect(client().queued.at(-1)?.event).toBe('tenant_switched')
     expect(lastSent()).toMatchObject({ tenant_access: 'platform', $groups: { tenant: 'tenant-2' } })
     setTenantGroup(null)
     expect(client().props).not.toHaveProperty('$groups')
@@ -383,7 +425,7 @@ describe('analytics with a key', () => {
     track('sign_in_completed', { method: 'link' })
     initAnalytics()
     expect(client().distinctId).toBe('user-1')
-    expect(client().sent.map((event) => event.event)).toEqual(['sign_in_completed'])
+    expect(client().queued.map((event) => event.event)).toEqual(['sign_in_completed'])
   })
 
   it('caps the queue at 100 by dropping the oldest event, never an identity call', () => {
@@ -392,15 +434,15 @@ describe('analytics with a key', () => {
     track('billing_page_viewed')
     initAnalytics()
     expect(client().identify).toHaveBeenCalledWith('user-1')
-    expect(client().sent).toHaveLength(99)
-    expect(client().sent.at(-1)?.event).toBe('billing_page_viewed')
+    expect(client().queued).toHaveLength(99)
+    expect(client().queued.at(-1)?.event).toBe('billing_page_viewed')
   })
 
   it('drops a new event when the queue holds only calls it keeps', () => {
     for (let index = 0; index < 100; index += 1) identifyUser(`user-${index}`)
     track('billing_page_viewed')
     initAnalytics()
-    expect(client().sent).toHaveLength(0)
+    expect(client().queued).toHaveLength(0)
     expect(client().distinctId).toBe('user-99')
   })
 
