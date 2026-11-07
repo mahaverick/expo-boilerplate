@@ -763,10 +763,10 @@ Each item is a change for react or for a later plan, with the reason it waits.
   reports the exposure.
 - **The shared schema's `Intl` checks are unchecked on Hermes.** The time
   zone check in `src/schemas/tenant.schemas.ts` builds an
-  `Intl.DateTimeFormat` and treats a `RangeError` as a bad name. The locale
-  check calls `Intl.getCanonicalLocales`. Jest runs both on Node, and no
-  device has run them on Hermes. The README's device
-  checklist covers the General form.
+  `Intl.DateTimeFormat` and treats any throw as a bad name. The locale check
+  calls `Intl.getCanonicalLocales`. Jest runs both on Node, and no device has
+  run them on Hermes. The README's device checklist covers the General form
+  with values that pass each pattern and fail only in `Intl`.
 - **`Button` takes no `accessibilityLabel`.** `RowButton` covers list rows.
   Add the prop to `Button`, then fold `RowButton` into it.
 - **A `SignInNotKeptError` on `/invitations/confirm` while signed in as the

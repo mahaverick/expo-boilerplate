@@ -374,10 +374,12 @@ date, the device and the OS version beside each.
       carries no `token` or `email` (`setParams` with `undefined`). Back from
       the screen never returns to a link with a token.
 - [ ] **The time zone and locale checks work on Hermes.** On Settings, General,
-      enter `Not/AZone` in Time zone and `en_US_` in Language and region.
-      Each shows its field error and posts nothing. Enter
-      `Asia/Kolkata` and `en-IN`: the save goes through. The checks are the
-      shared schema's `Intl` calls.
+      enter `Not/AZone` in Time zone and `en-abcde-abcde` in Language and
+      region. Each shows its field error and posts nothing. Both pass the
+      schema's pattern, so the error proves that Hermes's
+      `Intl.DateTimeFormat` and `Intl.getCanonicalLocales` threw (the second
+      value repeats a variant). Enter `Asia/Kolkata` and `en-IN`: the save
+      goes through.
 - [ ] **The role sheet and the choice chips fit at 200% text.** With the largest
       system font, open Members, select a member's role, and open the invite
       form's role chips. Every role is reachable by scrolling, no label is cut
