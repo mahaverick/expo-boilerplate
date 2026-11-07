@@ -60,6 +60,20 @@ describe('notificationHref', () => {
     expect(notificationHref(make('tenant_invitation', { slug: 'acme' }))).toBeNull()
   })
 
+  it('opens the Plan screen for an unknown billing kind', () => {
+    expect(notificationHref(make('billing_renewal_notice', { slug: 'acme' }))).toEqual({
+      href: '/settings/workspace/acme/billing',
+      label: 'Open Plan',
+    })
+  })
+
+  it('gives an unknown billing kind no link without a usable slug', () => {
+    expect(notificationHref(make('billing_renewal_notice', null))).toBeNull()
+    expect(notificationHref(make('billing_renewal_notice', { slug: '' }))).toBeNull()
+    expect(notificationHref(make('billing_renewal_notice', { slug: 7 }))).toBeNull()
+    expect(notificationHref(make('billing_renewal_notice', { slug: '_platform' }))).toBeNull()
+  })
+
   it('gives no link for a target this app does not know', () => {
     mockLink = {
       value: { to: '/settings/workspace/$slug/checkout', params: { slug: 'acme' }, label: 'x' },

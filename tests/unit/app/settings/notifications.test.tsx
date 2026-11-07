@@ -66,6 +66,19 @@ describe('Notifications screen', () => {
     expect(screen.queryByLabelText(/upgrade/i)).toBeNull()
   })
 
+  it('calls an unknown billing kind "Plan update"', async () => {
+    serve(() =>
+      envelope({
+        preferences: [
+          { notificationType: 'billing_renewal_notice', emailEnabled: true, inAppEnabled: true },
+        ],
+      })
+    )
+    await renderScreen(<Notifications />)
+    expect(await screen.findByText('Plan update')).toBeTruthy()
+    expect(screen.getByLabelText('Plan update: In-app')).toBeTruthy()
+  })
+
   it('sends emailEnabled true for an email type and keeps the in-app-only value', async () => {
     const sent = serve((config) =>
       config.method === 'put'

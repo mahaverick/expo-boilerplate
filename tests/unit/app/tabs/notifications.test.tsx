@@ -262,6 +262,8 @@ describe('Notifications tab', () => {
         within(row).getByText('There’s an update about the plan for Acme. Open Plan for details.')
       ).toBeTruthy()
     )
+    expect(within(row).getByText(/^Plan update · /)).toBeTruthy()
+    expect(within(row).getByRole('link', { name: 'Open Plan' })).toBeTruthy()
     expect(screen.queryByText(/₹/)).toBeNull()
     expect(screen.queryByText(/Renew Paid/)).toBeNull()
     expect(screen.queryByLabelText(/₹/)).toBeNull()

@@ -26,13 +26,17 @@ const APP_TYPE_LABELS: Readonly<Record<string, string>> = {
 
 /**
  * A notification type's label in this app: its own label where the shared
- * one names an upgrade, otherwise `humanizeNotificationType`. The inbox and
- * the preferences screen both use it, so they agree.
+ * one names an upgrade, "Plan update" for a neutral kind with no label of its
+ * own, otherwise `humanizeNotificationType`. The inbox and the preferences
+ * screen both use it, so they agree.
  * @param type - The notification's type.
  * @returns The label.
  */
 export function notificationTypeLabel(type: string): string {
-  return APP_TYPE_LABELS[type] ?? humanizeNotificationType(type)
+  const own = APP_TYPE_LABELS[type]
+  if (own !== undefined) return own
+  if (isNeutralKind(type) && !Object.hasOwn(NEUTRAL_LINES, type)) return 'Plan update'
+  return humanizeNotificationType(type)
 }
 
 /** The app's line for each neutral kind; `{workspace}` is filled in. */
