@@ -67,6 +67,9 @@ function userOf(email: string): User {
   }
 }
 
+/** What `GET /tenants` lists. */
+let memberships: unknown[] = []
+
 /**
  * Serves the invitation routes and records them, leaving out the settings read.
  * @param routes - Answers by `"POST /path"`; the preview and verify default to a live invitation.
@@ -77,7 +80,7 @@ function serveInvitation(routes: Record<string, FakeHandler | FakeAnswer> = {}) 
   serve(async (config) => {
     if (config.url === '/status/client-settings') return NOT_FOUND
     if (config.url === '/tenants')
-      return envelope({ items: [], page: { hasNext: false, nextCursor: null } })
+      return envelope({ items: memberships, page: { hasNext: false, nextCursor: null } })
     seen.push(config)
     const route = routes[`POST ${config.url}`]
     if (typeof route === 'function') return route(config)
@@ -125,6 +128,8 @@ function signInAs(email: string): void {
 
 beforeEach(() => {
   resetSecureStore()
+  memberships = []
+  mockStorage.clear()
   useToastQueueStore.getState().remove()
   setStatus('signed-out')
   openWith({ token: TOKEN, utm_source: 'email' })
@@ -196,6 +201,46 @@ describe('AcceptInvitation', () => {
     )
   })
 
+  it('does not remember the platform workspace', async () => {
+    signInAs('ada@example.com')
+    serveInvitation({
+      'POST /invitations/accept': envelope({
+        tenant: { name: 'Platform', slug: 'platform' },
+        role: 'admin',
+        alreadyMember: false,
+      }),
+    })
+    await renderScreen(<AcceptInvitation />)
+    await waitFor(() => {
+      expect(router.replace).toHaveBeenCalledWith('/workspace', { withAnchor: true })
+    })
+    expect(useCurrentTenantStore.getState().recall('id-ada@example.com')).toBeNull()
+  })
+
+  it('does not remember a suspended workspace', async () => {
+    signInAs('ada@example.com')
+    memberships = [
+      {
+        tenant: { slug: 'acme', name: 'Acme', lifecycleState: 'suspended' },
+        role: 'editor',
+        joinedAt: '2026-01-05',
+        isPlatform: false,
+      },
+    ]
+    serveInvitation({
+      'POST /invitations/accept': envelope({
+        tenant: { name: 'Acme', slug: 'acme' },
+        role: 'editor',
+        alreadyMember: false,
+      }),
+    })
+    await renderScreen(<AcceptInvitation />)
+    await waitFor(() => {
+      expect(router.replace).toHaveBeenCalledWith('/workspace', { withAnchor: true })
+    })
+    expect(useCurrentTenantStore.getState().recall('id-ada@example.com')).toBeNull()
+  })
+
   it('says so when the invitee had already joined', async () => {
     signInAs('ada@example.com')
     serveInvitation({
@@ -248,6 +293,12 @@ describe('AcceptInvitation', () => {
 
   it('Continue signs out, then verifies once, however often it is pressed', async () => {
     signInAs('bob@example.com')
+    // The status follows the auth store, as the real hook does, so the sign-out re-renders the screen.
+    jest
+      .mocked(useSessionStatus)
+      .mockImplementation(() =>
+        useAuthStore((state) => state.isAuthenticated) ? 'signed-in' : 'signed-out'
+      )
     const seen = serveInvitation()
     await renderScreen(<AcceptInvitation />)
     const button = await screen.findByRole('button', { name: 'Continue as ada@example.com' })
@@ -255,6 +306,7 @@ describe('AcceptInvitation', () => {
     await fireEvent.press(button)
     expect(await screen.findByRole('header', { name: 'Check your inbox' })).toBeTruthy()
     expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    expect(urls(seen).filter((url) => url === '/invitations/preview')).toHaveLength(1)
     expect(urls(seen).filter((url) => url === '/invitations/verify')).toHaveLength(1)
     expect(urls(seen).indexOf('/auth/logout')).toBeLessThan(
       urls(seen).indexOf('/invitations/verify')

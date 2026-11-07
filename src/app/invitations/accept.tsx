@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { InlineError } from '@/components/ui/inline-error'
 import { Screen } from '@/components/ui/screen'
 import { ROLE_LABELS } from '@/constants/roles'
+import { PLATFORM_TENANT_SLUG } from '@/constants/routes'
 import { useSignOut } from '@/hooks/use-sign-out'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import { retryAfterSecondsFrom, statusFrom } from '@/lib/api-error'
@@ -20,7 +21,11 @@ import {
   useInvitationPreview,
   useVerifyInvitation,
 } from '@/queries/invitation.queries'
-import { invalidateTenantList } from '@/queries/tenant.queries'
+import {
+  invalidateTenantList,
+  isEligibleTenant,
+  tenantsQueryOptions,
+} from '@/queries/tenant.queries'
 import { useAuthStore } from '@/states/auth.store'
 import { useCurrentTenantStore } from '@/states/current-tenant.store'
 import type { InvitationConfirmationSent, InvitationPreview, User } from '@/types/api.types'
@@ -182,16 +187,31 @@ export default function AcceptInvitation() {
     decide()
   }, [status])
 
-  const preview = useInvitationPreview(valid && started ? token : undefined)
+  const preview = useInvitationPreview(valid && started && !joining ? token : undefined)
   const invitation = preview.data
   const gone = !invitation && preview.isError && statusFrom(preview.error) === 404
   const startedAs = started?.user ?? null
   const nextCall = started ? joinCallFor(invitation, gone, startedAs) : null
 
-  /** Toasts the join, remembers the workspace and opens the Workspace tab in place of this screen. */
-  const land = (tenant: { name: string; slug: string }, account: User, alreadyMember: boolean) => {
+  /**
+   * Toasts the join and opens the Workspace tab in place of this screen. It
+   * remembers the workspace only when it is eligible: never the platform
+   * workspace, never a suspended one. The answer names neither, so the list
+   * is read once; a failed read falls back to the web address alone.
+   */
+  const land = async (
+    tenant: { name: string; slug: string },
+    account: User,
+    alreadyMember: boolean
+  ) => {
     setFailure(null)
-    useCurrentTenantStore.getState().remember(account.id, tenant.slug)
+    // Offline the read fails at once and never waits.
+    const listed = await queryClient
+      .fetchQuery({ ...tenantsQueryOptions(), staleTime: 0, networkMode: 'always' })
+      .catch(() => undefined)
+    const entry = listed?.find((item) => item.tenant.slug === tenant.slug)
+    const eligible = entry ? isEligibleTenant(entry) : tenant.slug !== PLATFORM_TENANT_SLUG
+    if (eligible) useCurrentTenantStore.getState().remember(account.id, tenant.slug)
     void invalidateTenantList(queryClient)
     toast.success(
       alreadyMember
@@ -229,7 +249,7 @@ export default function AcceptInvitation() {
       accept.mutate(token ?? '', {
         onSuccess: ({ tenant, alreadyMember }) => {
           busy.current = false
-          land(tenant, account, alreadyMember)
+          void land(tenant, account, alreadyMember)
         },
         onError: (error) => failWith(call, error),
       })
@@ -247,9 +267,10 @@ export default function AcceptInvitation() {
   const continueAs = (waiting: InvitationPreview) => {
     if (busy.current) return
     busy.current = true
+    // Set before the sign-out clears the cache, so the preview is not asked again.
+    startedCall.current = true
+    setJoining({ call: 'verify', invitation: waiting })
     void signOut({ navigate: false }).then(() => {
-      startedCall.current = true
-      setJoining({ call: 'verify', invitation: waiting })
       post('verify', null)
     })
   }
