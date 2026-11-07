@@ -35,12 +35,12 @@ import { StepUpDialog } from '@/components/step-up/step-up-dialog'
 import { StepUpProvider } from '@/components/step-up/step-up-provider'
 import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
 import type { MembershipRole } from '@/constants/roles'
+import { flagsKey } from '@/observability/flags/flag-query'
 import { accountDeletionKeys } from '@/queries/account-deletion.queries'
 import { tenantAuditListOptions } from '@/queries/audit.queries'
 import { authKeys } from '@/queries/auth.queries'
 import { billingKeys } from '@/queries/billing.queries'
 import { clientSettingsKeys } from '@/queries/client-settings.queries'
-import { tenantFlagsKey } from '@/queries/flags.queries'
 import { insightsKey } from '@/queries/insights.queries'
 import {
   notificationKeys,
@@ -66,6 +66,7 @@ import type { ListPage } from '@/types/list.types'
 jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), push: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: () => ({ slug: 'acme' }),
+  useGlobalSearchParams: () => ({ slug: 'acme' }),
   Stack: { Screen: () => null },
   useFocusEffect: (effect: () => void) => {
     const { useEffect } = jest.requireActual<typeof import('react')>('react')
@@ -150,7 +151,7 @@ function seeded(detail: unknown, list: TenantWithRole[]): QueryClient {
   seed.setQueryData(tenantKeys.detail('acme'), detail)
   seed.setQueryData(tenantsQueryOptions().queryKey, list)
   seed.setQueryData(billingKeys.billing('acme'), null)
-  seed.setQueryData(tenantFlagsKey('acme'), {
+  seed.setQueryData(flagsKey({ kind: 'tenant', slug: 'acme' }), {
     example_beta_page: false,
     example_cta_experiment: 'control',
   })

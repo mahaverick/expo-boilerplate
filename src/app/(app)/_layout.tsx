@@ -12,6 +12,7 @@ import { NotificationStream } from '@/components/notifications/notification-stre
 import { useMaintenanceMode } from '@/http/maintenance'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import { safePath } from '@/lib/safe-path'
+import { useFeaturePropertiesSync } from '@/observability/flags/flag-hooks'
 import { useTenantGroup } from '@/observability/telemetry/use-tenant-group'
 import { useOwnSignOutStore } from '@/states/own-sign-out.store'
 import { usePasskeySetupStore } from '@/states/passkey-setup.store'
@@ -83,6 +84,7 @@ export default function AppLayout() {
   const passkeyRequired = usePasskeySetupStore((state) => state.required)
   const isOwnSignOut = useOwnSignOutStore((state) => state.isOwn)
   useTenantGroup()
+  useFeaturePropertiesSync()
   useEffect(() => {
     if (status === 'signed-in' && isOwnSignOut) useOwnSignOutStore.setState({ isOwn: false })
   }, [status, isOwnSignOut])

@@ -8,7 +8,10 @@ import { renderScreen, restoreApi, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 import { membership, serveWorkspace } from '@/tests/support/workspace-api'
 
-jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn() } }))
+jest.mock('expo-router', () => ({
+  router: { replace: jest.fn(), push: jest.fn() },
+  useGlobalSearchParams: () => ({}),
+}))
 
 /** The in-memory stand-in for MMKV. */
 const mockStorage = new Map<string, string>()

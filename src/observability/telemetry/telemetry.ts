@@ -95,7 +95,10 @@ let signedInUserId: string | null = null
 let appliedTenant: AnalyticsTenant | null = null
 /** The last workspace grouped since the last reset, for `tenant_switched`. */
 let lastTenantId: string | null = null
-/** The `$feature/*` properties registered, put back after every reset. */
+/** The name of a super property that carries a flag's value. */
+export type FeaturePropertyName = `$feature/${string}`
+
+/** The `$feature/*` properties registered, put back after a reset that keeps the person. */
 let featureProperties: Record<string, unknown> = {}
 const settledWaiters = new Set<() => void>()
 
@@ -340,16 +343,21 @@ export function forgetStaleIdentity(): void {
     signedInUserId = null
     appliedTenant = null
     lastTenantId = null
+    featureProperties = {}
     resetKeepingOptOut(ph)
   })
 }
 
-/** Forgets the person and the workspace group: sign-out, forced or chosen. The opt-out survives. */
+/**
+ * Forgets the person, the workspace group and the `$feature/*` properties:
+ * sign-out, forced or chosen. The opt-out survives.
+ */
 export function resetAnalytics(): void {
   run((ph) => {
     signedInUserId = null
     appliedTenant = null
     lastTenantId = null
+    featureProperties = {}
     resetKeepingOptOut(ph)
   })
 }
@@ -397,7 +405,7 @@ export function setTenantGroup(tenant: AnalyticsTenant | null): void {
 
 /**
  * Registers flag values as super properties, so every following event
- * carries them. They are registered again after every reset.
+ * carries them. A reset that forgets the person forgets them too.
  * @param props - `$feature/<flag>` names and their values.
  */
 export function registerFeatureProperties(props: Record<string, unknown>): void {

@@ -8,8 +8,8 @@ import { Screen } from '@/components/ui/screen'
 import { StackWorkspaceGate } from '@/components/workspaces/missing-workspace'
 import { PlatformAccessBanner } from '@/components/workspaces/platform-access-banner'
 import { statusFrom } from '@/lib/api-error'
+import { flagsKey } from '@/observability/flags/flag-query'
 import { useTenantBeta } from '@/queries/beta.queries'
-import { tenantFlagsKey } from '@/queries/flags.queries'
 
 /** What a failed read says. */
 const BETA_ERROR = 'We couldn’t load this workspace’s beta features. Select Try again to load them.'
@@ -47,7 +47,10 @@ function BetaContent({ slug }: { slug: string }) {
   // Once per 404: read the flags again, even where nothing observes them now.
   useEffect(() => {
     if (!closed) return
-    void queryClient.invalidateQueries({ queryKey: tenantFlagsKey(slug), refetchType: 'all' })
+    void queryClient.invalidateQueries({
+      queryKey: flagsKey({ kind: 'tenant', slug }),
+      refetchType: 'all',
+    })
   }, [closed, errorUpdatedAt, queryClient, slug])
 
   if (closed) {

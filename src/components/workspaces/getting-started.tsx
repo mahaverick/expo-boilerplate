@@ -7,6 +7,8 @@ import { WORKSPACE_SECTIONS } from '@/constants/settings'
 import { useNow } from '@/hooks/use-now'
 import { messageFrom, statusFrom } from '@/lib/api-error'
 import { toast } from '@/lib/toast'
+import { useVariant } from '@/observability/flags/flag-hooks'
+import { analyticsKey, track, type AnalyticsKey } from '@/observability/telemetry'
 import {
   useCompleteOnboardingStep,
   useDismissOnboarding,
@@ -34,10 +36,19 @@ interface Viewer {
   isOwner: boolean
 }
 
-/** The auto steps that link to a settings screen: the label and the section. */
-const STEP_LINKS: ReadonlyMap<string, { label: string; section: 'general' | 'members' }> = new Map([
-  ['configure_settings', { label: 'Open settings', section: 'general' }],
-  ['invite_teammate', { label: 'Open members', section: 'members' }],
+/** The auto steps that link to a settings screen: the label, the section and the analytics key a press sends. */
+const STEP_LINKS: ReadonlyMap<
+  string,
+  { label: string; section: 'general' | 'members'; cta: AnalyticsKey }
+> = new Map([
+  [
+    'configure_settings',
+    { label: 'Open settings', section: 'general', cta: analyticsKey('onboarding_open_settings') },
+  ],
+  [
+    'invite_teammate',
+    { label: 'Open members', section: 'members', cta: analyticsKey('onboarding_open_members') },
+  ],
 ])
 
 /**
@@ -95,6 +106,33 @@ function MarkDone({ slug, step }: { slug: string; step: OnboardingStepView }) {
   )
 }
 
+/** A step link's entry in `STEP_LINKS`. */
+type StepLinkTarget = NonNullable<ReturnType<(typeof STEP_LINKS)['get']>>
+
+/**
+ * A step's button to its settings screen, styled by the `example_cta_experiment`
+ * variant: secondary for `control`, primary for `bold`. Reading the variant
+ * here reports the exposure only for a viewer who sees a button. A press
+ * sends `feature_cta_clicked`, the experiment's metric.
+ * @param props - The link and what opens its screen.
+ * @param props.link - The step's link.
+ * @param props.onOpen - Opens the settings screen.
+ * @returns The button.
+ */
+function StepLinkButton({ link, onOpen }: { link: StepLinkTarget; onOpen: () => void }) {
+  const variant = useVariant('example_cta_experiment')
+  return (
+    <Button
+      variant={variant === 'bold' ? 'primary' : 'secondary'}
+      label={link.label}
+      onPress={() => {
+        track('feature_cta_clicked', { cta: link.cta })
+        onOpen()
+      }}
+    />
+  )
+}
+
 /**
  * The one thing a pending step offers this viewer: Mark done for a manual
  * step, or a link to workspace settings for the steps that need them.
@@ -121,10 +159,9 @@ function StepAction({
       return <Text className="text-sm text-muted-foreground">{OWNER_OR_ADMIN}</Text>
     const target = WORKSPACE_SECTIONS.find((s) => s.key === link.section)
     return (
-      <Button
-        variant="secondary"
-        label={link.label}
-        onPress={() => {
+      <StepLinkButton
+        link={link}
+        onOpen={() => {
           if (target !== undefined) router.push(target.path(slug))
         }}
       />

@@ -1,20 +1,27 @@
 /**
  * @file Keeps analytics' identity in step with the auth store's user.
  */
+import { clearExposureDedupe } from '@/observability/flags/exposure'
+import { forgetFeatureProperties } from '@/observability/flags/feature-property-names'
 import { useAuthStore } from '@/states/auth.store'
 import type { User } from '@/types/api.types'
 import { forgetStaleIdentity, identifyUser, resetAnalytics, setAnalyticsOptOut } from './telemetry'
 
 /**
  * Brings analytics in step with a change of the signed-in user. A different
- * person, or none, resets first. A user then has their own opt-out applied,
- * and is identified by id alone only when not opted out, so an opted-out
- * person is never identified.
+ * person, or none, resets first and forgets the flags module's per-person
+ * state. A user then has their own opt-out applied, and is identified by id alone only when not opted
+ * out, so an opted-out person is never identified.
  * @param user - The user now.
  * @param previous - The user before, or null.
  */
 function apply(user: User | null, previous: User | null): void {
-  if (previous && previous.id !== user?.id) resetAnalytics()
+  if (previous && previous.id !== user?.id) {
+    resetAnalytics()
+    // The reset dropped the feature properties; the next person reports exposures afresh.
+    forgetFeatureProperties()
+    clearExposureDedupe()
+  }
   if (!user) return
   // Fails closed: a profile without the field is treated as opted out.
   const isOptedOut = user.analyticsOptOut !== false

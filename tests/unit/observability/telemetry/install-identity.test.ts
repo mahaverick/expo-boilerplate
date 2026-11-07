@@ -10,6 +10,14 @@ import type { User } from '@/types/api.types'
 /** The facade calls in order, as `name(arg)`. */
 const mockCalls: string[] = []
 
+jest.mock('@/observability/flags/feature-property-names', () => ({
+  forgetFeatureProperties: () => mockCalls.push('forgetFeatures'),
+}))
+
+jest.mock('@/observability/flags/exposure', () => ({
+  clearExposureDedupe: () => mockCalls.push('clearExposures'),
+}))
+
 jest.mock('@/observability/telemetry/telemetry', () => ({
   forgetStaleIdentity: () => mockCalls.push('forgetStale'),
   identifyUser: (id: string) => mockCalls.push(`identify(${id})`),
@@ -86,7 +94,13 @@ describe('installAnalyticsIdentity', () => {
     useAuthStore.getState().login('tok', user('u1'))
     mockCalls.length = 0
     useAuthStore.getState().login('tok', user('u2'))
-    expect(mockCalls).toEqual(['reset', 'optOut(false)', 'identify(u2)'])
+    expect(mockCalls).toEqual([
+      'reset',
+      'forgetFeatures',
+      'clearExposures',
+      'optOut(false)',
+      'identify(u2)',
+    ])
   })
 
   it('resets on sign-out and does not touch the opt-out', () => {
@@ -94,7 +108,7 @@ describe('installAnalyticsIdentity', () => {
     useAuthStore.getState().login('tok', user('u1', true))
     mockCalls.length = 0
     useAuthStore.getState().logout()
-    expect(mockCalls).toEqual(['reset'])
+    expect(mockCalls).toEqual(['reset', 'forgetFeatures', 'clearExposures'])
   })
 
   it('applies a changed analyticsOptOut at once', () => {

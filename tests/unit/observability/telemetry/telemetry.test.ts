@@ -309,7 +309,7 @@ describe('analytics with a key', () => {
     expect(client().delivered.map((event) => event.event)).toEqual(['Application Opened'])
   })
 
-  it('resets, puts the super and feature properties back, and keeps the opt-out', () => {
+  it('resets, puts the super properties back, forgets the feature properties and keeps the opt-out', () => {
     initAnalytics()
     identifyUser('user-1')
     registerFeatureProperties({ '$feature/example_beta_page': true })
@@ -318,12 +318,16 @@ describe('analytics with a key', () => {
     resetAnalytics()
     expect(client().reset).toHaveBeenCalledTimes(1)
     expect(client().optedOut).toBe(true)
-    expect(client().props).toEqual({
-      app: 'expo',
-      environment: 'staging',
-      '$feature/example_beta_page': true,
-    })
+    expect(client().props).toEqual({ app: 'expo', environment: 'staging' })
     expect(getAnalyticsSessionIdFor('user-1')).toBeNull()
+  })
+
+  it('forgets the feature properties when it drops a stale identity', () => {
+    initAnalytics()
+    identifyUser('user-1')
+    registerFeatureProperties({ '$feature/example_beta_page': true })
+    forgetStaleIdentity()
+    expect(client().props).toEqual({ app: 'expo', environment: 'staging' })
   })
 
   it('leaves capture on after a reset that was not opted out', () => {

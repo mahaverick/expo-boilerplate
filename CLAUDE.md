@@ -650,13 +650,19 @@ screens, Insights and Beta. They are plan 3c3's. The files are listed in
   Beta (its Page not found state too). React shows it "on every page of a
   tenant the viewer reached as platform staff", and staff would otherwise
   not know why the controls are missing. It renders nothing for a member.
-- **`useTenantFlags` returns the fallbacks on any error, and stands in for
-  plan 3d.** The hook reads `GET /tenants/:slug/flags` through the shared
-  `normalizeFlags`, and plan 3d replaces it with the full flags client. When
-  the latest read is in error it returns the fallbacks, not the last good
-  values: a stale `true` keeps a Beta row on screen that answers 404. The
-  query key sits under the workspace's detail key, so `dropTenantCache`
-  removes it.
+- **Flags are read by scope, and a read in error returns the fallbacks.**
+  `useFlagValues()` and `useVariant(key)` (`src/observability/flags/`) read the
+  focused route's scope: a `slug` param reads `GET /tenants/:slug/flags`, any
+  other route `GET /flags`. When the latest read is in error they return the
+  fallbacks, not the last good values: a stale `true` keeps a Beta row on
+  screen that answers 404. The workspace key sits under the workspace's detail
+  key, so `dropTenantCache` removes it. `useFeaturePropertiesSync()` runs once
+  in the `(app)` layout and registers `$feature/<key>`. An experiment's
+  exposure posts to `<flags path>/exposures` once per scope, key and value per
+  launch, whatever the analytics choice. A change of person clears the dedupe.
+- **`example_cta_experiment` styles the Getting started step button:**
+  `control` keeps the secondary button and `bold` takes the primary one. A
+  press sends `feature_cta_clicked`.
 - **Beta shows Page not found in place when the API answers 404.** The flag
   can close after the screen opened. The screen draws the not-found copy
   itself, not through a route change, and refetches the flags once so the
