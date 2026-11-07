@@ -198,7 +198,8 @@ in. A forced sign-out (`signOut` in `client.ts`, after a 401 that is not an
 expiry) clears the same state.
 
 App links: the Android intent filter claims only `/auth/link`, `/tenants/`,
-`/auth/confirm` and `/settings/account/security`, the paths with a screen.
+`/auth/confirm`, `/settings/account/security` and `/invitations/accept`, the
+paths with a screen.
 Each later plan adds its paths with its screens. iOS claims the paths in react's apple-app-site-association file. The passkey screen opens the
 website through `expo-web-browser`, since `Linking.openURL` would hand a
 verified app link back to the app.

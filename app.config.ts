@@ -12,6 +12,7 @@ const ANDROID_APP_LINK_PATH_PREFIXES = [
   '/tenants/',
   '/auth/confirm',
   '/settings/account/security',
+  '/invitations/accept',
 ]
 
 /** A bare hostname: dot-separated labels, no scheme, port or path. */

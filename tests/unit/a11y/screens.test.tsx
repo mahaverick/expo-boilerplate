@@ -17,9 +17,11 @@ import Welcome from '@/app/(app)/welcome'
 import NotFound from '@/app/+not-found'
 import Confirm from '@/app/auth/confirm'
 import Link from '@/app/auth/link'
+import AcceptInvitation from '@/app/invitations/accept'
 import Login from '@/app/login'
 import PasskeyRequired from '@/app/passkey-required'
 import { SigningInScreen } from '@/components/auth/signing-in-screen'
+import { InvitationInbox } from '@/components/invitations/invitation-inbox'
 import { SettingsRow } from '@/components/settings/settings-row'
 import { MaintenanceScreen } from '@/components/shared/maintenance-screen'
 import { UpdateScreen } from '@/components/shared/update-screen'
@@ -78,6 +80,20 @@ const SCREENS: Array<[string, () => React.JSX.Element]> = [
   ['Login', () => <Login />],
   ['Link (dead link)', () => <Link />],
   ['Confirm (incomplete link)', () => <Confirm />],
+  ['Invitation (incomplete link)', () => <AcceptInvitation />],
+  [
+    'Invitation (check your inbox)',
+    () => (
+      <InvitationInbox
+        email="ada@example.com"
+        workspace="Acme"
+        resendAt={Date.now() + 60_000}
+        resending={false}
+        onResend={() => undefined}
+        onHome={() => undefined}
+      />
+    ),
+  ],
   ['Home', () => <Home />],
   ['Workspace tab', () => <Workspace />],
   ['Notifications', () => <Notifications />],
