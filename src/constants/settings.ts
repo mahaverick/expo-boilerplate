@@ -61,8 +61,8 @@ export interface WorkspaceSection {
 }
 
 /**
- * The Workspace group's rows, in order. The screens are not typed routes yet,
- * so each path casts to `Href`.
+ * The Workspace group's rows, in order. Each path is a typed route, written as
+ * a template literal that Expo Router's generated types accept.
  */
 export const WORKSPACE_SECTIONS: ReadonlyArray<WorkspaceSection> = [
   {

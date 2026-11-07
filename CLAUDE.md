@@ -279,12 +279,23 @@ candidate, and each has a reason. The files are listed in
 - **The Android intent filter claims only the paths with a screen.** Those are
   `/auth/link`, `/tenants/`, `/auth/confirm`, `/settings/account/security`,
   `/invitations/accept` and `/invitations/confirm`
-  (`ANDROID_APP_LINK_PATH_PREFIXES` in `app.config.ts`): the sign-in link, a
-  workspace's overview and the "Confirm it’s you" link. A verified link to
-  a path with no screen loops back into the app and lands on Page not found.
-  Each later plan adds its paths with its screens. iOS's paths come from
-  react's apple-app-site-association file (`docker/15-app-links.sh`), which
-  this app does not control.
+  (`ANDROID_APP_LINK_PATH_PREFIXES` in `app.config.ts`):
+  - `/auth/link`: the sign-in link;
+  - `/tenants/`: a workspace's overview, Insights and Beta (the prefix);
+  - `/auth/confirm`: the "Confirm it’s you" link;
+  - `/settings/account/security`: the Security screen;
+  - `/invitations/accept`: the invitation link in the invitation email;
+  - `/invitations/confirm`: the confirmation link that `accept` mails to the
+    invited address.
+
+  A verified link to a path with no screen loops back into the app and lands
+  on Page not found. `/settings/workspace/…` is not claimed, because react's
+  apple-app-site-association file does not list it, and the same screens
+  would then open from one platform's link and not the other's. Each later
+  plan adds its paths with its screens. iOS's paths come from react's
+  apple-app-site-association file (`docker/15-app-links.sh`), which this app
+  does not control.
+
 - **"Open the website" uses `expo-web-browser`, not `Linking.openURL`.** The
   system's link handler hands a verified app link back to the app.
 - **`+native-intent.tsx` strips the query and fragment from every non-https
@@ -456,7 +467,9 @@ it’s you" flow. The files are listed in
   Account holds Profile, Security and Notifications
   (`ACCOUNT_SECTIONS` in `src/constants/settings.ts`), and each row opens
   `/settings/account/{name}` under the stack's empty-titled header with Back.
-  The Workspace group is text only. `/profile` and `/settings/account`
+  The Workspace group lists General, Members and Activity
+  (`WORKSPACE_SECTIONS`) for the current workspace, and says "Choose a
+  workspace first." when none resolves. `/profile` and `/settings/account`
   redirect to Profile. Section headings inside a screen are plain text, not
   headings, because a screen has one header role and the accessibility
   harness rejects a second.
@@ -541,6 +554,99 @@ it’s you" flow. The files are listed in
   read the cached query and write with a mutation. A failed write reports
   inline (Profile) or as a toast (Notifications, whose rows stay as they were).
 
+## Workspace settings and invitations
+
+The rules below cover the Settings tab's Workspace group, the invitation
+screens, Insights and Beta. They are plan 3c3's. The files are listed in
+[ARCHITECTURE.md](ARCHITECTURE.md#workspace-settings-and-invitations).
+
+- **Staff with platform access see a read-only view, with no reason UI.** On a
+  customer workspace, express asks staff for a recent sign-in and a typed
+  `reason` (`requireRecentAuthAndReasonOnPlatformAccess`). React never sends
+  one: it shows staff a read-only view and points them to the staff console.
+  Expo does the same, so no write button shows for `access === 'platform'`.
+  Building a reason prompt here would only add a second path to a decision that
+  belongs to the staff console.
+- **Every member write runs through `useStepUp().run`.** A role change, a
+  removal, leaving, an invite, a resend and a revoke each go through it, and
+  the button shows `STEP_UP_WAITING_LABEL` while `useStepUpWaiting()` is true.
+  Express asks for a recent sign-in on each of them, so a write outside `run`
+  would fail with `REAUTH_REQUIRED` and no way to answer it.
+- **A refused invite shows inline in the invite form.** The invite form is a
+  form, and an error that blocks a form renders inline. A refused step-up
+  there is a form-level error, as in react. The Security screen keeps its
+  toast, since it has no form.
+- **The members and invitations rows share one `RowButton`.**
+  `src/components/workspace-settings/row-button.tsx` is a compact outlined
+  button that takes an `accessibilityLabel`. A list holds one button per row,
+  so every label names its row ("Resend invitation to a@b.test"). The kit's
+  `Button` has no such prop, and a copy of `RowButton` in a second file drifts.
+- **The `ChoiceSheet` has no scrim.** The theme's colours are `var(--token)`
+  strings, so Tailwind emits no class for `bg-foreground/40`, and the backdrop
+  would draw transparent on a device anyway. The backdrop stays transparent and
+  closes the sheet when pressed, and the sheet takes a whole-token edge
+  (`border-t border-border`, `bg-card`). A dimming scrim needs a new react
+  token. The `OPACITY_CLASS` rule in `eslint.config.js` fails an opacity
+  modifier on a colour class (`bg-*/NN`, `text-*/NN`, `border-*/NN`) in
+  expo's own files. It does not see an arbitrary modifier such as
+  `bg-primary/[0.4]`.
+- **Role pickers are a `ChoiceSheet`**, a React Native `Modal` list, because
+  the kit has no select. A step-up dialog can try to open while the sheet is
+  still closing; the README's device checklist covers that on iOS.
+- **Lists page with "Load more", through `useListPages`.** The shared
+  `listQueryOptions` serves one page per request, so `useListPages` makes
+  each page its own query, keyed by its cursor, and joins the rows. It never
+  uses `useInfiniteQuery`, and phones have no table. A request that changes by
+  value starts again at page 1. A failed later page keeps the loaded rows and
+  offers Try again beside them.
+- **Legacy workspace paths redirect to the new screens.**
+  `/tenants/{slug}/settings`, `/members` and `/activity` go to General,
+  Members and Activity under `/settings/workspace/{slug}/`, and
+  `/settings/workspace/{slug}` goes to General. Each keeps the query except
+  `token`, `slug` and `rest`, so a one-time token never travels on, and the
+  route's own segments do not repeat as parameters.
+- **A join lands on the Workspace tab.** `landJoined`
+  (`src/lib/land-joined.ts`) serves both invitation screens, so the two
+  landings cannot drift. It reads the workspace list once, remembers the joined
+  workspace only when the list shows it as eligible (never the platform
+  workspace, never a suspended one), invalidates the list, toasts, and calls
+  `router.replace('/workspace', { withAnchor: true })` so the tabs stay
+  beneath. A failed read remembers nothing, and the Workspace tab resolves the
+  first eligible workspace. The join's answer names neither the platform flag
+  nor the lifecycle state, so remembering from a fallback could keep a
+  suspended workspace.
+- **An invitation link is read once and spends nothing until the person
+  chooses.** `/invitations/accept` and `/invitations/confirm` read `token`
+  (and `email`) once, clear them from the route, and wait for the session
+  restore. A token that is not 43 base64url characters is dead and never
+  posted. Signed in as someone else, the screen asks first and posts nothing;
+  Continue signs out, then posts. The preview runs once, so Continue does not
+  re-run it after the sign-out clears the query cache.
+- **`/settings/workspace/…` is not an app link.** React's
+  apple-app-site-association file does not list it, so Android does not claim
+  it either.
+- **The platform-access banner shows on every workspace screen reached with
+  platform access:** the overview, General, Members, Activity, Insights and
+  Beta (its Page not found state too). React shows it "on every page of a
+  tenant the viewer reached as platform staff", and staff would otherwise
+  not know why the controls are missing. It renders nothing for a member.
+- **`useTenantFlags` returns the fallbacks on any error, and stands in for
+  plan 3d.** The hook reads `GET /tenants/:slug/flags` through the shared
+  `normalizeFlags`, and plan 3d replaces it with the full flags client. When
+  the latest read is in error it returns the fallbacks, not the last good
+  values: a stale `true` keeps a Beta row on screen that answers 404. The
+  query key sits under the workspace's detail key, so `dropTenantCache`
+  removes it.
+- **Beta shows Page not found in place when the API answers 404.** The flag
+  can close after the screen opened. The screen draws the not-found copy
+  itself, not through a route change, and refetches the flags once so the
+  overview drops its Beta row.
+- **Insights shows a failed entitlements read as a `LoadError`**, never as the
+  locked card. A locked state reads "Included in Paid." with no action,
+  because billing actions wait for the billing plan.
+- **The members-limit note shows its counts only.** It has no Upgrade or
+  Request action; see the follow-ups.
+
 ## Copy
 
 - **Customers read "workspace", never "tenant", and "web address", never
@@ -595,10 +701,12 @@ Each item is a change for react or for a later plan, with the reason it waits.
   branches 82, functions 86 and lines 89. The shared tests alone (31 manifest
   rows, 29 of them test files) cover statements 43.78%, branches 46.00%,
   functions 31.47% and lines 42.51% of `src/`, because they exercise only part
-  of the 75 shared files. The full suite measures statements 78.60%, branches
-  76.62%, functions 70.61% and lines 78.34% on 7 November 2026.
-  `jest.config.ts` and `ci.yml` hold 78, 76, 70 and 78. React should mark more
-  of its tests for expo; then expo raises each threshold toward react's.
+  of the 75 shared files. The full suite measures statements 87.15%, branches
+  83.69%, functions 82.47% and lines 87.78% on 7 November 2026.
+  `jest.config.ts` and `ci.yml` hold 87, 83, 82 and 87. Branches are above
+  react's 82. Statements, functions and lines are still below react's. React
+  should mark more of its tests for expo; then expo raises each threshold
+  toward react's.
 - **One copy-style case is skipped by name.** `test` and `test:coverage` pass
   `--testNamePattern` with a negative lookahead that skips only "finds the copy
   it guards" in `tests/unit/copy-style.test.ts`. That case expects more than
@@ -643,9 +751,32 @@ Each item is a change for react or for a later plan, with the reason it waits.
 - **The Notifications tab is a placeholder.** It says the feature is not in
   this version. Plan 3c4 fills it. The Settings tab is real: its Account rows
   open Profile, Security and Notifications preferences.
-- **The Workspace group on the Settings tab is text only.** The onboarding steps
-  that point at workspace settings or Members show no link. Plan 3c3 adds those
-  screens and the links with them.
+- **The billing actions wait for the billing plan.** The members-limit note
+  shows its counts with no Upgrade or Request action, and Insights' locked
+  state reads "Included in Paid." with no action. The plan adds the actions
+  and the usage meter.
+- **Activity filters by search and by access only.** The Access filter offers
+  Staff, Member and System. The Action and Actor filters wait for a later
+  plan.
+- **The CTA experiment reports no exposure.** `example_cta_experiment` takes
+  its control arm, a link, so no exposure event leaves the app. A later plan
+  reports the exposure.
+- **The shared schema's `Intl` checks are unchecked on Hermes.** The time
+  zone check in `src/schemas/tenant.schemas.ts` builds an
+  `Intl.DateTimeFormat` and treats a `RangeError` as a bad name. The locale
+  check calls `Intl.getCanonicalLocales`. Jest runs both on Node, and no
+  device has run them on Hermes. The README's device
+  checklist covers the General form.
+- **`Button` takes no `accessibilityLabel`.** `RowButton` covers list rows.
+  Add the prop to `Button`, then fold `RowButton` into it.
+- **A `SignInNotKeptError` on `/invitations/confirm` while signed in as the
+  same email leaves a revoked session.** The device could not store the new
+  token, so the join's token was revoked, and the old session stays open until
+  it fails. It fails safe: the person sees "Go to Home" and signs in again.
+  The fix signs out and shows the prefilled form.
+- **Continue on both invitation screens waits for the whole sign-out.**
+  `retryPendingRevoke` can take up to the client timeout of 30 seconds before
+  the screen posts. The post could start once the local sign-out is done.
 - **The Privacy (usage analytics) section waits for plan 3d.** The telemetry
   port is a stub, and react hides the section when analytics are unavailable.
 - **The iOS App Store ID is unset.** Plan 3e sets `IOS_APP_STORE_ID` for each
@@ -662,6 +793,6 @@ Each item is a change for react or for a later plan, with the reason it waits.
 - **Plans are not tracked.** `docs/superpowers/plans/` is git-ignored, and the
   specs under `docs/superpowers/specs/` are tracked. A plan lives on the
   machine of whoever wrote it.
-- **The Hermes polyfills, the splash screen, the React Compiler and the
-  workspace screens are unchecked on a device.**
+- **The Hermes polyfills, the splash screen, the React Compiler, the
+  workspace screens and the invitation screens are unchecked on a device.**
   [SECURITY.md](SECURITY.md#known-gaps) and the README checklist carry them.
