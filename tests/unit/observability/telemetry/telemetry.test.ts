@@ -186,7 +186,65 @@ describe('analytics with a key', () => {
     expect(beforeSend({ event: 'Application Installed', properties: {} })?.properties).toEqual({
       app: 'expo',
       environment: 'staging',
+      $geoip_disable: true,
     })
+  })
+
+  it('turns off PostHog’s IP geolocation on every event, whatever the caller passed', () => {
+    initAnalytics()
+    track('sign_in_completed', { method: 'passkey' })
+    expect(lastSent()).toMatchObject({ $geoip_disable: true })
+    client().capture('custom_sdk_event', { $geoip_disable: false })
+    expect(lastSent()).toMatchObject({ $geoip_disable: true })
+    expect(
+      beforeSend({ event: '$screen', properties: { $geoip_disable: false } })?.properties
+    ).toMatchObject({ $geoip_disable: true })
+  })
+
+  it.each([
+    'Application Opened',
+    'Application Installed',
+    'Application Updated',
+    'Application Became Active',
+    'Application Backgrounded',
+  ])('keeps only the scheme and host of every URL %s carries', (event) => {
+    initAnalytics()
+    const guarded = beforeSend({
+      event,
+      properties: {
+        url: 'https://app.example.test/tenants/acme-corp?token=t',
+        nested: { link: 'https://app.example.test/invitations/accept?token=t#x' },
+        scheme: 'expo-boilerplate://tenants/acme-corp?token=t',
+        path: '/tenants/acme-corp',
+        version: '1.4.0',
+      },
+    })
+    expect(guarded?.properties).toEqual({
+      url: 'https://app.example.test',
+      nested: { link: 'https://app.example.test' },
+      scheme: 'expo-boilerplate:',
+      version: '1.4.0',
+      app: 'expo',
+      environment: 'staging',
+      $geoip_disable: true,
+    })
+  })
+
+  it('sends only the scheme and host of a cold-start https app link', () => {
+    initAnalytics()
+    client().capture('Application Opened', {
+      url: 'https://app.example.test/tenants/acme-corp?token=t',
+    })
+    expect(lastSent()).toMatchObject({ url: 'https://app.example.test' })
+    expect(JSON.stringify(client().queued.at(-1))).not.toContain('acme-corp')
+  })
+
+  it('keeps the path of an https URL on an event that is not a lifecycle event', () => {
+    initAnalytics()
+    client().capture('custom_sdk_event', {
+      url: 'https://app.example.test/tenants/acme-corp?token=t',
+    })
+    expect(lastSent()).toMatchObject({ url: 'https://app.example.test/tenants/acme-corp' })
   })
 
   it('sends the registered event and its properties', () => {
@@ -198,7 +256,7 @@ describe('analytics with a key', () => {
 
   it('sanitises every URL-like property and drops personal keys at every depth', () => {
     initAnalytics()
-    client().capture('Application Opened', {
+    client().capture('custom_sdk_event', {
       url: 'expo-boilerplate://auth/link?token=secret&email=a%40b.test',
       $current_url: 'https://app.example.test/auth/link?token=secret&tab=members#frag',
       path: '/auth/link?token=secret',
@@ -220,6 +278,7 @@ describe('analytics with a key', () => {
       $set: { plan: 'free' },
       app: 'expo',
       environment: 'staging',
+      $geoip_disable: true,
       distinct_id: client().distinctId,
     })
   })

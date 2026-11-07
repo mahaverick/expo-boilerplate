@@ -81,6 +81,46 @@ const GROUPS_PROPERTY = '$groups'
  */
 const URL_LIKE = /^(?:[a-z][a-z0-9+.-]*:\/\/|mailto:|tel:|\/)/i
 
+/**
+ * The SDK's app lifecycle events. The launch event carries the link that
+ * opened the app, and an https app link's path names a workspace or a token
+ * page, so their URLs keep only the scheme and host.
+ */
+const LIFECYCLE_EVENTS: ReadonlySet<string> = new Set([
+  'Application Installed',
+  'Application Updated',
+  'Application Opened',
+  'Application Became Active',
+  'Application Backgrounded',
+])
+
+/** An absolute http(s) URL, the one shape whose host the lifecycle cut keeps. */
+const HTTP_URL = /^https?:\/\//i
+
+/**
+ * A lifecycle event's value with every URL cut to its scheme and host, to
+ * `MAX_SANITIZE_DEPTH` levels. An app path has no host, so it is dropped; a
+ * custom-scheme URL is already its scheme alone.
+ * @param value - A value the guard has already sanitised.
+ * @param depth - How deep the walk is.
+ * @returns The cut value, or undefined to drop it.
+ */
+function originOnly(value: unknown, depth: number): unknown {
+  if (typeof value === 'string') {
+    if (!HTTP_URL.test(value)) return value.startsWith('/') ? undefined : value
+    const { protocol, host } = new URL(value)
+    return `${protocol}//${host}`
+  }
+  if (typeof value !== 'object' || value === null || depth >= MAX_SANITIZE_DEPTH) return value
+  if (Array.isArray(value)) return value.map((item: unknown) => originOnly(item, depth + 1))
+  const result: Record<string, unknown> = {}
+  for (const [key, child] of Object.entries(value)) {
+    const cut = originOnly(child, depth + 1)
+    if (cut !== undefined) result[key] = cut
+  }
+  return result
+}
+
 /** Property names dropped at every depth. */
 const PERSONAL_KEYS: ReadonlySet<string> = new Set(PERSONAL_DATA_PROPERTIES)
 
@@ -172,8 +212,10 @@ function scrubRecord(record: object | undefined): Record<string, unknown> | unde
 /**
  * The SDK's `before_send`. Every event leaves with the `app` and
  * `environment` super properties, which an event captured while the SDK
- * starts would lack; with no personal key at any depth; and with every URL
- * sanitised, the app's own scheme included. It reads only module state set
+ * starts would lack; with `$geoip_disable`, so PostHog never resolves the
+ * client IP address that express forwards to a city or country; with no
+ * personal key at any depth; and with every URL sanitised, the app's own
+ * scheme included. A lifecycle event's URLs keep only the scheme and host. It reads only module state set
  * before the SDK is built. A guard that throws drops the event, so nothing
  * leaves unguarded.
  * @param event - The event the SDK is about to queue.
@@ -183,11 +225,21 @@ function guardEvent(event: CaptureEvent): CaptureEvent | null {
   try {
     const guarded = {
       ...event,
-      properties: { ...scrubRecord(event.properties), app: ANALYTICS_APP, environment },
+      properties: {
+        ...scrubRecord(event.properties),
+        app: ANALYTICS_APP,
+        environment,
+        $geoip_disable: true,
+      },
       ...(event.$set ? { $set: scrubRecord(event.$set) } : {}),
       ...(event.$set_once ? { $set_once: scrubRecord(event.$set_once) } : {}),
     }
-    return sanitizeEventUrls(guarded, ANALYTICS_URL_QUERY_ALLOWLIST) as CaptureEvent
+    const sanitized = sanitizeEventUrls(guarded, ANALYTICS_URL_QUERY_ALLOWLIST) as CaptureEvent
+    if (!LIFECYCLE_EVENTS.has(event.event)) return sanitized
+    return {
+      ...sanitized,
+      properties: originOnly(sanitized.properties, 0) as CaptureEvent['properties'],
+    }
   } catch {
     return null
   }
