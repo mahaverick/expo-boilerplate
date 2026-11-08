@@ -290,12 +290,17 @@ jobs:
           unzip -q maestro-zip/maestro.zip
           echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
       # One iPhone from the newest iOS runtime, so Maestro sees exactly one
-      # booted device.
+      # booted device. Maestro opens a link with `simctl openurl`, and iOS
+      # asks "Open in …?" before it hands an expo-boilerplate:// link to the
+      # app. The scheme's approval for the e2e app is written to the
+      # simulator's Launch Services preferences before and after the boot, so
+      # every link opens the app at once.
       - id: simulator
         if: env.EXERCISE == 'none'
         timeout-minutes: 10
         env:
           APP: ${{ steps.build.outputs.app }}
+          APP_ID: com.mahaverick.expoboilerplate.e2e
         run: |
           xcrun simctl list devices available -j > "$RUNNER_TEMP/devices.json"
           udid=$(node -e '
@@ -320,8 +325,13 @@ jobs:
             exit 1
           fi
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          approval="com.apple.CoreSimulator.CoreSimulatorBridge-->expo-boilerplate"
+          prefs="$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Library/Preferences"
+          mkdir -p "$prefs"
+          defaults write "$prefs/com.apple.launchservices.schemeapproval" "$approval" -string "$APP_ID"
           xcrun simctl boot "$udid"
           xcrun simctl bootstatus "$udid" -b
+          xcrun simctl spawn "$udid" defaults write com.apple.launchservices.schemeapproval "$approval" -string "$APP_ID"
           xcrun simctl install "$udid" "$APP"
       # Starts Maestro's driver once (`maestro hierarchy`), then runs the
       # flows. The runner exits 75 only when the failed flow's own Maestro run
