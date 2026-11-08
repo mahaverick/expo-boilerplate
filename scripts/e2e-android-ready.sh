@@ -4,22 +4,28 @@
 # installs the APK. Each wait is bounded and names what did not happen.
 #
 # 1. Waits for sys.boot_completed and for the package manager to answer.
-# 2. Turns off the system's crash and "isn't responding" dialogs, and
-#    disables the image's SDK setup app, whose "isn't responding" dialog can
-#    cover the app under test.
-# 3. Waits for a default network. An emulator can boot with none, and the
-#    app then shows "You're offline". After 60 seconds without one, it turns
-#    Wi-Fi and mobile data off and on again, once.
-# 4. Lets the device settle for 30 seconds.
+# 2. Turns off the system's crash and "isn't responding" dialogs.
+# 3. Waits for a default network. The image's SDK setup app
+#    (com.google.android.googlesdksetup) turns Wi-Fi on and adds the open
+#    AndroidWifi network on first boot, so it is never disabled: disabling it
+#    removes that network and leaves the device offline. Halfway through the
+#    wait, it asks Wi-Fi to join AndroidWifi once.
+# 4. Waits for the SDK setup app to finish, since its "isn't responding"
+#    dialog can cover the app under test, then lets the device settle for 30
+#    seconds.
 set -euo pipefail
 
-# A failure here ends the emulator step before the flows line, which would
-# otherwise capture the logcat, so it is captured on the way out.
-capture_logcat_on_failure() {
+# On a failure, prints the network state and captures the logcat, which the
+# flows line would otherwise capture, since a failure here ends the step.
+on_exit() {
   local status=$?
-  if [ "$status" != 0 ]; then adb logcat -d > "${RUNNER_TEMP:-.}/logcat.txt" 2>/dev/null || true; fi
+  if [ "$status" != 0 ]; then
+    echo "wifi_on: $(adb shell settings get global wifi_on 2>/dev/null | tr -d '\r')" >&2
+    adb shell dumpsys connectivity 2>/dev/null | head -40 >&2 || true
+    adb logcat -d > "${RUNNER_TEMP:-.}/logcat.txt" 2>/dev/null || true
+  fi
 }
-trap capture_logcat_on_failure EXIT
+trap on_exit EXIT
 
 # Runs a check every 2 seconds, up to a limit; on a timeout prints an
 # annotation of the given level (error or warning) and fails.
@@ -43,21 +49,19 @@ default_network() {
   state=$(adb shell dumpsys connectivity 2>/dev/null) || return 1
   grep -qE 'Active default network: [0-9]+' <<< "$state"
 }
+sdk_setup_done() { [ -z "$(adb shell pidof com.google.android.googlesdksetup 2>/dev/null | tr -d '\r')" ]; }
 
 wait_for 150 error 'the device did not finish booting within 5 minutes' booted
 wait_for 150 error 'the package manager did not answer within 5 minutes' package_manager
 
 adb shell settings put global hide_error_dialogs 1
-adb shell pm disable-user --user 0 com.google.android.googlesdksetup > /dev/null 2>&1 || true
 
-if ! wait_for 30 warning 'no default network after 60 seconds; restarting Wi-Fi and mobile data' default_network; then
-  adb shell svc wifi disable || true
-  adb shell svc data disable || true
-  sleep 2
-  adb shell svc wifi enable || true
-  adb shell svc data enable || true
-  wait_for 60 error 'the device has no default network' default_network
+if ! wait_for 60 warning 'no default network after 2 minutes; asking Wi-Fi to join AndroidWifi' default_network; then
+  adb shell cmd wifi connect-network AndroidWifi open || true
+  wait_for 60 error 'the device has no default network after 4 minutes' default_network
 fi
 adb shell dumpsys connectivity | grep -E 'Active default network' || true
+
+wait_for 90 warning 'the SDK setup app is still running after 3 minutes' sdk_setup_done || true
 
 sleep 30
