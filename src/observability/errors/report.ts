@@ -82,8 +82,19 @@ export const STALE_ERROR_MS = 10_000
 /** What React Native's `fetch` throws for a request that never got a response. */
 const NETWORK_FAILURE_MESSAGE = 'Network request failed'
 
-/** The release bundle's file name on Android and on iOS. */
+/**
+ * The embedded release bundle's file name on Android and on iOS. An
+ * over-the-air update runs from another file, named by its asset key, in the
+ * `UPDATES_DIRECTORY` folder, so `isAppFrame` matches that folder as well, or
+ * every exception after an update would have no app frame and be dropped.
+ */
 const RELEASE_BUNDLES = new Set(['index.android.bundle', 'main.jsbundle'])
+
+/** The folder `expo-updates` keeps downloaded update bundles in, on Android and on iOS. */
+const UPDATES_DIRECTORY = '.expo-internal'
+
+/** A chunk ID as PostHog's Metro serializer writes it: a UUID, kept short and plain. */
+const CHUNK_ID = /^[A-Za-z0-9-]{1,128}$/
 
 /** A native `$exception` as `/batch/` takes it. */
 export interface ExceptionEvent {
@@ -168,7 +179,9 @@ export function isIgnoredError(input: unknown): boolean {
 
 /**
  * Whether a Hermes frame is this app's code. A release build runs one bundle,
- * `index.android.bundle` or `main.jsbundle`, at any path. A development build
+ * `index.android.bundle` or `main.jsbundle`, at any path, or, after an
+ * over-the-air update, a file whose last directory is exactly
+ * `.expo-internal`, with or without a `file://` scheme. A development build
  * loads it from Metro, as `/index.bundle` (the entry, `index.ts`) or a file
  * under `/src/`. Anything under `node_modules`, a `native` frame, Hermes's
  * `InternalBytecode.js` and `<anonymous>` never is. A release bundle holds the
@@ -187,7 +200,11 @@ export function isAppFrame(filename: string | undefined): boolean {
       return false
     }
   }
-  return RELEASE_BUNDLES.has(filename.slice(filename.lastIndexOf('/') + 1))
+  const path = filename.replace(/^file:\/\//i, '')
+  const segments = path.split('/')
+  const name = segments.at(-1) ?? ''
+  if (RELEASE_BUNDLES.has(name)) return true
+  return path.startsWith('/') && name !== '' && segments.at(-2) === UPDATES_DIRECTORY
 }
 
 /**
@@ -210,8 +227,9 @@ function baseName(filename: string): string {
 /**
  * The fields of a frame that are sent: `in_app` recomputed from the raw
  * filename, the filename scrubbed (an app frame's cut to its base name), the
- * function scrubbed, and the position. Any other field, such as a source line
- * or variables, is never sent.
+ * function scrubbed, the position, and the chunk ID that resolves the frame
+ * through its uploaded source map, when it is a string `CHUNK_ID` matches. Any
+ * other field, such as a source line or variables, is never sent.
  */
 function scrubFrame(frame: StackFrame): StackFrame {
   const inApp = isAppFrame(frame.filename)
@@ -224,6 +242,9 @@ function scrubFrame(frame: StackFrame): StackFrame {
     ...(frame.function === undefined ? {} : { function: scrubText(frame.function) }),
     ...(frame.lineno === undefined ? {} : { lineno: frame.lineno }),
     ...(frame.colno === undefined ? {} : { colno: frame.colno }),
+    ...(typeof frame.chunk_id === 'string' && CHUNK_ID.test(frame.chunk_id)
+      ? { chunk_id: frame.chunk_id }
+      : {}),
   }
 }
 

@@ -31,9 +31,12 @@
     "styleseed": "node scripts/styleseed.mjs",
     "expo:doctor": "expo-doctor",
     "export": "expo export --platform all --output-dir dist",
+    "bundle:size": "node scripts/check-bundle-size.mjs",
     "prepare": "vp config --hooks --no-agent",
-    "gate": "pnpm check && pnpm typecheck && pnpm lint:docs && pnpm sync:check && pnpm knip && pnpm expo:doctor && pnpm test:coverage && pnpm export",
-    "push": "bash scripts/push.sh"
+    "gate": "pnpm check && pnpm typecheck && pnpm lint:docs && pnpm sync:check && pnpm knip && pnpm expo:doctor && pnpm test:coverage && pnpm export && pnpm bundle:size",
+    "push": "bash scripts/push.sh",
+    "eas-build-post-install": "bash scripts/install-posthog-cli.sh && bash scripts/upload-native-sourcemaps.sh prepare",
+    "eas-build-on-success": "bash scripts/upload-native-sourcemaps.sh"
   },
   "dependencies": {
     "@formatjs/intl-getcanonicallocales": "^3.3.0",
@@ -47,6 +50,7 @@
     "axios": "^1.20.0",
     "expo": "~58.0.23",
     "expo-application": "~58.1.2",
+    "expo-build-properties": "~58.0.12",
     "expo-constants": "~58.0.15",
     "expo-dev-client": "~58.0.18",
     "expo-device": "~58.0.5",
@@ -55,6 +59,7 @@
     "expo-secure-store": "~58.0.2",
     "expo-splash-screen": "~58.0.13",
     "expo-system-ui": "~58.0.7",
+    "expo-updates": "~58.0.21",
     "expo-web-browser": "~58.0.7",
     "nativewind": "4.2.7",
     "posthog-react-native": "4.85.3",
@@ -78,6 +83,7 @@
     "@commitlint/config-conventional": "^21.2.4",
     "@eslint/compat": "^2.1.1",
     "@jest/globals": "^30.5.2",
+    "@posthog/cli": "0.18.9",
     "@react-native/jest-preset": "^0.88.1",
     "@testing-library/react-native": "^14.1.0",
     "@types/node": "^26.6.6",

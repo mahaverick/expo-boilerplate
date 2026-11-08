@@ -40,8 +40,9 @@ function sharedExpoRows(): string[] {
  * - `@tanstack/react-form` is a stack library, installed with the toolchain so
  *   that expo-doctor and `expo install --check` see it from the start. No file
  *   imports it yet; drop it once one does.
- * - `expo-updates`: knip's expo plugin lists it unless the config sets
- *   `updates.enabled: false`. The app does not ship over-the-air updates.
+ * - `@posthog/cli` is never imported: `scripts/install-posthog-cli.sh` runs its
+ *   installer, and `scripts/upload-native-sourcemaps.sh` and the release
+ *   workflows run the binary to upload source maps.
  */
 const config: KnipConfig = {
   // The config plugin: Expo loads it by the path in app.config.ts, which knip cannot follow.
@@ -51,7 +52,7 @@ const config: KnipConfig = {
     'plugins/with-backup-rules.js',
   ],
   ignore: ['scripts/sync-check.d.mts', 'scripts/styleseed.d.mts'],
-  ignoreDependencies: ['@tanstack/react-form', 'expo-updates'],
+  ignoreDependencies: ['@tanstack/react-form', '@posthog/cli'],
 }
 
 export default config

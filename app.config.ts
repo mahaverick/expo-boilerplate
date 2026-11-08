@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { ConfigContext, ExpoConfig } from 'expo/config'
 import packageJson from './package.json'
 
@@ -73,14 +76,136 @@ function privacyPolicyUrl(): string | undefined {
   return url
 }
 
+/** The four builds of the app: one per place it runs. */
+export type AppVariant = 'development' | 'e2e' | 'preview' | 'production'
+
+/**
+ * What differs between variants. Development and e2e reach a local API over
+ * plain HTTP and take no updates; preview and production are HTTPS only and
+ * take updates from the channel of the same name.
+ */
+export const VARIANTS: Record<
+  AppVariant,
+  {
+    idSuffix: string
+    nameSuffix: string
+    channel: 'preview' | 'production' | null
+    localNetwork: boolean
+  }
+> = {
+  development: { idSuffix: '.dev', nameSuffix: ' Dev', channel: null, localNetwork: true },
+  e2e: { idSuffix: '.e2e', nameSuffix: ' E2E', channel: null, localNetwork: true },
+  preview: {
+    idSuffix: '.preview',
+    nameSuffix: ' Preview',
+    channel: 'preview',
+    localNetwork: false,
+  },
+  production: { idSuffix: '', nameSuffix: '', channel: 'production', localNetwork: false },
+}
+
+/**
+ * The build variant from `APP_VARIANT`, or production when unset or empty.
+ * @returns The variant.
+ * @throws When the value is not one of the four variants.
+ */
+export function appVariant(): AppVariant {
+  const value = process.env.APP_VARIANT?.trim() || 'production'
+  if (!Object.hasOwn(VARIANTS, value)) {
+    throw new Error(
+      `APP_VARIANT must be one of development, e2e, preview or production. Got "${value}".`
+    )
+  }
+  return value as AppVariant
+}
+
+/**
+ * The EAS project ID from `EAS_PROJECT_ID`, or undefined when unset or empty.
+ * @returns A lowercase UUID.
+ * @throws When the value is not a lowercase UUID.
+ */
+function easProjectId(): string | undefined {
+  const id = process.env.EAS_PROJECT_ID?.trim()
+  if (!id) return undefined
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) {
+    throw new Error(
+      `EAS_PROJECT_ID must be a UUID such as 0f8b4a52-3c1e-4d6f-9a7b-2e5c8d1f4a90. Got "${id}".`
+    )
+  }
+  return id
+}
+
+/**
+ * The release line of a version: its major and minor numbers. The production
+ * config carries it in `extra`, which the fingerprint hashes, so a minor or
+ * major release starts a new runtime and a patch update reaches only the
+ * builds of its own release line.
+ * @param version - The app version, such as `1.4.2`.
+ * @returns The release line, such as `1.4`.
+ * @throws When the version is not `x.y.z`.
+ */
+export function releaseLine(version: string): string {
+  const match = /^(\d+)\.(\d+)\.\d+$/.exec(version)
+  if (!match) throw new Error(`The app version must be x.y.z, such as 1.4.2. Got "${version}".`)
+  return `${match[1]}.${match[2]}`
+}
+
+/**
+ * The over-the-air update settings of one variant. Updates are on only when
+ * the variant has a channel, an EAS project ID is set and the variant's
+ * certificate exists, so a build never carries updates it cannot verify.
+ * The runtime version is a fingerprint in every variant. With updates on, the
+ * certificate's SHA-256 goes in `extra`, so a new certificate changes the
+ * fingerprint and ships as a store build.
+ * @param variant - The build variant.
+ * @param projectId - The EAS project ID, or undefined when unset.
+ * @param readCertificate - The bytes of a project-relative file, or undefined
+ *   when it does not exist.
+ * @returns The `updates` and `runtimeVersion` fields, and with updates on,
+ *   the certificate's lowercase hex SHA-256 as `certificateSha256`.
+ */
+export function updatesConfig(
+  variant: AppVariant,
+  projectId: string | undefined,
+  readCertificate: (path: string) => Uint8Array | undefined
+): Pick<ExpoConfig, 'updates' | 'runtimeVersion'> & { certificateSha256?: string } {
+  const runtimeVersion = { policy: 'fingerprint' } as const
+  const path = `certs/${variant}/certificate.pem`
+  const off = { updates: { enabled: false }, runtimeVersion }
+  if (VARIANTS[variant].channel === null || !projectId) return off
+  const certificate = readCertificate(path)
+  if (certificate === undefined) return off
+  return {
+    updates: {
+      enabled: true,
+      url: `https://u.expo.dev/${projectId}`,
+      checkAutomatically: 'ON_LOAD',
+      fallbackToCacheTimeout: 0,
+      codeSigningCertificate: `./${path}`,
+      codeSigningMetadata: { keyid: 'main', alg: 'rsa-v1_5-sha256' },
+    },
+    runtimeVersion,
+    certificateSha256: createHash('sha256').update(certificate).digest('hex'),
+  }
+}
+
 /** The app's Expo config. The version comes from package.json, which release tooling bumps. */
 export default ({ config }: ConfigContext): ExpoConfig => {
   const host = appLinkHost()
   const storeId = iosAppStoreId()
   const policyUrl = privacyPolicyUrl()
+  const projectId = easProjectId()
+  const variant = appVariant()
+  const { idSuffix, nameSuffix, localNetwork } = VARIANTS[variant]
+  const appId = `com.mahaverick.expoboilerplate${idSuffix}`
+  const { certificateSha256, ...updates } = updatesConfig(variant, projectId, (path) => {
+    const file = join(__dirname, path)
+    return existsSync(file) ? readFileSync(file) : undefined
+  })
+  const line = variant === 'production' ? releaseLine(packageJson.version) : undefined
   return {
     ...config,
-    name: 'expo-boilerplate',
+    name: `expo-boilerplate${nameSuffix}`,
     slug: 'expo-boilerplate',
     version: packageJson.version,
     scheme: 'expo-boilerplate',
@@ -88,16 +213,16 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     orientation: 'portrait',
     userInterfaceStyle: 'automatic',
     ios: {
-      bundleIdentifier: 'com.mahaverick.expoboilerplate',
+      bundleIdentifier: appId,
       supportsTablet: false,
       ...(host && {
         associatedDomains: [`applinks:${host}`, `webcredentials:${host}`],
       }),
       infoPlist: {
-        // Plain HTTP reaches only local hosts, such as a simulator's localhost API.
+        // Development and e2e builds reach a local API over plain HTTP; preview and production allow HTTPS only.
         NSAppTransportSecurity: {
           NSAllowsArbitraryLoads: false,
-          NSAllowsLocalNetworking: true,
+          ...(localNetwork && { NSAllowsLocalNetworking: true }),
         },
         // The app uses only the operating system's exempt encryption (HTTPS).
         ITSAppUsesNonExemptEncryption: false,
@@ -144,7 +269,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       },
     },
     android: {
-      package: 'com.mahaverick.expoboilerplate',
+      package: appId,
       predictiveBackGestureEnabled: true,
       ...(host && {
         intentFilters: [
@@ -168,12 +293,22 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         'android.permission.WRITE_EXTERNAL_STORAGE',
       ],
     },
-    plugins: ['expo-router', 'expo-web-browser', './plugins/with-backup-rules'],
-    ...((host || storeId || policyUrl) && {
+    plugins: [
+      'expo-router',
+      'expo-web-browser',
+      './plugins/with-backup-rules',
+      // Cleartext HTTP is for the local API of development and e2e builds only.
+      ['expo-build-properties', { android: { usesCleartextTraffic: localNetwork } }],
+    ],
+    ...updates,
+    ...((host || storeId || policyUrl || projectId || certificateSha256 || line) && {
       extra: {
         ...(host && { webUrl: `https://${host}` }),
         ...(storeId && { iosAppStoreId: storeId }),
         ...(policyUrl && { privacyPolicyUrl: policyUrl }),
+        ...(projectId && { eas: { projectId } }),
+        ...(certificateSha256 && { updatesCertificate: certificateSha256 }),
+        ...(line && { releaseLine: line }),
       },
     }),
     experiments: {

@@ -71,6 +71,11 @@
       "matchPackageNames": ["expo", "react-native", "posthog-react-native"],
       "matchUpdateTypes": ["minor", "major"],
       "automerge": false
+    },
+    {
+      "description": "@posthog/cli always waits for a person, who updates every hash in scripts/posthog-cli.sha256 in the same PR. No CI job runs the hash check, so an automerged bump would fail the next build that uploads source maps. After the automerge rule, which it overrides.",
+      "matchPackageNames": ["@posthog/cli"],
+      "automerge": false
     }
   ]
 }

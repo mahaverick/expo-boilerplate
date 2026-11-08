@@ -95,6 +95,8 @@ SSH connection opens.
 7. `pnpm test:coverage`: Jest with the coverage thresholds. `pnpm test` runs
    the same tests with no thresholds.
 8. `pnpm export`: a Hermes bundle for iOS and one for Android.
+9. `pnpm bundle:size`: each Hermes bundle in `dist/` is within its budget
+   (`scripts/check-bundle-size.mjs`).
 
 `pnpm typegen` runs `expo customize tsconfig.json`, which writes the typed
 routes (`.expo/types/router.d.ts` and `expo-env.d.ts`) without starting Metro,
@@ -112,13 +114,16 @@ port, `tests/support/runner.ts`.
 **What CI runs** (`.github/workflows/ci.yml`):
 
 - `lint`: `pnpm check`, `pnpm lint:docs`, `pnpm knip`, `pnpm typecheck`,
-  `pnpm expo:doctor`, `pnpm export` and `pnpm audit --prod --audit-level
-  moderate`.
+  `pnpm expo:doctor`, `pnpm export`, `pnpm bundle:size` and `pnpm audit
+  --prod --audit-level moderate`.
 - `sync`, on pull requests only: `pnpm sync:check` and the STYLESEED test
   against react's `main`.
 - Four `unit` jobs, each one shard of `pnpm test:coverage`, then `test`, which
   merges the shards' coverage and enforces the thresholds. The thresholds
   appear in `jest.config.ts` and in `ci.yml`; change both together.
+
+`release.yml` and `preview-update.yml` run on each push to `main` and ship;
+[Builds, updates and releases](#builds-updates-and-releases) covers them.
 
 ## Git hooks
 
@@ -888,10 +893,23 @@ collect proxy at `apiUrl('/collect')`, and the app never holds a PostHog host.
 - **Only named fields are sent, scrubbed.** `prepareExceptionList` copies the
   type, value and frames field by field through `scrubText`, so a field a
   later `@posthog/core` adds never leaves unscrubbed. A frame carries its
-  scrubbed filename and function and its position, and no source line or
-  variable. An app frame's filename is its base name, because an Android
-  install lives under random directories. An error with no frame of the app's
-  own is dropped.
+  scrubbed filename and function, its position and its chunk ID, and no
+  source line or variable. An app frame's filename is its base name, because
+  an Android install lives under random directories. An error with no frame
+  of the app's own is dropped.
+- **`isAppFrame` accepts an update's bundle.** A release build runs
+  `index.android.bundle` or `main.jsbundle`, and after an over-the-air update
+  it runs a file named by its asset key in `.expo-internal/` (expo-updates
+  58's `UpdatesUtils.kt` and `UpdatesUtils.swift`). An absolute path whose
+  last directory is exactly `.expo-internal` counts as the app's, with or
+  without a `file://` scheme. Without the match, every exception after an
+  update has no app frame and is dropped without a trace.
+- **`scrubFrame` keeps `chunk_id` only when it matches
+  `/^[A-Za-z0-9-]{1,128}$/`** (`CHUNK_ID` in `report.ts`). PostHog resolves a
+  frame through its uploaded source map by that ID, so dropping it leaves
+  bundle positions. The pattern admits the UUID that PostHog's Metro
+  serializer writes and nothing that could carry text from the app, and a
+  value that fails it is dropped, not scrubbed.
 - **The throttle is 5 events per fingerprint and 30 per launch.** A request
   carries at most 10 events and at most 60 KiB. A second error with the same
   name, message and stack within a second counts as a re-throw of the first.
@@ -971,6 +989,117 @@ collect proxy at `apiUrl('/collect')`, and the app never holds a PostHog host.
 - **Consent follows react's default.** Analytics are on for a signed-in person
   until they turn "Share usage analytics" off. The choice is stored through
   `PATCH /profile` (`analyticsOptOut`). There is no prompt.
+
+## Builds, updates and releases
+
+The rules below cover the build variants, signed over-the-air updates, source
+maps, the bundle-size budget and the release workflows. They are plan 3e1's.
+The files are listed in [ARCHITECTURE.md](ARCHITECTURE.md#builds-and-releases),
+and the owner's setup is in [README.md](README.md#release-setup).
+
+- **The default variant is `production`.** `appVariant()` reads
+  `APP_VARIANT`, and an unset or empty value gives the strictest config: the
+  production app ID, no ATS exception and no cleartext. `pnpm export` and the
+  gate run with it. A forgotten variant then fails safe, and a development
+  setting never reaches a store build through a default. Any value other than
+  the four fails the config.
+- **Updates are off without a channel, a project ID and a certificate.**
+  `updatesConfig` turns updates on only when the variant has a channel,
+  `EAS_PROJECT_ID` is set and `certs/<variant>/certificate.pem` exists. A
+  build that had updates on with no certificate would accept an unsigned
+  update. A preview build made before the owner commits its certificate
+  therefore takes no updates for its whole life.
+- **Only the certificate is committed.** `.gitignore` ignores `*.pem` and
+  lets `certs/*/certificate.pem` through. A private key never enters the
+  repository, under `certs/` or anywhere else.
+- **Two signing keys, one per variant.** The preview key sits in the GitHub
+  environment `preview-updates`, with no reviewer, so every push to `main`
+  reaches preview builds. The production key sits in `production-updates`,
+  which needs a reviewer. A leaked preview key cannot sign a production
+  update, because each variant ships its own certificate.
+- **A production update starts at 10%** (`--rollout-percentage 10`), and a
+  person widens it, so a bad fix reaches at most 10% of installs before a
+  person widens or rolls it back.
+- **The release is routed by its version bump**, in
+  `scripts/release-route.mjs`. Only a patch bump whose fingerprint matches
+  each platform's latest finished production build ships as an update; every
+  other release is a store build. On 1.x, release-please bumps the minor
+  version for a `feat:` commit, so the route needs no parsing of release
+  notes, and a feature never ships over the air (Apple's Developer Program
+  License Agreement section 3.3.1(B) and guideline 2.5.2). The `route` job
+  also sends a release to `build` while `certs/production/certificate.pem`
+  is missing, because production builds then take no updates.
+- **The production config carries `extra.releaseLine`** (`releaseLine()` in
+  `app.config.ts`), the major and minor version. The fingerprint ignores the
+  version but hashes `extra`, so a patch bump keeps production's runtime and
+  a minor or major bump changes it. Without it, a 1.1.0 build with no native
+  change shares 1.0.0's fingerprint, and a 1.1.1 update would carry 1.1's
+  feature to 1.0 installs. Preview has no release line and takes every
+  update from `main`.
+- **A variant with updates on carries its certificate's SHA-256** in
+  `extra.updatesCertificate`. A rotated key comes with a new certificate,
+  which live builds do not hold, so they refuse every update it signs. The
+  hash changes the fingerprint, and the next production release routes to
+  store builds.
+- **The fingerprint also hashes `package.json`'s scripts and
+  `.gitignore`.** A `fix:` release that edits either ships as store builds.
+- **Nothing auto-merges the release PR.** Merging it ships to every
+  production install or to the stores, so a person merges it.
+  `release.yml` says so beside the release-please step.
+- **A value that shapes the app config lives only in the EAS environment,
+  with plain or sensitive visibility, never secret.** That covers
+  `EAS_PROJECT_ID`, `APP_LINK_HOST`, `IOS_APP_STORE_ID`, `PRIVACY_POLICY_URL`
+  and every `EXPO_PUBLIC_*`. The fingerprint's `balanced` preset includes
+  `extra` and the EAS project. A build sees a secret-visibility value, and
+  `eas update` and `eas fingerprint:compare` do not, so their fingerprints
+  would differ and every patch would route to a store build. The workflows
+  read these values only through `--environment` and never export one into
+  an eas step. The one exception is `vars.EAS_PROJECT_ID` on the eas steps:
+  eas-cli 27.5.0 needs `extra.eas.projectId` before it can fetch an
+  environment, and the environment's value then replaces it, so both must
+  hold the same ID.
+- **Native source maps upload from EAS Build's hooks, not a config plugin.**
+  `eas-build-post-install` runs `scripts/install-posthog-cli.sh`, then
+  `scripts/upload-native-sourcemaps.sh prepare`, which on iOS rewrites
+  `react-native-xcode.sh`'s line that deletes the packager's map into a move
+  to `$SOURCEMAP_FILE.packager`. `hermes clone` needs that map, because the
+  composed map lacks the chunk ID. The rewrite fails the build when the line
+  is not there exactly once. `eas-build-on-success` runs
+  `scripts/upload-native-sourcemaps.sh`, which clones the chunk ID and
+  uploads. Each step skips without `POSTHOG_CLI_API_KEY`. A config plugin
+  that only a build with the key adds gives the build a fingerprint that no
+  update shares, so no update would ever reach it.
+- **The PostHog command-line tool is installed and checked by hash.**
+  `@posthog/cli` is pinned at 0.18.9, and its postinstall is off
+  (`pnpm-workspace.yaml`), because its npm wrapper downloads the binary with
+  no checksum. `scripts/install-posthog-cli.sh` runs the same download, then
+  refuses a binary that is not a regular file or whose SHA-256 differs from
+  `scripts/posthog-cli.sha256`. The Linux pin is the glibc build
+  (`x86_64-unknown-linux-gnu`) that the wrapper picks on glibc 2.35 or later,
+  which EAS's and GitHub's Ubuntu images have; react pins the musl build for
+  its Alpine image. On an older glibc the wrapper picks musl, the hash fails,
+  and the build fails closed. A bump of `@posthog/cli` updates every hash in
+  `scripts/posthog-cli.sha256` in the same change.
+- **A workflow with a missing secret prints a notice and passes.** Each job
+  checks its secrets in its first step, prints `::notice::` naming the
+  missing one, and skips the steps that need it. A repository with no Expo,
+  Apple, Google or PostHog credential stays green. One case fails red: the
+  `update` job with `certs/production/certificate.pem` committed and
+  `PRODUCTION_UPDATE_PRIVATE_KEY` unset prints `::error::` naming the secret
+  and exits 1. The route sent the release there because production builds
+  take updates, and a skip would leave a tagged release that shipped
+  nowhere behind a green run.
+- **`@posthog/cli` waits for a person in Renovate.** No CI job runs the hash
+  check, so an automerged bump would fail the next build that uploads maps.
+  `tests/unit/scripts/posthog-cli-pin.test.ts` fails when the version line in
+  `scripts/posthog-cli.sha256` differs from `package.json`.
+- **Each Hermes bundle has a size budget of 7,500,000 bytes**
+  (`BUDGETS` in `scripts/check-bundle-size.mjs`). On 8 November 2026 the iOS
+  bundle measured 6,756,845 bytes and the Android one 6,741,698. Each budget
+  is the measured size plus 10%, rounded up to the next 100,000 bytes. To
+  raise it, run `pnpm export`, measure both `.hbc` files, apply the same
+  rule, and update the measurement in the JSDoc. A budget raised without a
+  measurement stops catching growth.
 
 ## Copy
 
@@ -1118,18 +1247,18 @@ Each item is a change for react or for a later plan, with the reason it waits.
   `enableSessionReplay: false`. The same plan adds react's `<Pii>` wrapper and
   its probe, which checks that no personally identifiable information (PII)
   reaches a replay.
-- **Source maps, `expo-updates` and the per-profile network settings belong to
-  plan 3e.** Release stack frames carry bundle positions until a build
-  uploads source maps, and the PostHog CLI keys a release by app version and
-  build, not by update ID, so plan 3e decides the keying with `eas.json`.
-  `isAppFrame` matches only `index.android.bundle` and `main.jsbundle`
-  (`RELEASE_BUNDLES` in `report.ts`). An update that `expo-updates` downloads
-  runs from a bundle with another name, so every exception after an update
-  would have no app frame and be dropped. Plan 3e adds those names. That
-  plan also sets cleartext traffic and App Transport Security (ATS) for each
-  build profile. When it adds `expo-updates`, remove it from `knip.ts`'s
-  `ignoreDependencies`: knip reports the entry as unneeded once the package is
-  a dependency.
+- **The build variants lack icon badges, end-to-end flows and a per-profile
+  API URL.** Each variant has a name suffix in place of a badged icon; the
+  badged icons arrive with the store assets. The `e2e` variant and profile
+  exist, and plan 3e2 adds the Maestro flows and their CI jobs.
+  `EXPO_PUBLIC_API_URL` comes from each EAS environment, and no profile in
+  `eas.json` names an API, so a staging API for preview is the owner's
+  setting in the `preview` environment.
+- **The iOS source-map rewrite is not idempotent.**
+  `scripts/upload-native-sourcemaps.sh prepare` fails the single-line check
+  on a build that restored a rewritten `node_modules` from a cache. EAS
+  restores no `node_modules` by default. The script checks
+  `POSTHOG_CLI_PROJECT_ID` in `prepare`, so that input fails in seconds.
 - **Express is asked for three things.** A replay flag in its flag registry,
   so replay can follow a server switch. A `FlagApp` of `'expo'`, so a flag
   can name this app in `apps` and exposures record the origin `expo`, not
@@ -1150,8 +1279,6 @@ Each item is a change for react or for a later plan, with the reason it waits.
 - **`privacy-policy.ts` casts `extra.privacyPolicyUrl` without a check.**
   `app.config.ts` accepts only an https URL, so a built app holds a string
   or nothing. A runtime check would cover a config edited by hand.
-- **The iOS App Store ID is unset.** Plan 3e sets `IOS_APP_STORE_ID` for each
-  build profile; until then the iOS update screen has no store button.
 - **Every "Mark done" button has the same accessible label.** The web app
   reads "Mark done: {title}". `Button` takes no `accessibilityLabel` yet; add
   the prop, then label each button with its step.

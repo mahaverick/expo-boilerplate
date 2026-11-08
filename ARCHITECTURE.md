@@ -512,6 +512,86 @@ rules and their reasons.
   Settings row shows. `app.config.ts` also declares the iOS privacy manifest
   and `ITSAppUsesNonExemptEncryption`.
 
+## Builds and releases
+
+One value, `APP_VARIANT`, drives `app.config.ts`. Each `eas.json` profile sets
+it, and unset it reads `production`. The rules and their reasons are in
+[CLAUDE.md](CLAUDE.md#builds-updates-and-releases), and the owner's setup is in
+[README.md](README.md#release-setup).
+
+| Variant       | App ID suffix | Name suffix | Update channel | Local networking |
+| ------------- | ------------- | ----------- | -------------- | ---------------- |
+| `development` | `.dev`        | Dev         | none           | yes              |
+| `e2e`         | `.e2e`        | E2E         | none           | yes              |
+| `preview`     | `.preview`    | Preview     | `preview`      | no               |
+| `production`  | none          | none        | `production`   | no               |
+
+The app ID is `com.mahaverick.expoboilerplate` plus the suffix, on iOS and
+Android, and the name is `expo-boilerplate`, then a space and the name suffix. Local networking
+means `NSAllowsLocalNetworking` on iOS and `usesCleartextTraffic` on Android
+(through `expo-build-properties`); without it a build reaches HTTPS hosts
+only.
+
+**The files.**
+
+- `app.config.ts`: `VARIANTS`, `appVariant()`, `releaseLine()` and
+  `updatesConfig()`. `updatesConfig()` turns updates on only for a variant
+  with a channel, an `EAS_PROJECT_ID` and a committed
+  `certs/<variant>/certificate.pem`, and then puts the certificate's SHA-256
+  in `extra.updatesCertificate`. The production config carries
+  `extra.releaseLine`, the major and minor version. Both values land in the
+  fingerprint, so a minor release or a new certificate starts a new runtime.
+- `eas.json`: the four profiles, each with its EAS environment
+  (`development`, `preview` or `production`; `e2e` takes `development`), the
+  channels, remote build numbers, and `SOURCEMAP_FILE` for preview and
+  production.
+- `certs/<variant>/certificate.pem`: the public certificates, one per
+  variant that takes updates.
+- `metro.config.js`: PostHog's serializer, which writes a chunk ID into each
+  bundle and its source map, wrapped by NativeWind.
+- `src/observability/errors/report.ts`: `isAppFrame` counts an update's
+  bundle under `.expo-internal/` as the app's, and `scrubFrame` keeps the
+  chunk ID.
+- `scripts/install-posthog-cli.sh` and `scripts/posthog-cli.sha256`: the
+  hash-checked PostHog command-line tool.
+- `scripts/upload-native-sourcemaps.sh`: the store build's map upload, which
+  EAS runs from the `eas-build-post-install` and `eas-build-on-success`
+  scripts in `package.json`.
+- `scripts/check-bundle-size.mjs`: the bundle-size budget, run by
+  `pnpm bundle:size` in the gate and in CI.
+- `scripts/release-route.mjs`: the route of a release, update or build.
+- `.github/workflows/preview-update.yml`, `.github/workflows/release.yml`,
+  `release-please-config.json` and `.release-please-manifest.json`: the
+  release workflows.
+
+**The update path.** On each push to `main`, `preview-update.yml` runs
+`eas update` on the `preview` channel, signed with the preview key, then
+uploads the maps from `dist/`. A preview build whose fingerprint matches
+checks on launch (`checkAutomatically: 'ON_LOAD'`), downloads the update in
+the background (`fallbackToCacheTimeout: 0`) and verifies its signature
+against its certificate (`keyid: 'main'`, `rsa-v1_5-sha256`). It runs the
+update from `.expo-internal/` on the next cold start. A production update
+takes the same path from `release.yml`, at 10% of installs.
+
+**The release routing.**
+
+1. release-please keeps the release PR up to date on each push to `main`.
+2. A person merges it. release-please tags `vX.Y.Z`, and `route` reads the
+   version before it from the manifest at the release commit's parent.
+3. `route` compares this commit's fingerprint with each platform's latest
+   finished production build (`eas fingerprint:compare`), then runs
+   `scripts/release-route.mjs`.
+4. A patch bump with an unchanged fingerprint and a committed
+   `certs/production/certificate.pem` goes to `update`, in the environment
+   `production-updates`, which needs a reviewer: a signed `eas update` to
+   `production` at 10%, then the maps. With the certificate committed and
+   `PRODUCTION_UPDATE_PRIVATE_KEY` unset, the job fails, so the release is
+   never lost behind a green run.
+5. Any other release goes to `build`, in `production-builds`:
+   `eas build --profile production --platform all --auto-submit`, to
+   TestFlight and the Play internal track. EAS Build's hooks upload the
+   native maps. A person promotes each build.
+
 ## The theme and the splash screen
 
 - **Tokens.** `tailwind.config.ts` holds react's STYLESEED colours in sRGB hex
@@ -560,8 +640,10 @@ Expo's answers to what the shared files assume are in
   client, the session modules, the query managers, the maintenance
   and update behaviour, `safePath`, the current-workspace store and hook, the
   screens, the UI kit, the accessibility harness (`tests/unit/a11y/`), the app
-  config and backup plugin, the STYLESEED table, the contrast of the tokens,
-  the lint design lock and the sync check.
+  config and backup plugin, `eas.json`, the `.gitignore` certificate rule, the
+  bundle-size check, the release route, the native source-map upload, the
+  STYLESEED table, the contrast of the tokens, the lint design lock and the
+  sync check.
 - `tests/setup.ts` unrefs TanStack Query's timers so a shared test needs no
   teardown.
 - `jest.config.ts` maps `@/` to `src/`, `@/tests/` to `tests/`, and `.css`

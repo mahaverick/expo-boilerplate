@@ -1,0 +1,136 @@
+name: Preview update
+
+# On every push to main, publishes a signed update to the preview channel, so
+# preview builds run main's latest JavaScript. The preview-updates environment
+# has no reviewer.
+#
+# Values that shape the app config (EAS_PROJECT_ID, APP_LINK_HOST,
+# IOS_APP_STORE_ID, PRIVACY_POLICY_URL and every EXPO_PUBLIC_*) live only in
+# the EAS environments, with plain or sensitive visibility, never secret, and
+# the eas steps read them only through --environment. The balanced fingerprint
+# preset includes `extra` and the EAS project, so a value that differs between
+# a build and an update makes every patch a store build. vars.EAS_PROJECT_ID
+# is the one value set on the eas steps: eas-cli reads the project ID from the
+# config before it can fetch an environment, and the environment's value,
+# which must be the same ID, then replaces it.
+#
+# The job checks its secrets in its first step. A missing one prints a notice
+# naming it, and the steps that need it are skipped, so the run passes.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Only the latest preview matters, so a newer push cancels an older run.
+concurrency:
+  group: preview-update-${{ github.ref }}
+  cancel-in-progress: true
+
+# bash with pipefail, so a failing command on the left of a pipe fails its step.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  preview-update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: preview-updates
+    env:
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+      APP_VARIANT: preview
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: ready
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PRIVATE_KEY: ${{ secrets.PREVIEW_UPDATE_PRIVATE_KEY }}
+          POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
+        run: |
+          ready=true
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice::EXPO_TOKEN is not set, so no preview update was published. Set the secret EXPO_TOKEN to publish preview updates."
+            ready=false
+          fi
+          if [ -z "$PRIVATE_KEY" ]; then
+            echo "::notice::PREVIEW_UPDATE_PRIVATE_KEY is not set, so no preview update was published. Set it on the preview-updates environment to publish preview updates."
+            ready=false
+          fi
+          if [ -z "$EAS_PROJECT_ID" ]; then
+            echo "::notice::EAS_PROJECT_ID is not set, so no preview update was published. Set the variable EAS_PROJECT_ID to publish preview updates."
+            ready=false
+          fi
+          if [ ! -f certs/preview/certificate.pem ]; then
+            echo "::notice::certs/preview/certificate.pem is missing, so no preview update was published. Preview builds accept only updates signed for that certificate."
+            ready=false
+          fi
+          posthog=true
+          if [ -z "$POSTHOG_CLI_API_KEY" ]; then
+            echo "::notice::POSTHOG_CLI_API_KEY is not set, so no source maps upload to PostHog."
+            posthog=false
+          elif [ -z "$POSTHOG_CLI_PROJECT_ID" ]; then
+            echo "::notice::POSTHOG_CLI_PROJECT_ID is not set, so no source maps upload to PostHog."
+            posthog=false
+          fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "posthog=$posthog" >> "$GITHUB_OUTPUT"
+
+      - if: steps.ready.outputs.ready == 'true'
+        uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+        with:
+          node-version-file: .node-version
+          cache: true
+          run-install: false
+      - if: steps.ready.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: '0'
+          VP_GIT_HOOKS: '0'
+      - if: steps.ready.outputs.ready == 'true'
+        uses: expo/expo-github-action@9da89d3617bb88139671bad31b09c65714c2ee06 # 9.0.1
+        with:
+          eas-version: 27.5.0
+          packager: pnpm
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Write the signing key
+        if: steps.ready.outputs.ready == 'true'
+        env:
+          PRIVATE_KEY: ${{ secrets.PREVIEW_UPDATE_PRIVATE_KEY }}
+        run: |
+          umask 077
+          printf '%s\n' "$PRIVATE_KEY" > "$RUNNER_TEMP/preview-update-key.pem"
+
+      - name: Publish the update to preview
+        if: steps.ready.outputs.ready == 'true'
+        run: |
+          message="$(git rev-parse --short HEAD): $(git log -1 --format=%s)"
+          eas update --channel preview --environment preview --private-key-path "$RUNNER_TEMP/preview-update-key.pem" --non-interactive --message "$message"
+
+      - name: Install posthog-cli
+        if: steps.ready.outputs.ready == 'true' && steps.ready.outputs.posthog == 'true'
+        env:
+          POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
+        run: bash scripts/install-posthog-cli.sh
+
+      - name: Upload the Hermes source maps
+        if: steps.ready.outputs.ready == 'true' && steps.ready.outputs.posthog == 'true'
+        env:
+          POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
+          HOST: ${{ vars.POSTHOG_CLI_HOST }}
+        run: |
+          if [ -n "$HOST" ]; then
+            export POSTHOG_CLI_HOST="$HOST"
+          fi
+          node_modules/@posthog/cli/node_modules/.bin_real/posthog-cli hermes upload --directory dist
+
+      - name: Delete the signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/preview-update-key.pem"
