@@ -31,6 +31,9 @@ function sharedExpoRows(): string[] {
  * defaults, plus the shared rows and the runner port, whose export list is the
  * manifest's `testPorts` row, whether or not a shared test uses each name yet.
  *
+ * The e2e helpers (`e2e/helpers/*.mjs`) are entries: the Maestro flows run each
+ * as `node e2e/helpers/<file>.mjs`, a call knip cannot see.
+ *
  * Ignored files: `scripts/sync-check.d.mts` and `scripts/styleseed.d.mts`
  * type those scripts for a caller that imports them. The tests spawn the
  * scripts, because Jest's Babel cannot import a file that uses `import.meta`,
@@ -50,6 +53,7 @@ const config: KnipConfig = {
     ...sharedExpoRows(),
     ...Object.keys(manifest.testPorts ?? {}),
     'plugins/with-backup-rules.js',
+    'e2e/helpers/*.mjs',
   ],
   ignore: ['scripts/sync-check.d.mts', 'scripts/styleseed.d.mts'],
   ignoreDependencies: ['@tanstack/react-form', '@posthog/cli'],
