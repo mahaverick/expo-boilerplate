@@ -1026,7 +1026,23 @@ and the owner's setup is in [README.md](README.md#release-setup).
   other release is a store build. On 1.x, release-please bumps the minor
   version for a `feat:` commit, so the route needs no parsing of release
   notes, and a feature never ships over the air (Apple's Developer Program
-  License Agreement section 3.3.1(B) and guideline 2.5.2).
+  License Agreement section 3.3.1(B) and guideline 2.5.2). The `route` job
+  also sends a release to `build` while `certs/production/certificate.pem`
+  is missing, because production builds then take no updates.
+- **The production config carries `extra.releaseLine`** (`releaseLine()` in
+  `app.config.ts`), the major and minor version. The fingerprint ignores the
+  version but hashes `extra`, so a patch bump keeps production's runtime and
+  a minor or major bump changes it. Without it, a 1.1.0 build with no native
+  change shares 1.0.0's fingerprint, and a 1.1.1 update would carry 1.1's
+  feature to 1.0 installs. Preview has no release line and takes every
+  update from `main`.
+- **A variant with updates on carries its certificate's SHA-256** in
+  `extra.updatesCertificate`. A rotated key comes with a new certificate,
+  which live builds do not hold, so they refuse every update it signs. The
+  hash changes the fingerprint, and the next production release routes to
+  store builds.
+- **The fingerprint also hashes `package.json`'s scripts and
+  `.gitignore`.** A `fix:` release that edits either ships as store builds.
 - **Nothing auto-merges the release PR.** Merging it ships to every
   production install or to the stores, so a person merges it.
   `release.yml` says so beside the release-please step.
@@ -1067,7 +1083,16 @@ and the owner's setup is in [README.md](README.md#release-setup).
 - **A workflow with a missing secret prints a notice and passes.** Each job
   checks its secrets in its first step, prints `::notice::` naming the
   missing one, and skips the steps that need it. A repository with no Expo,
-  Apple, Google or PostHog credential stays green.
+  Apple, Google or PostHog credential stays green. One case fails red: the
+  `update` job with `certs/production/certificate.pem` committed and
+  `PRODUCTION_UPDATE_PRIVATE_KEY` unset prints `::error::` naming the secret
+  and exits 1. The route sent the release there because production builds
+  take updates, and a skip would leave a tagged release that shipped
+  nowhere behind a green run.
+- **`@posthog/cli` waits for a person in Renovate.** No CI job runs the hash
+  check, so an automerged bump would fail the next build that uploads maps.
+  `tests/unit/scripts/posthog-cli-pin.test.ts` fails when the version line in
+  `scripts/posthog-cli.sha256` differs from `package.json`.
 - **Each Hermes bundle has a size budget of 7,500,000 bytes**
   (`BUDGETS` in `scripts/check-bundle-size.mjs`). On 8 November 2026 the iOS
   bundle measured 6,756,845 bytes and the Android one 6,741,698. Each budget
@@ -1229,12 +1254,11 @@ Each item is a change for react or for a later plan, with the reason it waits.
   `EXPO_PUBLIC_API_URL` comes from each EAS environment, and no profile in
   `eas.json` names an API, so a staging API for preview is the owner's
   setting in the `preview` environment.
-- **The native source-map upload checks its inputs late.**
-  `scripts/upload-native-sourcemaps.sh` never checks `POSTHOG_CLI_PROJECT_ID`,
-  so a build with the key and no project ID fails at the upload, after the
-  native compile. Its iOS `prepare` rewrite is not idempotent: a build that
-  restored a rewritten `node_modules` from a cache fails the single-line
-  check. A check of both at the start of the hook would fail in seconds.
+- **The iOS source-map rewrite is not idempotent.**
+  `scripts/upload-native-sourcemaps.sh prepare` fails the single-line check
+  on a build that restored a rewritten `node_modules` from a cache. EAS
+  restores no `node_modules` by default. The script checks
+  `POSTHOG_CLI_PROJECT_ID` in `prepare`, so that input fails in seconds.
 - **Express is asked for three things.** A replay flag in its flag registry,
   so replay can follow a server switch. A `FlagApp` of `'expo'`, so a flag
   can name this app in `apps` and exposures record the origin `expo`, not

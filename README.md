@@ -307,8 +307,15 @@ sets it. Unset, it reads `production`, the strictest one.
   `certs/<variant>/certificate.pem`. Without either, the build has updates off
   and accepts none.
 - **The runtime version is the native fingerprint** (`policy: 'fingerprint'`).
-  An update reaches only the builds whose native code matches it. A version
-  bump alone keeps the fingerprint.
+  An update reaches only the builds whose native code and config match it.
+  A patch bump alone keeps the fingerprint. The production config also
+  carries `extra.releaseLine`, the major and minor version, so a minor or
+  major bump changes production's runtime, and a patch update reaches only
+  the production builds of its own minor release. Preview carries no release
+  line and takes every update from `main`.
+- **The config carries the certificate's SHA-256** (`extra.updatesCertificate`)
+  in each variant with updates on, so a new certificate changes the
+  fingerprint.
 - **An update applies on the next cold start.** The app checks on launch,
   downloads in the background and keeps running the bundle it started with.
 - **Preview and production take build numbers from EAS** (`appVersionSource:
@@ -359,14 +366,22 @@ with `EAS_PROJECT_ID` set in the shell once step 2 gives it.
    - Keep the production key in the owner's password manager too. GitHub
      never shows a secret again, and `eas update:rollback` needs the key.
      Then delete the key files.
+   - To rotate a key, run the same command, commit the new certificate and
+     replace the secret. Live builds verify updates against the certificate
+     they shipped with, so they refuse an update signed with the new key. The
+     new certificate's hash changes the fingerprint, so the next production
+     release routes to store builds. Preview has no workflow that builds, so
+     run `eas build --profile preview --platform all` by hand after a preview
+     rotation.
 
 6. **Set the EAS environment variables** in the table below.
 7. **Add the PostHog command-line credentials** to EAS and to GitHub:
    `POSTHOG_CLI_API_KEY` (a PostHog personal API key),
    `POSTHOG_CLI_PROJECT_ID` and, for a project outside PostHog's US cloud,
    `POSTHOG_CLI_HOST`. Without the key, nothing uploads and nothing fails.
-   With the key and no project ID, a store build fails at its upload, after
-   the native compile.
+   With the key and no project ID, a preview or production build fails in
+   `eas-build-post-install`, before the native compile, with a message that
+   names `POSTHOG_CLI_PROJECT_ID`.
 8. **Create the release GitHub App**, as react does. Give it Contents and Pull
    requests read and write, install it on this repository, then set its
    client ID as the variable `RELEASE_APP_CLIENT_ID` and its private key as
@@ -378,6 +393,19 @@ with `EAS_PROJECT_ID` set in the shell once step 2 gives it.
    web app's association files name it. Once passkeys land, also add each
    variant's Android signing hash to `WEBAUTHN_ANDROID_ORIGINS` in express
    (spec part 1).
+10. **Set up iOS submission before the first iOS auto-submit.** The `build`
+    job runs `eas submit` through `--auto-submit --non-interactive`, which
+    cannot ask for anything.
+    - Add an App Store Connect API key to EAS with `eas credentials` (iOS,
+      App Store Connect API key). eas-cli can create one or upload one made
+      in App Store Connect.
+    - Once App Store Connect has the app, add its Apple ID, the number on the
+      app's App Information page, to `eas.json` as
+      `submit.production.ios.ascAppId`.
+
+    Without either, the iOS submission fails on EAS while the GitHub run
+    stays green, because the job does not wait for the build. Check the
+    first release's submission on the EAS dashboard.
 
 Finish steps 2 and 5 before the first store build. A build made without the
 project ID or its certificate has updates off for its whole life, and adding
@@ -436,6 +464,7 @@ Each owner is the repository owner until the team names others.
 | Android upload keystore                                  | EAS (`eas credentials`)                                                   | Repository owner |
 | Android app-signing key                                  | Google Play App Signing                                                   | Repository owner |
 | Google Play service-account key, which `eas submit` uses | EAS (`eas credentials`, Android); `eas.json` names no key file            | Repository owner |
+| App Store Connect API key, which `eas submit` uses       | EAS (`eas credentials`, iOS); `eas.json` holds only `ascAppId`            | Repository owner |
 | Preview update signing key                               | GitHub environment `preview-updates`                                      | Repository owner |
 | Production update signing key                            | GitHub environment `production-updates`, and the owner's password manager | Repository owner |
 | Expo robot token                                         | GitHub repository secret `EXPO_TOKEN`                                     | Repository owner |
@@ -457,17 +486,28 @@ merge ships. The merge tags `vX.Y.Z`, and the same run routes the release by
 its version bump (`scripts/release-route.mjs`). On 1.x, release-please bumps
 the minor version for a `feat:` commit and the patch version for a `fix:`.
 
-| Release                      | Route                                                                                                                                                |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Patch, fingerprint unchanged | After a reviewer approves `production-updates`, a signed update to the `production` channel at 10% (`--rollout-percentage 10`), then the source maps |
-| Patch, fingerprint changed   | Store builds                                                                                                                                         |
-| Minor (a `feat:` commit)     | Store builds                                                                                                                                         |
-| Major (a breaking change)    | Store builds                                                                                                                                         |
+| Release                          | Route                                                                                                                                                |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Patch, fingerprint unchanged     | After a reviewer approves `production-updates`, a signed update to the `production` channel at 10% (`--rollout-percentage 10`), then the source maps |
+| Patch, fingerprint changed       | Store builds                                                                                                                                         |
+| Patch, no production certificate | Store builds, with a notice that names `certs/production/certificate.pem`                                                                            |
+| Minor (a `feat:` commit)         | Store builds                                                                                                                                         |
+| Major (a breaking change)        | Store builds                                                                                                                                         |
 
 - **The fingerprint check** compares this commit with each platform's latest
   finished production build (`eas fingerprint:compare --environment
   production`). A platform with no such build counts as changed, and a
   fingerprint that cannot be read fails the job, so nothing ships on a guess.
+- **The fingerprint covers more than native code.** It hashes the config,
+  which holds the release line and the certificate's hash, and also every
+  `package.json` script and `.gitignore`. A `fix:` release that edits a
+  script or `.gitignore` therefore ships as store builds.
+- **A missing production key fails the `update` job red.** Every other
+  missing secret prints a notice and passes. With the certificate committed,
+  production builds take updates, so the route sends a patch release to
+  `update`; a skipped publish there would leave a tagged release that shipped
+  nowhere behind a green run. The error names `PRODUCTION_UPDATE_PRIVATE_KEY`.
+  Set it, then re-run the job.
 - **Store builds** wait for a reviewer on `production-builds`, then run
   `eas build --profile production --platform all --auto-submit`. EAS submits
   each finished build to TestFlight or the Play internal track, and nobody
@@ -476,17 +516,20 @@ the minor version for a `feat:` commit and the patch version for a `fix:`.
 - **Widen a rollout** with `eas update:edit <update group ID>
   --rollout-percentage <1 to 100>`, such as 50, then 100.
   `eas update:list --branch production` lists the group IDs.
-- **Roll back** with `eas update:rollback <update group ID>
-  --private-key-path <the production key> --force-end-active-rollout`. The
-  group must be the latest on its branch and runtime version. EAS republishes
-  the group before it, or, with none, rolls back to the bundle the build
-  embeds. Run both commands with `APP_VARIANT=production` and
-  `EAS_PROJECT_ID` set, so eas-cli reads the production config and its
-  certificate.
+- **Roll back** with `eas update:rollback <update group ID> --environment
+  production --private-key-path <the production key>
+  --force-end-active-rollout`. The group must be the latest on its branch and
+  runtime version. EAS republishes the group before it, or, with none, rolls
+  back to the bundle the build embeds. Run both commands with
+  `APP_VARIANT=production` and `EAS_PROJECT_ID` set, so eas-cli reads the
+  production config and its certificate.
 - **A feature never ships over the air.** Apple's Developer Program License
   Agreement section 3.3.1(B) and App Review Guideline 2.5.2 forbid using
   downloaded code to add features. A `feat:` commit bumps the minor version,
-  so it always ships as a store build, and an update carries fixes only.
+  so it always ships as a store build, and an update carries fixes only. The
+  release line in the production config keeps a fix to 1.1 off 1.0 installs:
+  without it, a 1.1 build with no native change would share 1.0's
+  fingerprint, and a 1.1.1 update would carry 1.1's feature to 1.0.
 
 ### Source maps
 
@@ -823,6 +866,12 @@ preview variant. None of the release path has run on EAS as of 8 November 2026.
       into a temporary directory, and publish to `preview` with
       `--private-key-path` set to it. Cold-start the preview build twice: it
       keeps running the bundle it had, on both platforms.
+- [ ] **A preview build refuses an unsigned update.** Publish to `preview`
+      with `eas update --channel preview --environment preview` and no
+      `--private-key-path`. Cold-start the preview build twice: it keeps
+      running the bundle it had, on both platforms. If eas-cli refuses to
+      publish, because the config names a certificate, record its message
+      here as the result: no unsigned update can reach the channel.
 - [ ] **A signed patch reaches a preview build on the next cold start.** Push
       a visible fix to `main`, wait for `preview-update.yml`, then cold-start
       the preview build. The first launch runs the old bundle and downloads

@@ -534,9 +534,13 @@ only.
 
 **The files.**
 
-- `app.config.ts`: `VARIANTS`, `appVariant()` and `updatesConfig()`, which
-  turns updates on only for a variant with a channel, an `EAS_PROJECT_ID` and
-  a committed `certs/<variant>/certificate.pem`.
+- `app.config.ts`: `VARIANTS`, `appVariant()`, `releaseLine()` and
+  `updatesConfig()`. `updatesConfig()` turns updates on only for a variant
+  with a channel, an `EAS_PROJECT_ID` and a committed
+  `certs/<variant>/certificate.pem`, and then puts the certificate's SHA-256
+  in `extra.updatesCertificate`. The production config carries
+  `extra.releaseLine`, the major and minor version. Both values land in the
+  fingerprint, so a minor release or a new certificate starts a new runtime.
 - `eas.json`: the four profiles, each with its EAS environment
   (`development`, `preview` or `production`; `e2e` takes `development`), the
   channels, remote build numbers, and `SOURCEMAP_FILE` for preview and
@@ -577,9 +581,12 @@ takes the same path from `release.yml`, at 10% of installs.
 3. `route` compares this commit's fingerprint with each platform's latest
    finished production build (`eas fingerprint:compare`), then runs
    `scripts/release-route.mjs`.
-4. A patch bump with an unchanged fingerprint goes to `update`, in the
-   environment `production-updates`, which needs a reviewer: a signed
-   `eas update` to `production` at 10%, then the maps.
+4. A patch bump with an unchanged fingerprint and a committed
+   `certs/production/certificate.pem` goes to `update`, in the environment
+   `production-updates`, which needs a reviewer: a signed `eas update` to
+   `production` at 10%, then the maps. With the certificate committed and
+   `PRODUCTION_UPDATE_PRIVATE_KEY` unset, the job fails, so the release is
+   never lost behind a green run.
 5. Any other release goes to `build`, in `production-builds`:
    `eas build --profile production --platform all --auto-submit`, to
    TestFlight and the Play internal track. EAS Build's hooks upload the
