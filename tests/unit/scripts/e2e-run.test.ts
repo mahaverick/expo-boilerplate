@@ -89,6 +89,42 @@ process.exit(${exitCode})
 }
 
 /**
+ * Make a fake `maestro` that runs `body` with `outputDir` (its
+ * `--test-output-dir`), `fs` and `path` in scope, then exits with `exitCode`.
+ * @param body - JavaScript to run on each call.
+ * @param exitCode - What it exits with.
+ * @returns The directory to put first on `PATH`.
+ */
+function scriptedMaestro(body: string, exitCode: number): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'maestro-'))
+  made.push(dir)
+  const script = path.join(dir, 'maestro')
+  fs.writeFileSync(
+    script,
+    `#!${process.execPath}
+const fs = require('node:fs')
+const path = require('node:path')
+const args = process.argv.slice(2)
+const outputDir = args[args.indexOf('--test-output-dir') + 1]
+${body}
+process.exit(${exitCode})
+`
+  )
+  fs.chmodSync(script, 0o755)
+  return dir
+}
+
+/**
+ * A fresh directory for Maestro's output, removed after the test.
+ * @returns Its path.
+ */
+function outputDir(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'maestro-output-'))
+  made.push(dir)
+  return dir
+}
+
+/**
  * Start a fake Mailpit that never holds a message.
  * @returns Its origin.
  */
@@ -223,19 +259,20 @@ describe('runPlan', () => {
    * Run a plan in Node with the fake `maestro` on `PATH`.
    * @param body - JavaScript that builds `plan`; `log(text)` records a line.
    * @param binDir - The fake `maestro`'s directory.
+   * @param env - Settings over the runner's defaults, such as `E2E_OUTPUT_DIR`.
    * @returns The exit code, output and the recorded lines.
    */
-  async function runPlanned(body: string, binDir: string) {
+  async function runPlanned(body: string, binDir: string, env: Record<string, string> = {}) {
     const code = `
       import { runPlan } from ${JSON.stringify(SCRIPT)}
       const lines = []
       const log = (text) => lines.push(text)
       ${body}
-      const ok = await runPlan(plan)
+      const exitCode = await runPlan(plan)
       console.log(JSON.stringify(lines))
-      process.exitCode = ok ? 0 : 1
+      process.exitCode = exitCode
     `
-    const run = await node(['--input-type=module', '-e', code], runnerEnv(binDir, {}))
+    const run = await node(['--input-type=module', '-e', code], runnerEnv(binDir, env))
     const lines = JSON.parse(run.stdout.trim().split('\n').pop() ?? '[]') as string[]
     return { ...run, lines }
   }
@@ -389,6 +426,134 @@ describe('forced-update restart', () => {
     const result = await restartWith('true', '99.0.0')
     expect(result.cleanup).toBe(
       `express did not serve minimumAppVersion.android none at ${result.api}/api/v1/status/client-settings within 1 s; it served 99.0.0`
+    )
+  })
+})
+
+describe('transport failures', () => {
+  /** A plan of two flows, each one Maestro file; `second` may fail in a helper instead. */
+  const twoFlows = (secondSteps: string) => `const plan = [
+    { name: 'first', vars: {}, steps: [{ file: 'cold-start.yaml' }] },
+    { name: 'second', vars: {}, steps: [${secondSteps}] },
+  ]`
+
+  /**
+   * Run a plan with the scripted `maestro` and a fresh output directory.
+   * @param body - JavaScript that builds `plan`.
+   * @param maestroDir - The fake `maestro`'s directory.
+   * @returns The exit code, the output directory and the transport note, if any.
+   */
+  async function runWith(body: string, maestroDir: string) {
+    const out = outputDir()
+    const code = `
+      import { runPlan } from ${JSON.stringify(SCRIPT)}
+      ${body}
+      process.exitCode = await runPlan(plan)
+    `
+    const run = await node(
+      ['--input-type=module', '-e', code],
+      runnerEnv(maestroDir, { E2E_OUTPUT_DIR: out })
+    )
+    const notePath = path.join(out, 'transport-failure.txt')
+    const note = fs.existsSync(notePath) ? fs.readFileSync(notePath, 'utf8') : null
+    return { ...run, out, note }
+  }
+
+  it('exits 75 when the failed run prints a dropped adb connection', async () => {
+    const maestro = scriptedMaestro(
+      `process.stderr.write('maestro.android.DeviceServerDiedException: Device server died\\n')`,
+      1
+    )
+    const run = await runWith(
+      `const plan = [{ name: 'only', vars: {}, steps: [{ file: 'cold-start.yaml' }] }]`,
+      maestro
+    )
+    expect(run.code).toBe(75)
+    expect(run.stderr).toContain(
+      'e2e: only failed: maestro test cold-start.yaml exited 1 (the adb connection dropped)'
+    )
+    expect(run.note).toBe('only: the adb connection dropped\n')
+  })
+
+  it("exits 75 when the failed run's maestro.log shows a driver that did not start", async () => {
+    const maestro = scriptedMaestro(
+      `fs.mkdirSync(path.join(outputDir, 'run', 'logs'), { recursive: true })
+       fs.writeFileSync(path.join(outputDir, 'run', 'logs', 'maestro.log'), 'maestro.MaestroDriverStartupException$AndroidDriverTimeoutException')`,
+      1
+    )
+    const run = await runWith(
+      `const plan = [{ name: 'only', vars: {}, steps: [{ file: 'cold-start.yaml' }] }]`,
+      maestro
+    )
+    expect(run.code).toBe(75)
+    expect(run.note).toBe("only: Maestro's driver did not start\n")
+  })
+
+  it('exits 1 when only the device logcat mentions a dropped connection', async () => {
+    const maestro = scriptedMaestro(
+      `fs.mkdirSync(path.join(outputDir, 'run', 'logs'), { recursive: true })
+       fs.writeFileSync(path.join(outputDir, 'run', 'logs', 'device-logcat.txt'), 'adbd: host-17: offline device offline')`,
+      1
+    )
+    const run = await runWith(
+      `const plan = [{ name: 'only', vars: {}, steps: [{ file: 'cold-start.yaml' }] }]`,
+      maestro
+    )
+    expect(run.code).toBe(1)
+    expect(run.note).toBeNull()
+  })
+
+  it('exits 1 when an earlier flow that passed logged a dropped connection', async () => {
+    // Every run logs the drop; only the second flow's run fails.
+    const maestro = scriptedMaestro(
+      `fs.mkdirSync(path.join(outputDir, 'logs'), { recursive: true })
+       fs.writeFileSync(path.join(outputDir, 'logs', 'maestro.log'), outputDir.includes('first') ? 'device offline, then reconnected' : 'Element not found: Sign in')
+       if (!outputDir.includes('first')) process.exit(1)`,
+      0
+    )
+    const run = await runWith(twoFlows(`{ file: 'cold-start.yaml' }`), maestro)
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('e2e: second failed: maestro test cold-start.yaml exited 1')
+    expect(run.stderr).not.toContain('adb connection dropped')
+  })
+
+  it('exits 1 when a helper fails after an earlier run logged a dropped connection', async () => {
+    const maestro = scriptedMaestro(
+      `fs.mkdirSync(path.join(outputDir, 'logs'), { recursive: true })
+       fs.writeFileSync(path.join(outputDir, 'logs', 'maestro.log'), 'DeviceServerDiedException')`,
+      0
+    )
+    const run = await runWith(
+      twoFlows(`{ action: 'read the sign-in link', run: () => { throw new Error('no mail') } }`),
+      maestro
+    )
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('e2e: second failed: read the sign-in link: no mail')
+    expect(run.note).toBeNull()
+  })
+
+  it('exits 1 when a transport failure is followed by a failed cleanup', async () => {
+    const maestro = scriptedMaestro(`process.stderr.write('device offline\\n')`, 1)
+    const run = await runWith(
+      `const plan = [{ name: 'only', vars: {}, steps: [{ file: 'cold-start.yaml' }], cleanup: () => { throw new Error('still on') } }]`,
+      maestro
+    )
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('e2e: only failed: cleanup: still on')
+    expect(run.note).toBeNull()
+  })
+
+  it('exits 75 from the command line on a transport failure', async () => {
+    const maestro = scriptedMaestro(`process.stderr.write('device offline\\n')`, 1)
+    const mailpit = await emptyMailpit()
+    const out = outputDir()
+    const run = await node(
+      [SCRIPT, 'android'],
+      runnerEnv(maestro, { E2E_MAILPIT_URL: mailpit, E2E_OUTPUT_DIR: out })
+    )
+    expect(run.code).toBe(75)
+    expect(fs.readFileSync(path.join(out, 'transport-failure.txt'), 'utf8')).toBe(
+      'sign-in: the adb connection dropped\n'
     )
   })
 })

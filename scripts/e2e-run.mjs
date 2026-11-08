@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createWorkspace, invite, signIn, workspaceSlug } from '../e2e/helpers/api.mjs'
@@ -12,8 +13,42 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 /** Where the Maestro flows live. */
 const FLOWS_DIR = path.join(ROOT, 'e2e/flows')
 
-/** Where each Maestro run writes its screenshots, logs and `commands.json`. */
-const OUTPUT_DIR = path.join(ROOT, 'maestro-output')
+/**
+ * Where each Maestro run writes its screenshots, logs and `commands.json`:
+ * `E2E_OUTPUT_DIR` when set, otherwise `maestro-output/` in the repository.
+ */
+const OUTPUT_DIR = process.env.E2E_OUTPUT_DIR
+  ? path.resolve(process.env.E2E_OUTPUT_DIR)
+  : path.join(ROOT, 'maestro-output')
+
+/**
+ * The exit code of a run whose first failure was a dropped adb connection or a
+ * Maestro driver that did not start. The e2e workflows rerun the flows once on
+ * this code, and on no other.
+ */
+export const TRANSPORT_EXIT_CODE = 75
+
+/**
+ * The file, under the output directory, that names the flow and the reason of
+ * a transport failure, as `<flow>: <reason>`.
+ */
+const TRANSPORT_NOTE = 'transport-failure.txt'
+
+/**
+ * The messages that mark a failed Maestro run as a transport failure, with
+ * the reason the runner reports for each.
+ */
+const TRANSPORT_FAILURES = [
+  { reason: 'the adb connection dropped', pattern: /device offline|DeviceServerDiedException/ },
+  {
+    reason: "Maestro's driver did not start",
+    pattern:
+      /MaestroDriverStartupException|AndroidDriverTimeoutException|AndroidInstrumentationSetupFailure|driver did not start up in time/,
+  },
+]
+
+/** How much of a Maestro run's own output the runner keeps to classify a failure. */
+const KEPT_OUTPUT_CHARS = 1_000_000
 
 /** The platforms the runner drives. */
 const PLATFORMS = ['android', 'ios']
@@ -306,14 +341,43 @@ export function planFlows(platform, env = process.env) {
 }
 
 /**
+ * The reason a failed Maestro run counts as a transport failure, or `null`.
+ * @param text - The run's own output and logs.
+ * @returns The reason, or `null` for any other failure.
+ */
+function transportReason(text) {
+  return TRANSPORT_FAILURES.find(({ pattern }) => pattern.test(text))?.reason ?? null
+}
+
+/**
+ * The text of every `maestro.log` that one Maestro run wrote under its output
+ * directory. The device's logcat is never read: it holds the device's own
+ * messages, not Maestro's verdict.
+ * @param dir - The run's `--test-output-dir`.
+ * @returns The logs joined, or an empty string when there are none.
+ */
+function maestroLogs(dir) {
+  if (!fs.existsSync(dir)) return ''
+  return fs
+    .readdirSync(dir, { recursive: true })
+    .map(String)
+    .filter((file) => path.basename(file) === 'maestro.log')
+    .map((file) => fs.readFileSync(path.join(dir, file), 'utf8'))
+    .join('\n')
+}
+
+/**
  * Run `maestro test` on one flow file, with every variable as `-e KEY=value`
- * and its output under `maestro-output/<flow>/<file name>/`. No shell runs, so
- * a link's `&` stays literal.
+ * and its output under `<output>/<flow>/<file name>/`. No shell runs, so a
+ * link's `&` stays literal. Maestro's output still reaches the console, and
+ * the runner keeps a copy to classify a failure.
  * @param flow - The flow's name.
  * @param file - The file under `e2e/flows/`.
  * @param vars - The variables; a non-string becomes JSON.
  * @returns Resolves when Maestro exits 0.
- * @throws When Maestro exits non-zero or cannot start.
+ * @throws When Maestro exits non-zero or cannot start. The error carries
+ *   `transport`, the reason, when this run's own output or `maestro.log`
+ *   shows a dropped adb connection or a driver that did not start.
  */
 async function runMaestro(flow, file, vars) {
   const output = path.join(OUTPUT_DIR, flow, path.basename(file, '.yaml'))
@@ -322,12 +386,26 @@ async function runMaestro(flow, file, vars) {
     args.push('-e', `${key}=${typeof value === 'string' ? value : JSON.stringify(value)}`)
   }
   args.push(path.join(FLOWS_DIR, file))
+  let kept = ''
   const code = await new Promise((resolve, reject) => {
-    const child = spawn('maestro', args, { stdio: 'inherit' })
+    const child = spawn('maestro', args, { stdio: ['inherit', 'pipe', 'pipe'] })
+    for (const [stream, sink] of [
+      [child.stdout, process.stdout],
+      [child.stderr, process.stderr],
+    ]) {
+      stream.on('data', (chunk) => {
+        sink.write(chunk)
+        kept = (kept + chunk.toString()).slice(-KEPT_OUTPUT_CHARS)
+      })
+    }
     child.on('error', (error) => reject(new Error(`maestro did not start: ${error.message}`)))
-    child.on('exit', (exitCode) => resolve(exitCode))
+    child.on('close', (exitCode) => resolve(exitCode))
   })
-  if (code !== 0) throw new Error(`maestro test ${file} exited ${code}`)
+  if (code === 0) return
+  const reason = transportReason(`${kept}\n${maestroLogs(output)}`)
+  const error = new Error(`maestro test ${file} exited ${code}${reason ? ` (${reason})` : ''}`)
+  if (reason) error.transport = reason
+  throw error
 }
 
 /**
@@ -376,8 +454,15 @@ async function runFlow(entry) {
  * Run the plan in order and stop at the first flow that fails. Each result
  * prints as `e2e: <flow> passed` or `e2e: <flow> failed: <reason>`, and the
  * flows after a failure print as `not run`, never as passed.
+ *
+ * A failure counts as a transport failure only when the failed flow's one
+ * error is a Maestro run that `runMaestro` marked as such. A failure in a
+ * helper, a mail wait, a restart or a cleanup never does, nor does anything
+ * an earlier flow logged. A transport failure also writes
+ * `<output>/transport-failure.txt` as `<flow>: <reason>`.
  * @param plan - The entries `planFlows` returns.
- * @returns True when every flow passed.
+ * @returns 0 when every flow passed, `TRANSPORT_EXIT_CODE` for a transport
+ *   failure, and 1 for any other failure.
  */
 export async function runPlan(plan) {
   for (const [index, entry] of plan.entries()) {
@@ -388,15 +473,21 @@ export async function runPlan(plan) {
     }
     for (const error of errors) console.error(`e2e: ${entry.name} failed: ${error.message}`)
     for (const skipped of plan.slice(index + 1)) console.error(`e2e: ${skipped.name} not run`)
-    return false
+    const transport = errors.length === 1 ? errors[0].transport : undefined
+    if (!transport) return 1
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true })
+    fs.writeFileSync(path.join(OUTPUT_DIR, TRANSPORT_NOTE), `${entry.name}: ${transport}\n`)
+    return TRANSPORT_EXIT_CODE
   }
-  return true
+  return 0
 }
 
 /**
  * Run `node scripts/e2e-run.mjs <android|ios>` with the app installed on one
  * booted device and Maestro on `PATH`. It exits 1 on a bad argument, a
- * missing variable or the first failing flow.
+ * missing variable or the first failing flow, and `TRANSPORT_EXIT_CODE` (75)
+ * when that flow failed only on a dropped adb connection or a Maestro driver
+ * that did not start.
  *
  * Environment:
  * - `E2E_API_URL`: express's origin, for the helpers.
@@ -415,6 +506,7 @@ export async function runPlan(plan) {
  * - `E2E_LINK_TIMEOUT_MS`: how long to wait for a mail. Default 60000.
  * - `E2E_RESTART_TIMEOUT_MS`: how long a restarted express may take to serve
  *   the expected minimum. Default 60000.
+ * - `E2E_OUTPUT_DIR`: where Maestro's output goes. Default `maestro-output/`.
  *
  * Express must run with `SIGN_IN_LINK_MAIL_COOLDOWN=1s`: switch-workspace
  * signs one address in twice, through the API and then the app, and the
@@ -449,7 +541,7 @@ async function main() {
     process.exitCode = 1
     return
   }
-  if (!(await runPlan(planFlows(platform)))) process.exitCode = 1
+  process.exitCode = await runPlan(planFlows(platform))
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main()
