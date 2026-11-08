@@ -18,14 +18,15 @@ cd "$dir"
 if [ -f api.pid ]; then
   pid=$(cat api.pid)
   if kill -0 "$pid" 2>/dev/null; then
-    kill "$pid"
+    # It may exit between the check and the signal; the wait below still checks.
+    kill "$pid" 2>/dev/null || true
     for _ in $(seq 1 30); do
       kill -0 "$pid" 2>/dev/null || break
       sleep 1
     done
     if kill -0 "$pid" 2>/dev/null; then
       echo "express $pid did not stop within 30 s; killing it" >&2
-      kill -9 "$pid"
+      kill -9 "$pid" 2>/dev/null || true
       sleep 1
     fi
     if kill -0 "$pid" 2>/dev/null; then
