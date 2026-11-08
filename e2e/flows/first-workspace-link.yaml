@@ -11,7 +11,17 @@ appId: ${APP_ID}
 - tapOn:
     id: 'workspace-slug'
 - inputText: ${SLUG}
-- hideKeyboard
+# On iOS a tap on plain text closes the keyboard (Screen's keyboardShouldPersistTaps is handled); Maestro's hideKeyboard can time out there.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: 'Name your workspace. You can invite your team next.'
 - scrollUntilVisible:
     element:
       text: 'Create workspace'
