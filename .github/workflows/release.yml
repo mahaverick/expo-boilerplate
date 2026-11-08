@@ -1,0 +1,321 @@
+name: Release
+
+# On every push to main, release-please opens or updates the release PR from
+# the conventional commits since the last release. Merging that PR tags
+# vX.Y.Z, and the same run then ships the release one of two ways:
+# - a patch bump whose native fingerprint matches the latest finished
+#   production build ships as a signed update to the production channel at
+#   10%, after a reviewer approves the production-updates environment;
+# - any other release starts store builds for both platforms, which EAS
+#   submits to TestFlight and the Play internal track. A person promotes them.
+#
+# The release token comes from a GitHub App: events made with GITHUB_TOKEN
+# never start workflows, so its release PRs would get no CI.
+#
+# Each job checks its secrets in its first step. A missing one prints a
+# notice naming it, and the steps that need it are skipped, so the run passes.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# bash with pipefail, so a failing command on the left of a pipe fails its step.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
+      previous_version: ${{ steps.previous.outputs.version }}
+    steps:
+      - id: ready
+        env:
+          CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          ready=true
+          if [ -z "$CLIENT_ID" ]; then
+            echo "::notice::RELEASE_APP_CLIENT_ID is not set, so release-please did not run. Set the variable RELEASE_APP_CLIENT_ID and the secret RELEASE_APP_PRIVATE_KEY to open release PRs."
+            ready=false
+          fi
+          if [ -z "$PRIVATE_KEY" ]; then
+            echo "::notice::RELEASE_APP_PRIVATE_KEY is not set, so release-please did not run. Set the variable RELEASE_APP_CLIENT_ID and the secret RELEASE_APP_PRIVATE_KEY to open release PRs."
+            ready=false
+          fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+
+      - id: app-token
+        if: steps.ready.outputs.ready == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # The release PR is never queued for auto-merge: merging it ships to
+      # the stores or to every production install, so a person merges it.
+      - id: release
+        if: steps.ready.outputs.ready == 'true'
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - if: steps.release.outputs.release_created == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.release.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      # The release commit bumps the manifest, so its parent holds the last
+      # released version.
+      - id: previous
+        if: steps.release.outputs.release_created == 'true'
+        run: echo "version=$(git show 'HEAD^:.release-please-manifest.json' | jq -r '.["."]')" >> "$GITHUB_OUTPUT"
+
+  route:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      route: ${{ steps.route.outputs.route }}
+    env:
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+      APP_VARIANT: production
+    steps:
+      - id: ready
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          ready=true
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice::EXPO_TOKEN is not set, so the release was not routed and nothing shipped. Set the secret EXPO_TOKEN to ship releases."
+            ready=false
+          fi
+          if [ -z "$EAS_PROJECT_ID" ]; then
+            echo "::notice::EAS_PROJECT_ID is not set, so the release was not routed and nothing shipped. Set the variable EAS_PROJECT_ID to ship releases."
+            ready=false
+          fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+
+      - if: steps.ready.outputs.ready == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.sha }}
+          persist-credentials: false
+      - if: steps.ready.outputs.ready == 'true'
+        uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+        with:
+          node-version-file: .node-version
+          cache: true
+          run-install: false
+      - if: steps.ready.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: '0'
+          VP_GIT_HOOKS: '0'
+      - if: steps.ready.outputs.ready == 'true'
+        uses: expo/expo-github-action@9da89d3617bb88139671bad31b09c65714c2ee06 # 9.0.1
+        with:
+          eas-version: 27.5.0
+          packager: pnpm
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # Compares each platform's latest finished production build with this
+      # commit, computed with the production environment's EAS variables as
+      # the build computed it. No such build counts as changed. A build whose
+      # fingerprint cannot be read fails the job, so nothing ships on a guess.
+      - id: fingerprint
+        if: steps.ready.outputs.ready == 'true'
+        run: |
+          changed=false
+          for platform in ios android; do
+            build_id=$(eas build:list --platform "$platform" --build-profile production --status finished --limit 1 --json --non-interactive | jq -r '.[0].id // empty')
+            if [ -z "$build_id" ]; then
+              echo "No finished production build for $platform, so its fingerprint counts as changed."
+              changed=true
+              continue
+            fi
+            result=$(eas fingerprint:compare --build-id "$build_id" --environment production --json --non-interactive)
+            build_hash=$(jq -r '.fingerprint1.hash // empty' <<<"$result")
+            project_hash=$(jq -r '.fingerprint2.hash // empty' <<<"$result")
+            if [ -z "$build_hash" ] || [ -z "$project_hash" ]; then
+              echo "::error::eas fingerprint:compare gave no hash for $platform build $build_id."
+              exit 1
+            fi
+            echo "$platform: build $build_id has $build_hash, this commit has $project_hash."
+            if [ "$build_hash" != "$project_hash" ]; then
+              changed=true
+            fi
+          done
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      - id: route
+        if: steps.ready.outputs.ready == 'true'
+        env:
+          PREVIOUS_VERSION: ${{ needs.release-please.outputs.previous_version }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+          FINGERPRINT_CHANGED: ${{ steps.fingerprint.outputs.changed }}
+        run: |
+          route=$(node scripts/release-route.mjs)
+          echo "$route"
+          echo "$route" >> "$GITHUB_OUTPUT"
+
+  update:
+    needs: [release-please, route]
+    if: needs.route.outputs.route == 'update'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production-updates
+    env:
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+      APP_VARIANT: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.sha }}
+          persist-credentials: false
+
+      - id: ready
+        env:
+          PRIVATE_KEY: ${{ secrets.PRODUCTION_UPDATE_PRIVATE_KEY }}
+          POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
+        run: |
+          ready=true
+          if [ -z "$PRIVATE_KEY" ]; then
+            echo "::notice::PRODUCTION_UPDATE_PRIVATE_KEY is not set, so no production update was published. Set it on the production-updates environment to ship patch releases as updates."
+            ready=false
+          fi
+          if [ ! -f certs/production/certificate.pem ]; then
+            echo "::notice::certs/production/certificate.pem is missing, so no production update was published. Production builds accept only updates signed for that certificate."
+            ready=false
+          fi
+          posthog=true
+          if [ -z "$POSTHOG_CLI_API_KEY" ]; then
+            echo "::notice::POSTHOG_CLI_API_KEY is not set, so no source maps upload to PostHog."
+            posthog=false
+          elif [ -z "$POSTHOG_CLI_PROJECT_ID" ]; then
+            echo "::notice::POSTHOG_CLI_PROJECT_ID is not set, so no source maps upload to PostHog."
+            posthog=false
+          fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "posthog=$posthog" >> "$GITHUB_OUTPUT"
+
+      - if: steps.ready.outputs.ready == 'true'
+        uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+        with:
+          node-version-file: .node-version
+          cache: true
+          run-install: false
+      - if: steps.ready.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: '0'
+          VP_GIT_HOOKS: '0'
+      - if: steps.ready.outputs.ready == 'true'
+        uses: expo/expo-github-action@9da89d3617bb88139671bad31b09c65714c2ee06 # 9.0.1
+        with:
+          eas-version: 27.5.0
+          packager: pnpm
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Write the signing key
+        if: steps.ready.outputs.ready == 'true'
+        env:
+          PRIVATE_KEY: ${{ secrets.PRODUCTION_UPDATE_PRIVATE_KEY }}
+        run: |
+          umask 077
+          printf '%s\n' "$PRIVATE_KEY" > "$RUNNER_TEMP/production-update-key.pem"
+
+      # The PostHog key stays out of this step: app.config.ts adds a plugin
+      # when it is set, which would change the runtime version. The EAS
+      # production environment supplies the build's variables instead.
+      - name: Publish the update to 10% of production
+        if: steps.ready.outputs.ready == 'true'
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: eas update --channel production --environment production --rollout-percentage 10 --private-key-path "$RUNNER_TEMP/production-update-key.pem" --non-interactive --message "v$VERSION"
+
+      - name: Install posthog-cli
+        if: steps.ready.outputs.ready == 'true' && steps.ready.outputs.posthog == 'true'
+        env:
+          POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
+        run: bash scripts/install-posthog-cli.sh
+
+      - name: Upload the Hermes source maps
+        if: steps.ready.outputs.ready == 'true' && steps.ready.outputs.posthog == 'true'
+        env:
+          POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
+          HOST: ${{ vars.POSTHOG_CLI_HOST }}
+        run: |
+          if [ -n "$HOST" ]; then
+            export POSTHOG_CLI_HOST="$HOST"
+          fi
+          node_modules/@posthog/cli/node_modules/.bin_real/posthog-cli hermes upload --directory dist
+
+      - name: Delete the signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/production-update-key.pem"
+
+  build:
+    needs: [release-please, route]
+    if: needs.route.outputs.route == 'build'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production-builds
+    env:
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+      APP_VARIANT: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+        with:
+          node-version-file: .node-version
+          cache: true
+          run-install: false
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: '0'
+          VP_GIT_HOOKS: '0'
+      - uses: expo/expo-github-action@9da89d3617bb88139671bad31b09c65714c2ee06 # 9.0.1
+        with:
+          eas-version: 27.5.0
+          packager: pnpm
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # EAS builds both platforms and submits each with the production submit
+      # profile once it finishes. The job does not wait for the builds.
+      - run: eas build --profile production --platform all --non-interactive --no-wait --auto-submit
+
+      - name: Summarise what happens next
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          {
+            echo "## v$VERSION: store builds started"
+            echo
+            echo "EAS is building iOS and Android from the production profile. When each build finishes, EAS submits it to TestFlight or the Play internal track."
+            echo
+            echo "Nobody receives the release until a person promotes the build in App Store Connect and in Play Console."
+          } >> "$GITHUB_STEP_SUMMARY"
