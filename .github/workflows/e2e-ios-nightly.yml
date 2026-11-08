@@ -218,12 +218,10 @@ jobs:
           exit 1
       # The workspace, and its one app scheme, take the name that prebuild
       # derives from the variant's app name. Xcode signs the simulator build
-      # to run locally, with no certificate or team: without a signature the
-      # app has no application-identifier entitlement, and every Keychain
-      # call, which expo-secure-store makes for the refresh token, fails with
-      # errSecMissingEntitlement. The step prints the entitlements that Xcode
-      # links into the simulator binary. Only the runner's own architecture is
-      # built.
+      # to run locally, with no certificate or team. An unsigned app gets no
+      # answer from the simulator's Keychain, where expo-secure-store keeps
+      # the refresh token, so the step checks the signature. Only the runner's
+      # own architecture is built.
       # The whole log goes to xcodebuild.log, and its tail shows on a failure.
       # The bundle ID and the local-networking exception in the built app are
       # checked before the app is installed.
@@ -245,11 +243,10 @@ jobs:
           fi
           tail -n 5 "$log"
           app=$(ls -d build/Build/Products/Release-iphonesimulator/*.app)
-          xcent=$(find build/Build/Intermediates.noindex -name '*.app-Simulated.xcent' | head -n 1)
-          if [ -z "$xcent" ] || ! grep -q application-identifier "$xcent"; then
-            echo "::warning::the simulator build names no application-identifier entitlement, so the Keychain may refuse the app"
+          if ! codesign --verify "$app"; then
+            echo "::error::the simulator build is not signed, so the Keychain would refuse the app"
+            exit 1
           fi
-          if [ -n "$xcent" ]; then cat "$xcent"; fi
           id=$(plutil -extract CFBundleIdentifier raw "$app/Info.plist")
           localnet=$(plutil -extract NSAppTransportSecurity.NSAllowsLocalNetworking raw "$app/Info.plist")
           echo "built $app: bundle ID $id, NSAllowsLocalNetworking $localnet"
