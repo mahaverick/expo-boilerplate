@@ -4,8 +4,9 @@ name: Release
 # the conventional commits since the last release. Merging that PR tags
 # vX.Y.Z, and the same run then ships the release one of two ways:
 # - a patch bump whose native fingerprint matches the latest finished
-#   production build ships as a signed update to the production channel at
-#   10%, after a reviewer approves the production-updates environment;
+#   production build, with certs/production/certificate.pem committed, ships
+#   as a signed update to the production channel at 10%, after a reviewer
+#   approves the production-updates environment;
 # - any other release starts store builds for both platforms, which EAS
 #   submits to TestFlight and the Play internal track. A person promotes them.
 #
@@ -24,6 +25,9 @@ name: Release
 #
 # Each job checks its secrets in its first step. A missing one prints a
 # notice naming it, and the steps that need it are skipped, so the run passes.
+# The one exception is the update job: with the production certificate
+# committed and PRODUCTION_UPDATE_PRIVATE_KEY unset, it fails, because the
+# routed release would otherwise ship to nobody.
 on:
   push:
     branches: [main]
@@ -182,8 +186,14 @@ jobs:
           PREVIOUS_VERSION: ${{ needs.release-please.outputs.previous_version }}
           VERSION: ${{ needs.release-please.outputs.version }}
           FINGERPRINT_CHANGED: ${{ steps.fingerprint.outputs.changed }}
+        # With no production certificate, production builds take no updates,
+        # so a release routed to an update would reach nobody.
         run: |
           route=$(node scripts/release-route.mjs)
+          if [ "$route" = route=update ] && [ ! -f certs/production/certificate.pem ]; then
+            echo "::notice::certs/production/certificate.pem is missing, so production builds take no updates and this release ships as store builds. Commit the certificate to ship patch releases as updates."
+            route=route=build
+          fi
           echo "$route"
           echo "$route" >> "$GITHUB_OUTPUT"
 
@@ -207,15 +217,18 @@ jobs:
           PRIVATE_KEY: ${{ secrets.PRODUCTION_UPDATE_PRIVATE_KEY }}
           POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
           POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
+          VERSION: ${{ needs.release-please.outputs.version }}
         run: |
           ready=true
-          if [ -z "$PRIVATE_KEY" ]; then
-            echo "::notice::PRODUCTION_UPDATE_PRIVATE_KEY is not set, so no production update was published. Set it on the production-updates environment to ship patch releases as updates."
-            ready=false
-          fi
           if [ ! -f certs/production/certificate.pem ]; then
             echo "::notice::certs/production/certificate.pem is missing, so no production update was published. Production builds accept only updates signed for that certificate."
             ready=false
+          elif [ -z "$PRIVATE_KEY" ]; then
+            # The route sent this release here because production builds take
+            # updates, so a skip would leave a tagged release that shipped
+            # nowhere behind a green run. This one case fails red.
+            echo "::error::PRODUCTION_UPDATE_PRIVATE_KEY is not set on the production-updates environment, so the release v$VERSION was not published. Set the secret, then re-run this job."
+            exit 1
           fi
           posthog=true
           if [ -z "$POSTHOG_CLI_API_KEY" ]; then
