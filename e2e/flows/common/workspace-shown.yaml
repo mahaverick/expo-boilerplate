@@ -1,4 +1,4 @@
-# Waits for the workspace ${WORKSPACE} (a pattern) to show, and closes the Paid trial alert when it opens.
+# Waits for the workspace ${WORKSPACE} (a pattern) to show on a workspace screen, which alone renders the switcher, and closes the Paid trial alert when it opens.
 appId: ${APP_ID}
 ---
 - extendedWaitUntil:
@@ -8,3 +8,5 @@ appId: ${APP_ID}
     text: 'Got it'
     optional: true
 - assertVisible: '${WORKSPACE}'
+- assertVisible:
+    id: 'workspace-switcher'

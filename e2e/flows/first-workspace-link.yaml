@@ -16,5 +16,7 @@ appId: ${APP_ID}
     element:
       text: 'Create workspace'
 - tapOn: 'Create workspace'
+- extendedWaitUntil:
+    notVisible: 'Name your workspace. You can invite your team next.'
+    timeout: 30000
 - runFlow: common/workspace-shown.yaml
-- assertVisible: 'Workspace'

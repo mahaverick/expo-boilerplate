@@ -7,6 +7,7 @@ appId: ${APP_ID}
 - tapOn:
     id: 'sign-in-email'
 - inputText: ${EMAIL}
+- hideKeyboard
 - tapOn: 'Email me a link'
 - extendedWaitUntil:
     visible: 'Check your inbox'

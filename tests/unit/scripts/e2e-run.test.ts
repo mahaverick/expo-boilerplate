@@ -290,6 +290,107 @@ describe('runPlan', () => {
     expect(run.code).toBe(1)
     expect(run.stderr).toContain('e2e: only failed: cleanup: still on')
   })
+
+  it('names before in a failure of before, and still runs cleanup', async () => {
+    const maestro = fakeMaestro(0)
+    const run = await runPlanned(
+      `const plan = [{ name: 'only', vars: {}, before: () => { throw new Error('no account') }, steps: [{ file: 'cold-start.yaml' }], cleanup: () => log('cleaned') }]`,
+      maestro.dir
+    )
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('e2e: only failed: before: no account')
+    expect(run.lines).toEqual(['cleaned'])
+    expect(maestro.calls()).toEqual([])
+  })
+})
+
+describe('forced-update restart', () => {
+  /**
+   * Start a fake express whose client settings serve the Android minimum
+   * held in `stateFile`; an empty file serves `null`.
+   * @param stateFile - The file the restart command writes.
+   * @returns Its origin.
+   */
+  async function fakeExpress(stateFile: string): Promise<string> {
+    const server = http.createServer((request, response) => {
+      response.setHeader('content-type', 'application/json')
+      if (request.url === '/health') {
+        response.end('{}')
+        return
+      }
+      if (request.url === '/api/v1/status/client-settings') {
+        const android = fs.readFileSync(stateFile, 'utf8').trim() || null
+        response.end(JSON.stringify({ data: { minimumAppVersion: { ios: null, android } } }))
+        return
+      }
+      response.statusCode = 404
+      response.end('{}')
+    })
+    servers.push(server)
+    await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready))
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  }
+
+  /**
+   * Run forced-update's restart step and its cleanup with a fake express and
+   * a restart command, through the `env` that `planFlows` receives.
+   * @param command - The restart command; `$STATE` and `$SEEN` name two files.
+   * @param initial - What the state file holds before the step.
+   * @returns The step's and the cleanup's error messages, and what the command recorded.
+   */
+  async function restartWith(command: string, initial: string) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'restart-'))
+    made.push(dir)
+    const state = path.join(dir, 'state')
+    const seen = path.join(dir, 'seen')
+    fs.writeFileSync(state, initial)
+    const api = await fakeExpress(state)
+    const env = {
+      E2E_API_URL: api,
+      E2E_API_RESTART_CMD: command,
+      E2E_RESTART_TIMEOUT_MS: '1000',
+      E2E_RUN_ID: RUN_ID,
+      STATE: state,
+      SEEN: seen,
+      PLAN_MARKER: 'from-plan-env',
+    }
+    const code = `
+      import { planFlows } from ${JSON.stringify(SCRIPT)}
+      const entry = planFlows('android', { ...process.env, ...${JSON.stringify(env)} }).find((e) => e.name === 'forced-update')
+      const result = {}
+      try { await entry.steps[0].run({}) } catch (error) { result.step = error.message }
+      try { await entry.cleanup({}) } catch (error) { result.cleanup = error.message }
+      console.log(JSON.stringify(result))
+    `
+    const run = await node(['--input-type=module', '-e', code], process.env)
+    const result = JSON.parse(run.stdout) as { step?: string; cleanup?: string }
+    return { ...result, seen: fs.existsSync(seen) ? fs.readFileSync(seen, 'utf8') : '', api }
+  }
+
+  /** A restart command that serves the minimum it is given and records it with the marker. */
+  const RESTART =
+    'printf "%s" "$MINIMUM_APP_VERSION_ANDROID" > "$STATE"; printf "%s|%s;" "$MINIMUM_APP_VERSION_ANDROID" "$PLAN_MARKER" >> "$SEEN"'
+
+  it('waits for express to serve 99.0.0, then for no minimum after the cleanup', async () => {
+    const result = await restartWith(RESTART, '')
+    expect(result.step).toBeUndefined()
+    expect(result.cleanup).toBeUndefined()
+    expect(result.seen).toBe('99.0.0|from-plan-env;|from-plan-env;')
+  })
+
+  it('fails naming the wait when express keeps serving no minimum', async () => {
+    const result = await restartWith('true', '')
+    expect(result.step).toBe(
+      `express did not serve minimumAppVersion.android 99.0.0 at ${result.api}/api/v1/status/client-settings within 1 s; it served none`
+    )
+  })
+
+  it('fails the cleanup when express keeps serving 99.0.0', async () => {
+    const result = await restartWith('true', '99.0.0')
+    expect(result.cleanup).toBe(
+      `express did not serve minimumAppVersion.android none at ${result.api}/api/v1/status/client-settings within 1 s; it served 99.0.0`
+    )
+  })
 })
 
 describe('e2e-run', () => {
@@ -334,6 +435,13 @@ describe('e2e-run', () => {
     [['web'], {}, 'usage: node scripts/e2e-run.mjs <android|ios>'],
     [['android'], { E2E_RUN_ID: '' }, 'set E2E_RUN_ID'],
     [['android'], { E2E_RUN_ID: 'Run 1' }, 'E2E_RUN_ID must hold only lowercase letters'],
+    [['android'], { E2E_LINK_TIMEOUT_MS: 'soon' }, 'E2E_LINK_TIMEOUT_MS must be a positive number'],
+    [['android'], { E2E_LINK_TIMEOUT_MS: '0' }, 'E2E_LINK_TIMEOUT_MS must be a positive number'],
+    [
+      ['android'],
+      { E2E_RESTART_TIMEOUT_MS: '-1' },
+      'E2E_RESTART_TIMEOUT_MS must be a positive number',
+    ],
   ])('exits 1 for arguments %j and %j', async (args, overrides, message) => {
     const maestro = fakeMaestro(0)
     const run = await node([SCRIPT, ...args], runnerEnv(maestro.dir, overrides))

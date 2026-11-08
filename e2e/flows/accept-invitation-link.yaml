@@ -6,4 +6,7 @@ appId: ${APP_ID}
     visible: 'Name your workspace. You can invite your team next.'
     timeout: 30000
 - openLink: ${INVITE_LINK}
+- extendedWaitUntil:
+    notVisible: 'Name your workspace. You can invite your team next.'
+    timeout: 30000
 - runFlow: common/workspace-shown.yaml

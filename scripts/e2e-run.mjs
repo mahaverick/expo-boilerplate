@@ -43,8 +43,14 @@ const MAINTENANCE_MESSAGE = 'E2E maintenance check'
 /** The minimum version the forced-update flow makes express require. */
 const FORCED_MINIMUM = '99.0.0'
 
-/** How long express may take to answer `/health` after a restart. */
-const HEALTH_TIMEOUT_MS = 60_000
+/** How long a mail or a restarted express may take, unless the environment says otherwise. */
+const DEFAULT_TIMEOUT_MS = 60_000
+
+/** The settings that hold a wait in milliseconds; each must be a positive number. */
+const TIMEOUT_ENV = ['E2E_LINK_TIMEOUT_MS', 'E2E_RESTART_TIMEOUT_MS']
+
+/** Express's client settings, which carry `minimumAppVersion`. */
+const CLIENT_SETTINGS_PATH = '/api/v1/status/client-settings'
 
 /**
  * The fresh address of one flow's account.
@@ -66,12 +72,22 @@ function minimumVariable(platform) {
 }
 
 /**
+ * A wait in milliseconds from the environment.
+ * @param value - The variable's text, if set.
+ * @returns The number, or `DEFAULT_TIMEOUT_MS` when unset; `main` refuses one that is not positive.
+ */
+function timeoutFrom(value) {
+  return value ? Number(value) : DEFAULT_TIMEOUT_MS
+}
+
+/**
  * The runner's settings, read from the environment.
  * @param env - The environment.
  * @returns The settings; a missing one is an empty string, which `main` refuses before any run.
  */
 function settingsFrom(env) {
   return {
+    env,
     api: env.E2E_API_URL ?? '',
     mailpit: env.E2E_MAILPIT_URL ?? '',
     databaseUrl: env.DATABASE_URL ?? '',
@@ -79,7 +95,8 @@ function settingsFrom(env) {
     appId: env.E2E_APP_ID || DEFAULT_APP_ID,
     restartCmd: env.E2E_API_RESTART_CMD ?? '',
     runId: env.E2E_RUN_ID ?? '',
-    linkTimeoutMs: env.E2E_LINK_TIMEOUT_MS ? Number(env.E2E_LINK_TIMEOUT_MS) : 60_000,
+    linkTimeoutMs: timeoutFrom(env.E2E_LINK_TIMEOUT_MS),
+    restartTimeoutMs: timeoutFrom(env.E2E_RESTART_TIMEOUT_MS),
   }
 }
 
@@ -117,15 +134,37 @@ function appSignInSteps(flow, settings) {
 }
 
 /**
- * Run `E2E_API_RESTART_CMD` in a shell, then wait for express to answer
- * `/health`.
- * @param settings - The runner's settings.
- * @param overrides - Variables to set on the command; `undefined` removes one.
- * @returns Resolves once express answers 200.
- * @throws When the command exits non-zero or express stays down.
+ * The minimum version express now serves for a platform, or `null` when it
+ * serves none or cannot be read.
+ * @param url - The client settings URL.
+ * @param platform - `android` or `ios`.
+ * @returns The version, or `null`.
  */
-async function restartApi(settings, overrides) {
-  const env = { ...process.env }
+async function servedMinimum(url, platform) {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) })
+    if (!response.ok) return null
+    const body = await response.json()
+    return body?.data?.minimumAppVersion?.[platform] || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Run `E2E_API_RESTART_CMD` in a shell, with the environment `planFlows` was
+ * given, then wait until the restarted express serves the expected minimum.
+ * Express answering is not enough: the old process may still be up, so the
+ * wait reads the client settings until they show the new configuration.
+ * @param settings - The runner's settings.
+ * @param platform - `android` or `ios`.
+ * @param overrides - Variables to set on the command; `undefined` removes one.
+ * @param expected - The minimum the platform must then have, or `null` for none.
+ * @returns Resolves once express serves `expected`.
+ * @throws When the command exits non-zero, or express does not serve `expected` within `E2E_RESTART_TIMEOUT_MS`.
+ */
+async function restartApi(settings, platform, overrides, expected) {
+  const env = { ...settings.env }
   for (const [key, value] of Object.entries(overrides)) {
     if (value === undefined) delete env[key]
     else env[key] = value
@@ -136,16 +175,15 @@ async function restartApi(settings, overrides) {
     child.on('exit', (exitCode) => resolve(exitCode))
   })
   if (code !== 0) throw new Error(`E2E_API_RESTART_CMD exited ${code}`)
-  const health = new URL('/health', settings.api).href
-  const deadline = Date.now() + HEALTH_TIMEOUT_MS
+  const url = new URL(CLIENT_SETTINGS_PATH, settings.api).href
+  const deadline = Date.now() + settings.restartTimeoutMs
   for (;;) {
-    const ok = await fetch(health, { signal: AbortSignal.timeout(5000) }).then(
-      (response) => response.ok,
-      () => false
-    )
-    if (ok) return
-    if (Date.now() > deadline) {
-      throw new Error(`express did not answer ${health} within ${HEALTH_TIMEOUT_MS / 1000} s`)
+    const served = await servedMinimum(url, platform)
+    if (served === expected) return
+    if (Date.now() + 1000 > deadline) {
+      throw new Error(
+        `express did not serve minimumAppVersion.${platform} ${expected ?? 'none'} at ${url} within ${settings.restartTimeoutMs / 1000} s; it served ${served ?? 'none'}`
+      )
     }
     await new Promise((resolve) => setTimeout(resolve, 1000))
   }
@@ -252,15 +290,17 @@ export function planFlows(platform, env = process.env) {
       steps: [
         {
           action: `restart express with ${minimum}=${FORCED_MINIMUM}`,
-          run: () => restartApi(settings, { [minimum]: FORCED_MINIMUM }),
+          run: () => restartApi(settings, platform, { [minimum]: FORCED_MINIMUM }, FORCED_MINIMUM),
         },
         { file: 'forced-update.yaml' },
       ],
       cleanup: () =>
-        restartApi(settings, {
-          MINIMUM_APP_VERSION_ANDROID: undefined,
-          MINIMUM_APP_VERSION_IOS: undefined,
-        }),
+        restartApi(
+          settings,
+          platform,
+          { MINIMUM_APP_VERSION_ANDROID: undefined, MINIMUM_APP_VERSION_IOS: undefined },
+          null
+        ),
     },
   ]
 }
@@ -292,7 +332,7 @@ async function runMaestro(flow, file, vars) {
 
 /**
  * Run one flow: `before`, then each step in order, then `cleanup`, which runs
- * even when a step failed.
+ * even when a step or `before` failed. Each error names where it happened.
  * @param entry - The plan entry.
  * @returns The errors, step first and cleanup second; empty when the flow passed.
  */
@@ -300,7 +340,13 @@ async function runFlow(entry) {
   const vars = { ...entry.vars }
   const errors = []
   try {
-    if (entry.before) Object.assign(vars, await entry.before(vars))
+    if (entry.before) {
+      try {
+        Object.assign(vars, await entry.before(vars))
+      } catch (error) {
+        throw new Error(`before: ${error.message}`, { cause: error })
+      }
+    }
     for (const step of entry.steps) {
       if (step.file) {
         await runMaestro(entry.name, step.file, vars)
@@ -359,12 +405,16 @@ export async function runPlan(plan) {
  *   which also reads `E2E_PSQL`, `E2E_REDIS_CLI` and `E2E_REDIS_KEY_PREFIX`.
  * - `E2E_APP_ID`: the e2e build's app ID. Default `com.mahaverick.expoboilerplate.e2e`.
  * - `E2E_API_RESTART_CMD`: a shell command that restarts express with the
- *   environment it is given and returns; the runner then waits for `/health`.
- *   The forced-update flow runs it with `MINIMUM_APP_VERSION_<PLATFORM>=99.0.0`,
- *   then again with both `MINIMUM_APP_VERSION_*` removed.
+ *   environment it is given. The forced-update flow runs it with
+ *   `MINIMUM_APP_VERSION_<PLATFORM>=99.0.0`, then again with both
+ *   `MINIMUM_APP_VERSION_*` removed. After each run the runner reads
+ *   `/api/v1/status/client-settings` until the platform's minimum is 99.0.0,
+ *   then until it is none.
  * - `E2E_RUN_ID`: lowercase letters, digits and hyphens; it makes every address,
  *   workspace name and slug unique.
  * - `E2E_LINK_TIMEOUT_MS`: how long to wait for a mail. Default 60000.
+ * - `E2E_RESTART_TIMEOUT_MS`: how long a restarted express may take to serve
+ *   the expected minimum. Default 60000.
  *
  * Express must run with `SIGN_IN_LINK_MAIL_COOLDOWN=1s`: switch-workspace
  * signs one address in twice, through the API and then the app, and the
@@ -387,6 +437,15 @@ async function main() {
   }
   if (!/^[a-z0-9-]+$/.test(process.env.E2E_RUN_ID ?? '')) {
     console.error('e2e: E2E_RUN_ID must hold only lowercase letters, digits and hyphens')
+    process.exitCode = 1
+    return
+  }
+  const badTimeout = TIMEOUT_ENV.find((key) => {
+    const value = process.env[key]
+    return Boolean(value) && !(Number.isFinite(Number(value)) && Number(value) > 0)
+  })
+  if (badTimeout) {
+    console.error(`e2e: ${badTimeout} must be a positive number of milliseconds`)
     process.exitCode = 1
     return
   }
