@@ -9,7 +9,9 @@ name: E2E Android
 on:
   pull_request:
   push:
-    branches: [main]
+    # feat/e2e runs the job while plan 3e2 is in progress, since that branch
+    # has no pull request; remove it before the branch merges.
+    branches: [main, feat/e2e]
 
 # PR runs are grouped per PR, and a newer push cancels the older run. Push
 # runs are grouped per commit, as ci.yml groups them.
