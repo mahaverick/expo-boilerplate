@@ -1,0 +1,20 @@
+# Opens the sign-in link, creates ${WORKSPACE} on Welcome and lands on the Workspace tab.
+appId: ${APP_ID}
+---
+- openLink: ${LINK}
+- extendedWaitUntil:
+    visible: 'Name your workspace. You can invite your team next.'
+    timeout: 30000
+- tapOn:
+    id: 'workspace-name'
+- inputText: ${WORKSPACE}
+- tapOn:
+    id: 'workspace-slug'
+- inputText: ${SLUG}
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      text: 'Create workspace'
+- tapOn: 'Create workspace'
+- runFlow: common/workspace-shown.yaml
+- assertVisible: 'Workspace'

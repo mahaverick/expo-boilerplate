@@ -1,0 +1,10 @@
+# Opens the workspace switcher, chooses the row ${ROW} and waits for the workspace ${WORKSPACE}.
+appId: ${APP_ID}
+---
+- tapOn:
+    id: 'workspace-switcher'
+- extendedWaitUntil:
+    visible: 'Your workspaces'
+    timeout: 15000
+- tapOn: '${ROW}'
+- runFlow: workspace-shown.yaml

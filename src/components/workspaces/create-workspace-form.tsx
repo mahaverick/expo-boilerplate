@@ -148,6 +148,7 @@ export function CreateWorkspaceForm({ onCreated }: CreateWorkspaceFormProps) {
         {(field) => (
           <TextField
             label="Name"
+            testID="workspace-name"
             value={field.state.value}
             onChangeText={clearing(field.name, field.handleChange)}
             onBlur={field.handleBlur}
@@ -161,6 +162,7 @@ export function CreateWorkspaceForm({ onCreated }: CreateWorkspaceFormProps) {
         {(field) => (
           <TextField
             label="Web address"
+            testID="workspace-slug"
             hint={SLUG_HINT}
             value={field.state.value}
             onChangeText={clearing(field.name, field.handleChange)}

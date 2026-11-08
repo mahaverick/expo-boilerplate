@@ -1,0 +1,10 @@
+# Maintenance is off; the app's next status poll, every 30 to 40 s, brings the sign-in screen back.
+appId: ${APP_ID}
+---
+- extendedWaitUntil:
+    notVisible: 'Maintenance in progress'
+    timeout: 90000
+- extendedWaitUntil:
+    visible: 'Sign in'
+    timeout: 15000
+- assertVisible: 'Email me a link'

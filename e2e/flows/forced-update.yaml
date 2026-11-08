@@ -1,0 +1,10 @@
+# Express requires version 99.0.0; the update screen covers the app.
+appId: ${APP_ID}
+---
+- clearKeychain
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: 'Update the app'
+    timeout: 30000
+- assertVisible: 'This version of the app is no longer supported. Update it to keep going.'

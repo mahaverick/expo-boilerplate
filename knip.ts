@@ -31,13 +31,18 @@ function sharedExpoRows(): string[] {
  * defaults, plus the shared rows and the runner port, whose export list is the
  * manifest's `testPorts` row, whether or not a shared test uses each name yet.
  *
- * The e2e helpers (`e2e/helpers/*.mjs`) are entries: the Maestro flows run each
- * as `node e2e/helpers/<file>.mjs`, a call knip cannot see.
+ * The e2e helpers (`e2e/helpers/*.mjs`) are entries: each also runs as a
+ * command, `node e2e/helpers/<file>.mjs`, a call knip cannot see. The Maestro
+ * runner (`scripts/e2e-run.mjs`) is an entry for the same reason: the e2e
+ * workflows run it with `node`.
  *
  * Ignored files: `scripts/sync-check.d.mts` and `scripts/styleseed.d.mts`
  * type those scripts for a caller that imports them. The tests spawn the
  * scripts, because Jest's Babel cannot import a file that uses `import.meta`,
  * so nothing imports the types yet.
+ *
+ * Ignored binaries: `maestro`, which the runner spawns. It is the Maestro
+ * command-line tool, installed on the e2e runner machine, not an npm package.
  *
  * Ignored dependencies, none of them dead code:
  * - `@tanstack/react-form` is a stack library, installed with the toolchain so
@@ -54,8 +59,10 @@ const config: KnipConfig = {
     ...Object.keys(manifest.testPorts ?? {}),
     'plugins/with-backup-rules.js',
     'e2e/helpers/*.mjs',
+    'scripts/e2e-run.mjs',
   ],
   ignore: ['scripts/sync-check.d.mts', 'scripts/styleseed.d.mts'],
+  ignoreBinaries: ['maestro'],
   ignoreDependencies: ['@tanstack/react-form', '@posthog/cli'],
 }
 

@@ -103,6 +103,7 @@ export function SignInLinkScreen({
         {(field) => (
           <TextField
             label="Email"
+            testID="sign-in-email"
             value={field.state.value}
             onChangeText={field.handleChange}
             onBlur={field.handleBlur}

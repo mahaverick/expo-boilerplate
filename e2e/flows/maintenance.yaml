@@ -1,0 +1,10 @@
+# Starts with maintenance full; the maintenance screen shows the message ${MESSAGE}.
+appId: ${APP_ID}
+---
+- clearKeychain
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: 'Maintenance in progress'
+    timeout: 30000
+- assertVisible: '${MESSAGE}'

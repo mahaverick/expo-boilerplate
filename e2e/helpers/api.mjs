@@ -6,10 +6,10 @@ import { latestLink, messageIds } from './mailpit.mjs'
 /** The path prefix of the emailed sign-in link. */
 const SIGN_IN_PATH = '/auth/link'
 
-/** The header that makes express treat a caller as the native app. */
 /** How long one request to express may take. */
 const REQUEST_TIMEOUT_MS = 10_000
 
+/** The header that makes express treat a caller as the native app. */
 const NATIVE_HEADERS = { 'x-client': 'native' }
 
 /**
@@ -100,18 +100,30 @@ export async function signIn(api, mailpit, email) {
 }
 
 /**
- * Create a workspace. Express needs a slug, which is made from the name.
- * @param api - Express's origin.
- * @param accessToken - The creator's access token.
- * @param name - The workspace name; its lowercase letters and digits, joined by hyphens, become the slug.
- * @returns The slug express stored.
+ * The slug made from a workspace name: its lowercase letters and digits,
+ * joined by hyphens.
+ * @param name - The workspace name.
+ * @returns The slug.
+ * @throws When the name holds no letter or digit.
  */
-export async function createWorkspace(api, accessToken, name) {
+export function workspaceSlug(name) {
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
   if (!slug) throw new Error(`cannot derive a workspace slug from "${name}": use letters or digits`)
+  return slug
+}
+
+/**
+ * Create a workspace. Express needs a slug, which `workspaceSlug` makes from the name.
+ * @param api - Express's origin.
+ * @param accessToken - The creator's access token.
+ * @param name - The workspace name.
+ * @returns The slug express stored.
+ */
+export async function createWorkspace(api, accessToken, name) {
+  const slug = workspaceSlug(name)
   const created = await post(api, '/api/v1/tenants', { name, slug }, accessToken)
   expectStatus('workspace creation', created, 201)
   return { slug: created.body?.data?.slug ?? slug }
