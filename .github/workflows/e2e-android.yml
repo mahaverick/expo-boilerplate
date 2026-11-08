@@ -113,7 +113,7 @@ jobs:
       - name: Build, migrate and start express
         working-directory: express
         run: |
-          pnpm build
+          pnpm run build
           node dist/database/migrate.js
           nohup node dist/index.js > api.log 2>&1 < /dev/null &
           echo $! > api.pid
