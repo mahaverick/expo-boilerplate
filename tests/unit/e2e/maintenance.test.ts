@@ -80,7 +80,7 @@ async function runSet(
 describe('setMaintenance', () => {
   it('updates the row with quoted variables, then publishes reload, without a shell', async () => {
     const { result, psql, redis } = await runSet(
-      { out: '', code: 0 },
+      { out: '1\n', code: 0 },
       { out: '1\n', code: 0 },
       {},
       'postgres://db/x',
@@ -95,6 +95,8 @@ describe('setMaintenance', () => {
       'lead-b',
       '-X',
       '-q',
+      '-t',
+      '-A',
       '-v',
       'ON_ERROR_STOP=1',
       '-v',
@@ -106,7 +108,7 @@ describe('setMaintenance', () => {
       'postgres://db/x',
     ])
     expect(psql?.input).toBe(
-      "UPDATE maintenance_mode_state SET mode = :'mode', message = NULLIF(:'message', ''), changed_at = now(), version = version + 1 WHERE id = 1;\n"
+      "UPDATE maintenance_mode_state SET mode = :'mode', message = NULLIF(:'message', ''), changed_at = now(), version = version + 1 WHERE id = 1 RETURNING id;\n"
     )
     expect(redis?.args).toEqual([
       '-u',
@@ -119,8 +121,8 @@ describe('setMaintenance', () => {
 
   it('uses the key prefix from the environment and clears the message for off', async () => {
     const { psql, redis } = await runSet(
-      { out: '', code: 0 },
-      { out: '0\n', code: 0 },
+      { out: '1\n', code: 0 },
+      { out: '2\n', code: 0 },
       { E2E_REDIS_KEY_PREFIX: 'e2e' },
       'postgres://db/x',
       'redis://cache:6379',
@@ -132,7 +134,7 @@ describe('setMaintenance', () => {
 
   it('gives a default message to a mode that needs one', async () => {
     const { psql } = await runSet(
-      { out: '', code: 0 },
+      { out: '1\n', code: 0 },
       { out: '1\n', code: 0 },
       {},
       'p',
@@ -144,7 +146,7 @@ describe('setMaintenance', () => {
 
   it('rejects an unknown mode before running anything', async () => {
     const { result, psql } = await runSet(
-      { out: '', code: 0 },
+      { out: '1\n', code: 0 },
       { out: '1\n', code: 0 },
       {},
       'p',
@@ -172,7 +174,7 @@ describe('setMaintenance', () => {
 
   it('fails when redis-cli prints an error reply', async () => {
     const { result } = await runSet(
-      { out: '', code: 0 },
+      { out: '1\n', code: 0 },
       { out: 'NOAUTH Authentication required.\n', code: 0 },
       {},
       'p',
@@ -183,8 +185,35 @@ describe('setMaintenance', () => {
     expect(result.stderr).toMatch(/PUBLISH failed: NOAUTH/)
   })
 
+  it('fails and does not publish when the update matches no row', async () => {
+    const { result, redis } = await runSet(
+      { out: '', code: 0 },
+      { out: '1\n', code: 0 },
+      {},
+      'p',
+      'r',
+      'full'
+    )
+    expect(result.code).toBe(1)
+    expect(result.stderr).toMatch(/no row with id 1/)
+    expect(redis).toBeUndefined()
+  })
+
+  it('fails naming the channel when no express is subscribed', async () => {
+    const { result } = await runSet(
+      { out: '1\n', code: 0 },
+      { out: '0\n', code: 0 },
+      {},
+      'p',
+      'r',
+      'full'
+    )
+    expect(result.code).toBe(1)
+    expect(result.stderr).toMatch(/no express is listening on express-boilerplate:maintenance-mode/)
+  })
+
   it('prints usage without a mode', async () => {
-    const { result } = await runSet({ out: '', code: 0 }, { out: '1\n', code: 0 }, {}, 'p', 'r')
+    const { result } = await runSet({ out: '1\n', code: 0 }, { out: '1\n', code: 0 }, {}, 'p', 'r')
     expect(result.code).toBe(1)
     expect(result.stderr).toMatch(/usage/)
   })

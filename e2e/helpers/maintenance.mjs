@@ -12,7 +12,7 @@ const DEFAULT_MESSAGE = 'Down for maintenance.'
  * and quoted by `:'name'`, so the message never reaches the SQL as text.
  */
 const UPDATE_SQL =
-  "UPDATE maintenance_mode_state SET mode = :'mode', message = NULLIF(:'message', ''), changed_at = now(), version = version + 1 WHERE id = 1;\n"
+  "UPDATE maintenance_mode_state SET mode = :'mode', message = NULLIF(:'message', ''), changed_at = now(), version = version + 1 WHERE id = 1 RETURNING id;\n"
 
 /**
  * Split a tool setting into its command and leading arguments on whitespace.
@@ -65,11 +65,13 @@ export async function setMaintenance(databaseUrl, redisUrl, mode, message) {
   const env = process.env
   const prefix = env.E2E_REDIS_KEY_PREFIX ?? 'express-boilerplate'
   const text = message ?? (mode === 'off' ? '' : DEFAULT_MESSAGE)
-  await run(
+  const updated = await run(
     env.E2E_PSQL ?? 'psql',
     [
       '-X',
       '-q',
+      '-t',
+      '-A',
       '-v',
       'ON_ERROR_STOP=1',
       '-v',
@@ -82,15 +84,24 @@ export async function setMaintenance(databaseUrl, redisUrl, mode, message) {
     ],
     UPDATE_SQL
   )
+  if (updated.trim() !== '1') {
+    throw new Error('maintenance_mode_state has no row with id 1: nothing was changed or published')
+  }
+  const channel = `${prefix}:maintenance-mode`
   const reply = await run(env.E2E_REDIS_CLI ?? 'redis-cli', [
     '-u',
     redisUrl,
     'PUBLISH',
-    `${prefix}:maintenance-mode`,
+    channel,
     'reload',
   ])
   // redis-cli can exit 0 on an error reply.
   if (!/^\d+\s*$/.test(reply)) throw new Error(`redis-cli PUBLISH failed: ${reply.trim()}`)
+  if (Number(reply) === 0) {
+    throw new Error(
+      `the row changed, but no express is listening on ${channel}: check E2E_REDIS_KEY_PREFIX and the Redis URL`
+    )
+  }
 }
 
 /**

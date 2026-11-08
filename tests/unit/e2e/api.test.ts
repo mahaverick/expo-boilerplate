@@ -71,17 +71,20 @@ describe('api commands', () => {
           JSON.stringify({ data: { accessToken: 'access-1', refreshToken: 'refresh-1' } })
         )
     })
+    const stale = { ID: 'stale', Created: new Date().toISOString(), To: [{ Address: email }] }
+    const fresh = { ID: 'fresh', Created: new Date().toISOString(), To: [{ Address: email }] }
     const mailpit = await serve((request, _body, response) => {
       response.setHeader('content-type', 'application/json')
       if (request.url?.startsWith('/api/v1/search')) {
+        // The fresh mail exists only once express has been asked for a link.
+        const requested = seen.some((s) => s.url === '/api/v1/auth/link/request')
+        response.end(JSON.stringify({ messages: requested ? [fresh, stale] : [stale] }))
+      } else {
+        const token = request.url?.endsWith('/fresh') ? 'tok-1' : 'stale-token'
         response.end(
           JSON.stringify({
-            messages: [{ ID: 'm1', Created: new Date().toISOString(), To: [{ Address: email }] }],
+            HTML: `<a href="https://app.example.com/auth/link?token=${token}">go</a>`,
           })
-        )
-      } else {
-        response.end(
-          JSON.stringify({ HTML: '<a href="https://app.example.com/auth/link?token=tok-1">go</a>' })
         )
       }
     })
@@ -116,6 +119,12 @@ describe('api commands', () => {
     expect(seen[0]?.url).toBe('/api/v1/tenants')
     expect(seen[0]?.body).toEqual({ name: 'E2E Team 7', slug: 'e2e-team-7' })
     expect(seen[0]?.headers.authorization).toBe('Bearer access-1')
+  })
+
+  it('exits 1 for a workspace name with no letters or digits', async () => {
+    const run = await cli('create-workspace', 'http://127.0.0.1:1', 'access-1', '!!!')
+    expect(run.code).toBe(1)
+    expect(run.stderr).toMatch(/cannot derive a workspace slug/)
   })
 
   it('invites with the viewer role unless told otherwise', async () => {

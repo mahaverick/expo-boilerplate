@@ -1,12 +1,15 @@
 import http from 'node:http'
 import https from 'node:https'
 import { pathToFileURL } from 'node:url'
-import { latestLink } from './mailpit.mjs'
+import { latestLink, messageIds } from './mailpit.mjs'
 
 /** The path prefix of the emailed sign-in link. */
 const SIGN_IN_PATH = '/auth/link'
 
 /** The header that makes express treat a caller as the native app. */
+/** How long one request to express may take. */
+const REQUEST_TIMEOUT_MS = 10_000
+
 const NATIVE_HEADERS = { 'x-client': 'native' }
 
 /**
@@ -49,6 +52,11 @@ function post(api, path, body, accessToken) {
         })
       }
     )
+    request.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      request.destroy(
+        new Error(`request to ${url.href} timed out after ${REQUEST_TIMEOUT_MS / 1000} s`)
+      )
+    })
     request.on('error', reject)
     request.end(payload)
   })
@@ -76,9 +84,10 @@ function expectStatus(what, response, expected) {
  * @returns The session's tokens.
  */
 export async function signIn(api, mailpit, email) {
+  const before = await messageIds(mailpit, email)
   const requested = await post(api, '/api/v1/auth/link/request', { email, app: 'web' })
   expectStatus('link request', requested, 202)
-  const link = await latestLink(mailpit, email, SIGN_IN_PATH)
+  const link = await latestLink(mailpit, email, SIGN_IN_PATH, undefined, before)
   const token = new URL(link).searchParams.get('token')
   const verified = await post(api, '/api/v1/auth/link/verify', {
     token,
@@ -102,6 +111,7 @@ export async function createWorkspace(api, accessToken, name) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
+  if (!slug) throw new Error(`cannot derive a workspace slug from "${name}": use letters or digits`)
   const created = await post(api, '/api/v1/tenants', { name, slug }, accessToken)
   expectStatus('workspace creation', created, 201)
   return { slug: created.body?.data?.slug ?? slug }
