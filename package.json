@@ -31,8 +31,9 @@
     "styleseed": "node scripts/styleseed.mjs",
     "expo:doctor": "expo-doctor",
     "export": "expo export --platform all --output-dir dist",
+    "bundle:size": "node scripts/check-bundle-size.mjs",
     "prepare": "vp config --hooks --no-agent",
-    "gate": "pnpm check && pnpm typecheck && pnpm lint:docs && pnpm sync:check && pnpm knip && pnpm expo:doctor && pnpm test:coverage && pnpm export",
+    "gate": "pnpm check && pnpm typecheck && pnpm lint:docs && pnpm sync:check && pnpm knip && pnpm expo:doctor && pnpm test:coverage && pnpm export && pnpm bundle:size",
     "push": "bash scripts/push.sh",
     "eas-build-post-install": "bash scripts/install-posthog-cli.sh"
   },

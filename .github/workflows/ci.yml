@@ -55,6 +55,8 @@ jobs:
       # A Hermes bundle for iOS and one for Android: proves Metro resolves
       # every import from pnpm's isolated node_modules.
       - run: pnpm export
+      # Fails when either Hermes bundle outgrows its budget.
+      - run: pnpm bundle:size
       - name: Audit production dependencies
         run: pnpm audit --prod --audit-level moderate
 
