@@ -205,11 +205,9 @@ jobs:
           echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
       # The action runs each script line in its own shell and stops at the
       # first line that fails.
-      # - The first line waits up to 5 minutes each for the device to finish
-      #   booting and for its package manager to answer. It turns off the
-      #   system's crash and "isn't responding" dialogs and disables the
-      #   image's SDK setup app, whose "isn't responding" dialog once covered
-      #   the login screen, then lets the device settle for 30 seconds.
+      # - The first line runs scripts/e2e-android-ready.sh: bounded waits for
+      #   the boot, the package manager and a default network, with the
+      #   system's error dialogs off, then 30 seconds to settle.
       # - The second installs the APK, starts Maestro's driver once
       #   (`maestro hierarchy`), then runs the flows. The runner exits 75 only
       #   when the failed flow's own Maestro run shows a dropped adb
@@ -242,7 +240,7 @@ jobs:
           disable-animations: true
           working-directory: app
           script: |
-            i=0; until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do i=$((i + 1)); [ "$i" -le 150 ] || { echo "::error::the device did not finish booting"; exit 1; }; sleep 2; done; i=0; until adb shell pm path android > /dev/null 2>&1; do i=$((i + 1)); [ "$i" -le 150 ] || { echo "::error::the package manager did not answer"; exit 1; }; sleep 2; done; adb shell settings put global hide_error_dialogs 1; adb shell pm disable-user --user 0 com.google.android.googlesdksetup > /dev/null 2>&1 || true; sleep 30
+            bash scripts/e2e-android-ready.sh
             adb install -r android/app/build/outputs/apk/release/app-release.apk && { maestro hierarchy > /dev/null 2>&1 || true; } && node scripts/e2e-run.mjs android; status=$?; if [ "$status" = 75 ]; then echo "::warning::rerunning the flows once after a transport failure in $(cat maestro-output/transport-failure.txt)"; mv maestro-output maestro-output-1; E2E_RUN_ID="$E2E_RUN_ID-2" node scripts/e2e-run.mjs android; status=$?; fi; adb logcat -d > "$RUNNER_TEMP/logcat.txt"; exit $status
       # On a failure, a cancellation or a timeout, and after a transport
       # rerun even when the rerun passed.
