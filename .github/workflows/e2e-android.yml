@@ -188,8 +188,19 @@ jobs:
           fi
           unzip -q maestro.zip
           echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
-      # The action runs each script line in its own shell, so the logcat is
-      # captured on the same line as the run, before the emulator shuts down.
+      # The action runs each script line in its own shell and stops at the
+      # first line that fails.
+      # - The first line waits until the device has booted and its package
+      #   manager answers, then lets it settle for 30 seconds.
+      # - The second installs the APK, starts Maestro's driver once
+      #   (`maestro hierarchy`), then runs the flows. A run that fails on a
+      #   dropped adb connection (`device offline` or
+      #   `DeviceServerDiedException` in Maestro's output) runs once more with
+      #   a fresh run id, keeping the first output in maestro-output-1/. Any
+      #   other failure is final. The logcat is captured on the same line,
+      #   before the emulator shuts down.
+      # MAESTRO_DRIVER_STARTUP_TIMEOUT gives Maestro's driver 3 minutes to
+      # start on the software-rendered emulator.
       - name: Run the Maestro flows
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         env:
@@ -200,19 +211,24 @@ jobs:
           E2E_API_DIR: ${{ github.workspace }}/express
           E2E_API_RESTART_CMD: ${{ github.workspace }}/app/scripts/e2e-api-restart.sh
           E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '180000'
         with:
           api-level: 35
           arch: x86_64
           target: google_apis
+          ram-size: 4096M
           disable-animations: true
           working-directory: app
-          script: adb install -r android/app/build/outputs/apk/release/app-release.apk && node scripts/e2e-run.mjs android; status=$?; adb logcat -d > "$RUNNER_TEMP/logcat.txt"; exit $status
+          script: |
+            until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 2; done; until adb shell pm path android > /dev/null 2>&1; do sleep 2; done; sleep 30
+            adb install -r android/app/build/outputs/apk/release/app-release.apk && { maestro hierarchy > /dev/null 2>&1 || true; } && node scripts/e2e-run.mjs android; status=$?; if [ "$status" != 0 ] && grep -rqE 'device offline|DeviceServerDiedException' maestro-output; then mv maestro-output maestro-output-1; E2E_RUN_ID="$E2E_RUN_ID-2" node scripts/e2e-run.mjs android; status=$?; fi; adb logcat -d > "$RUNNER_TEMP/logcat.txt"; exit $status
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
           name: e2e-android
           path: |
             app/maestro-output/
+            app/maestro-output-1/
             express/api.log
             ${{ runner.temp }}/logcat.txt
           retention-days: 7

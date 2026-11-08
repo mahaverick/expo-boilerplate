@@ -54,4 +54,4 @@ docs/superpowers/plans/
 .mcp.json
 
 # Maestro screenshots, logs and commands from an e2e run
-maestro-output/
+maestro-output*/
