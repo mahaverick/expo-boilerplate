@@ -134,21 +134,34 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        # The action's default writes the cache only on the default branch. A
+        # push to any branch writes it here, so a branch's later runs skip
+        # the downloads; pull requests only read it.
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
       # The template signs a release build with the debug key, which suits a
       # build that never leaves CI. Only the emulator's ABI is built. The
       # Gradle distribution and some build dependencies download from GitHub
       # release assets, which can answer 504, so the wrapper's timeout is
-      # raised from 10 to 60 seconds and each Gradle command is tried up to 5
-      # times. A retry reuses whatever the earlier attempt downloaded.
+      # raised from 10 to 60 seconds and a Gradle command that fails on a
+      # network error is tried up to 5 times. A retry reuses whatever the
+      # earlier attempt downloaded; any other failure stops the step at once.
       - name: Build the e2e APK
+        # bash with pipefail, so a Gradle failure is not hidden behind tee.
+        shell: bash
         run: |
           pnpm exec expo prebuild --platform android --no-install
           cd android
           sed -i 's/^networkTimeout=.*/networkTimeout=60000/' gradle/wrapper/gradle-wrapper.properties
           retry() {
+            log="$RUNNER_TEMP/gradle-attempt.log"
             for attempt in 1 2 3 4 5; do
-              "$@" && return 0
-              echo "::warning::attempt $attempt of '$*' failed"
+              "$@" 2>&1 | tee "$log" && return 0
+              if ! grep -qE 'code(:)? 50[234]|status code 50[234]|timed out|Timeout|Could not GET|Could not download|Could not HEAD' "$log"; then
+                echo "::error::'$*' failed without a network error, so it is not retried"
+                return 1
+              fi
+              echo "::warning::attempt $attempt of '$*' failed on a network error"
               sleep $((attempt * 15))
             done
             return 1
