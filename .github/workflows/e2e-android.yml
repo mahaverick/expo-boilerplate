@@ -157,7 +157,7 @@ jobs:
             log="$RUNNER_TEMP/gradle-attempt.log"
             for attempt in 1 2 3 4 5; do
               "$@" 2>&1 | tee "$log" && return 0
-              if ! grep -qE 'code(:)? 50[234]|status code 50[234]|timed out|Timeout|Could not GET|Could not download|Could not HEAD' "$log"; then
+              if ! grep -qE 'response code: 50[234]|status code 50[234]|Read timed out|[Cc]onnect timed out|SocketTimeoutException|Could not GET|Could not HEAD|Could not download|Connection reset' "$log"; then
                 echo "::error::'$*' failed without a network error, so it is not retried"
                 return 1
               fi
@@ -168,40 +168,60 @@ jobs:
           }
           retry ./gradlew --version
           retry ./gradlew assembleRelease -PreactNativeArchitectures=x86_64
-      # gh downloads the asset through the API, which serves it when the
-      # github.com release download path answers 504.
+      # The zip is cached by version and pinned hash, so a run with a warm
+      # cache downloads nothing. On a miss, gh downloads the asset through the
+      # API, which serves it when the github.com release download path
+      # answers 504. The hash is checked on every run, cached or not, before
+      # the zip is unzipped.
+      - name: Read the pinned Maestro hash
+        id: maestro-pin
+        run: |
+          echo "sha256=$(awk '$1 !~ /^#/ && $2 == "maestro.zip" { print $1 }' scripts/maestro.sha256)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/maestro-zip
+          key: maestro-2.11.0-${{ steps.maestro-pin.outputs.sha256 }}
       - name: Install Maestro
         working-directory: ${{ runner.temp }}
         env:
           GH_TOKEN: ${{ github.token }}
+          WANT: ${{ steps.maestro-pin.outputs.sha256 }}
         run: |
-          for attempt in 1 2 3 4 5; do
-            gh release download cli-2.11.0 -R mobile-dev-inc/Maestro -p maestro.zip --clobber && break
-            if [ "$attempt" = 5 ]; then exit 1; fi
-            sleep $((attempt * 10))
-          done
-          want=$(awk '$1 !~ /^#/ && $2 == "maestro.zip" { print $1 }' "$GITHUB_WORKSPACE/app/scripts/maestro.sha256")
-          got=$(sha256sum maestro.zip | cut -d' ' -f1)
-          if [ -z "$want" ] || [ "$got" != "$want" ]; then
-            echo "::error::maestro.zip hash $got does not match scripts/maestro.sha256 ($want)"
+          mkdir -p maestro-zip
+          if [ ! -f maestro-zip/maestro.zip ]; then
+            for attempt in 1 2 3 4 5; do
+              gh release download cli-2.11.0 -R mobile-dev-inc/Maestro -p maestro.zip -D maestro-zip --clobber && break
+              if [ "$attempt" = 5 ]; then exit 1; fi
+              sleep $((attempt * 10))
+            done
+          fi
+          got=$(sha256sum maestro-zip/maestro.zip | cut -d' ' -f1)
+          if [ -z "$WANT" ] || [ "$got" != "$WANT" ]; then
+            echo "::error::maestro.zip hash $got does not match scripts/maestro.sha256 ($WANT)"
+            rm -f maestro-zip/maestro.zip
             exit 1
           fi
-          unzip -q maestro.zip
+          unzip -q maestro-zip/maestro.zip
           echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
       # The action runs each script line in its own shell and stops at the
       # first line that fails.
-      # - The first line waits until the device has booted and its package
-      #   manager answers, then lets it settle for 30 seconds.
+      # - The first line waits up to 5 minutes each for the device to finish
+      #   booting and for its package manager to answer, then lets it settle
+      #   for 30 seconds.
       # - The second installs the APK, starts Maestro's driver once
-      #   (`maestro hierarchy`), then runs the flows. A run that fails on a
-      #   dropped adb connection (`device offline` or
-      #   `DeviceServerDiedException` in Maestro's output) runs once more with
-      #   a fresh run id, keeping the first output in maestro-output-1/. Any
-      #   other failure is final. The logcat is captured on the same line,
-      #   before the emulator shuts down.
-      # MAESTRO_DRIVER_STARTUP_TIMEOUT gives Maestro's driver 3 minutes to
-      # start on the software-rendered emulator.
+      #   (`maestro hierarchy`), then runs the flows. The runner exits 75 only
+      #   when the failed flow's own Maestro run shows a dropped adb
+      #   connection or a driver that did not start (scripts/e2e-run.mjs,
+      #   `TRANSPORT_EXIT_CODE`). On 75 alone, the flows run once more with a
+      #   fresh run id, the first output moves to maestro-output-1/, and a
+      #   warning names the flow and the reason. Any other failure is final.
+      #   The logcat is captured on the same line, before the emulator shuts
+      #   down.
+      # The step's timeout turns a hang into a failure, so the upload and the
+      # stop step still run. MAESTRO_DRIVER_STARTUP_TIMEOUT gives Maestro's
+      # driver 3 minutes to start on the software-rendered emulator.
       - name: Run the Maestro flows
+        timeout-minutes: 35
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         env:
           E2E_API_URL: http://127.0.0.1:4040
@@ -220,10 +240,12 @@ jobs:
           disable-animations: true
           working-directory: app
           script: |
-            until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 2; done; until adb shell pm path android > /dev/null 2>&1; do sleep 2; done; sleep 30
-            adb install -r android/app/build/outputs/apk/release/app-release.apk && { maestro hierarchy > /dev/null 2>&1 || true; } && node scripts/e2e-run.mjs android; status=$?; if [ "$status" != 0 ] && grep -rqE 'device offline|DeviceServerDiedException' maestro-output; then mv maestro-output maestro-output-1; E2E_RUN_ID="$E2E_RUN_ID-2" node scripts/e2e-run.mjs android; status=$?; fi; adb logcat -d > "$RUNNER_TEMP/logcat.txt"; exit $status
+            i=0; until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do i=$((i + 1)); [ "$i" -le 150 ] || { echo "::error::the device did not finish booting"; exit 1; }; sleep 2; done; i=0; until adb shell pm path android > /dev/null 2>&1; do i=$((i + 1)); [ "$i" -le 150 ] || { echo "::error::the package manager did not answer"; exit 1; }; sleep 2; done; sleep 30
+            adb install -r android/app/build/outputs/apk/release/app-release.apk && { maestro hierarchy > /dev/null 2>&1 || true; } && node scripts/e2e-run.mjs android; status=$?; if [ "$status" = 75 ]; then echo "::warning::rerunning the flows once after a transport failure in $(cat maestro-output/transport-failure.txt)"; mv maestro-output maestro-output-1; E2E_RUN_ID="$E2E_RUN_ID-2" node scripts/e2e-run.mjs android; status=$?; fi; adb logcat -d > "$RUNNER_TEMP/logcat.txt"; exit $status
+      # On a failure, a cancellation or a timeout, and after a transport
+      # rerun even when the rerun passed.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: failure()
+        if: failure() || cancelled() || hashFiles('app/maestro-output-1/**') != ''
         with:
           name: e2e-android
           path: |
