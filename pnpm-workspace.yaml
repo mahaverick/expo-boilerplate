@@ -1,4 +1,8 @@
 allowBuilds:
+  # Its postinstall downloads the posthog-cli binary with no checksum.
+  # scripts/install-posthog-cli.sh runs the same download on a build that
+  # uploads source maps, then checks the binary against scripts/posthog-cli.sha256.
+  '@posthog/cli': false
   # Through jest-expo. Its install script only builds from source when no
   # prebuilt binary matches the platform, and every platform here has one.
   '@parcel/watcher': false

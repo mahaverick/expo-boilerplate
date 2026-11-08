@@ -347,6 +347,79 @@ describe('the fields sent', () => {
   })
 })
 
+/** One frame of a prepared exception list. */
+type SentFrame = NonNullable<
+  NonNullable<ReturnType<typeof prepareExceptionList>[number]['stacktrace']>['frames']
+>[number]
+
+/** A built exception list with one release-bundle frame, plus these fields on it. */
+function buildWith(fields: Record<string, unknown>): ReturnType<typeof prepareExceptionList> {
+  const frame = { platform: 'hermes', filename: 'index.android.bundle', lineno: 1, ...fields }
+  return [{ type: 'TypeError', value: 'v', stacktrace: { type: 'raw', frames: [frame] } }] as never
+}
+
+/** The frames `prepareExceptionList` sends for the first exception of a built list. */
+function framesOf(list: ReturnType<typeof prepareExceptionList>): [SentFrame, ...SentFrame[]] {
+  const frames = prepareExceptionList(list)[0]?.stacktrace?.frames ?? []
+  expect(frames.length).toBeGreaterThan(0)
+  return frames as [SentFrame, ...SentFrame[]]
+}
+
+describe('over-the-air update bundles', () => {
+  it.each([
+    '/data/user/0/com.mahaverick.expoboilerplate/files/.expo-internal/3b5f1e0c9a8d.bundle',
+    '/var/mobile/Containers/Data/Application/0A1B/Documents/.expo-internal/3b5f1e0c9a8d.bundle',
+  ])('counts an over-the-air bundle as the app: %s', (filename) => {
+    expect(isAppFrame(filename)).toBe(true)
+  })
+
+  it.each([
+    'file:///data/user/0/com.mahaverick.expoboilerplate/files/.expo-internal/3b5f1e0c9a8d.bundle',
+    'file:///var/mobile/Containers/Data/Application/0A1B/Documents/.expo-internal/3b5f1e0c9a8d.bundle',
+    // Android names the launch asset by its key alone when the manifest gives no extension.
+    '/data/user/0/com.mahaverick.expoboilerplate/files/.expo-internal/3b5f1e0c9a8d',
+  ])(
+    'counts an over-the-air bundle as the app with a file scheme or no extension: %s',
+    (filename) => {
+      expect(isAppFrame(filename)).toBe(true)
+    }
+  )
+
+  it('does not count a file in a folder that only ends in expo-internal', () => {
+    expect(isAppFrame('/tmp/not.expo-internal/x.bundle')).toBe(false)
+  })
+
+  it.each([
+    '/data/user/0/com.mahaverick.expoboilerplate/files/.expo-internal/sub/x.bundle',
+    '/data/user/0/com.mahaverick.expoboilerplate/files/.expo-internal/',
+    '.expo-internal/x.bundle',
+    'http://localhost:8081/.expo-internal/x.bundle',
+  ])('does not count a path whose last directory is not .expo-internal: %s', (filename) => {
+    expect(isAppFrame(filename)).toBe(false)
+  })
+
+  it.each([
+    '/data/user/0/com.mahaverick.expoboilerplate/files/.expo-internal/3b5f1e0c9a8d.bundle',
+    'file:///var/mobile/Containers/Data/Application/0A1B/Documents/.expo-internal/3b5f1e0c9a8d.bundle',
+  ])('sends only the base name of an update bundle: %s', (filename) => {
+    const [frame] = framesOf(buildWith({ filename }))
+    expect(frame).toMatchObject({ filename: '3b5f1e0c9a8d.bundle', in_app: true })
+  })
+
+  it('keeps a frame chunk id the Metro plugin injected', () => {
+    const [frame] = framesOf(buildWith({ chunk_id: '5c1d7e2a-9b3f-4e8a-a1c6-0d2f4b8e7a13' }))
+    expect(frame.chunk_id).toBe('5c1d7e2a-9b3f-4e8a-a1c6-0d2f4b8e7a13')
+  })
+
+  it.each([['a b'], ['x'.repeat(129)], ['<script>'], [42]])(
+    'drops a chunk id that is not one: %p',
+    (value) => {
+      const [frame] = framesOf(buildWith({ chunk_id: value }))
+      expect(frame).not.toHaveProperty('chunk_id')
+    }
+  )
+})
+
 describe('Hermes frames', () => {
   it('parses Hermes frames with the V8 (chrome) and gecko parsers', async () => {
     const error = new TypeError('boom')

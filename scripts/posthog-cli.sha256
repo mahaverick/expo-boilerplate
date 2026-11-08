@@ -1,0 +1,13 @@
+# SHA-256 of the posthog-cli binary that @posthog/cli's npm wrapper installs,
+# keyed by `uname -s`-`uname -m` of the build host. scripts/install-posthog-cli.sh
+# checks the binary against these before anything runs it with the upload key.
+# Each hash is over the `posthog-cli` file inside
+# releases.posthog.com/posthog-cli/v<version>/posthog-cli-<target>.tar.gz, the
+# archive the wrapper picks: aarch64-apple-darwin for Darwin-arm64, and
+# x86_64-unknown-linux-gnu for Linux-x86_64 (an EAS Ubuntu image, glibc 2.35
+# or later). Cross-check each archive against the release's .sha256 file and
+# its GitHub mirror. A version bump of @posthog/cli in package.json MUST
+# update every hash in the same change.
+# @posthog/cli 0.18.9
+d16940f9382fc75ca7768b083b1d3b710eee6f774a08df33e023d30f55d5b851  Darwin-arm64
+34150e65dc621414f16664627570d510e11df4fa0b90a3bd9a4ea172ab40239c  Linux-x86_64

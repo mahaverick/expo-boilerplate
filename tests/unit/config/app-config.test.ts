@@ -9,6 +9,7 @@ const ENV_KEYS = [
   'IOS_APP_STORE_ID',
   'PRIVACY_POLICY_URL',
   'EAS_PROJECT_ID',
+  'POSTHOG_CLI_API_KEY',
 ] as const
 /** A variable the config reads. */
 type EnvKey = (typeof ENV_KEYS)[number]
@@ -110,6 +111,22 @@ describe('app.config', () => {
   it('registers the expo-web-browser plugin', () => {
     const config = configFor({})
     expect(config.plugins).toContain('expo-web-browser')
+  })
+
+  it.each([[undefined], [''], ['  ']])(
+    'adds no PostHog upload plugin when POSTHOG_CLI_API_KEY is %p',
+    (key) => {
+      const config = configFor(key === undefined ? {} : { POSTHOG_CLI_API_KEY: key })
+      const names = (config.plugins ?? []).map((plugin) =>
+        Array.isArray(plugin) ? String(plugin[0]) : plugin
+      )
+      expect(names.filter((name) => name.startsWith('posthog-react-native/expo'))).toEqual([])
+    }
+  )
+
+  it('adds the PostHog upload plugin when POSTHOG_CLI_API_KEY is set', () => {
+    const config = configFor({ POSTHOG_CLI_API_KEY: 'phx_test_not_real' })
+    expect(config.plugins).toContain('posthog-react-native/expo')
   })
 
   it('wires app links to APP_LINK_HOST, claiming /auth/link, /tenants/, /auth/confirm, /settings/account/security, /invitations/accept and /invitations/confirm', () => {
