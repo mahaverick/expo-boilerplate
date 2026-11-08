@@ -348,11 +348,13 @@ jobs:
       # maestro-output-1/, and a warning names the flow and the reason. Any
       # other failure is final. The app's simulator log is captured after the
       # flows. The step's timeout turns a hang into a failure, so the upload
-      # and the stop step still run. MAESTRO_DRIVER_STARTUP_TIMEOUT gives
-      # Maestro's driver 3 minutes to start.
+      # and the stop step still run. The seven flows measured 26 minutes on a
+      # slow runner on 8 November 2026, so the step allows 45.
+      # MAESTRO_DRIVER_STARTUP_TIMEOUT gives Maestro's driver 3 minutes to
+      # start.
       - id: flows
         if: env.EXERCISE == 'none'
-        timeout-minutes: 35
+        timeout-minutes: 45
         env:
           E2E_API_URL: http://127.0.0.1:4040
           E2E_MAILPIT_URL: http://127.0.0.1:8025
