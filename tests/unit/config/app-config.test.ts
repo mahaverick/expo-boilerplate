@@ -1,8 +1,15 @@
 import { jest } from '@jest/globals'
 import type { ExpoConfig } from 'expo/config'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
+import { updatesConfig } from '../../../app.config'
 
-const ENV_KEYS = ['APP_VARIANT', 'APP_LINK_HOST', 'IOS_APP_STORE_ID', 'PRIVACY_POLICY_URL'] as const
+const ENV_KEYS = [
+  'APP_VARIANT',
+  'APP_LINK_HOST',
+  'IOS_APP_STORE_ID',
+  'PRIVACY_POLICY_URL',
+  'EAS_PROJECT_ID',
+] as const
 /** A variable the config reads. */
 type EnvKey = (typeof ENV_KEYS)[number]
 
@@ -239,5 +246,69 @@ describe('app.config store declarations', () => {
     ])
     expect(manifest?.NSPrivacyTracking).toBe(false)
     expect(manifest?.NSPrivacyTrackingDomains).toEqual([])
+  })
+})
+
+describe('app.config updates', () => {
+  const ID = '0f8b4a52-3c1e-4d6f-9a7b-2e5c8d1f4a90'
+  /** A certificate check that finds exactly these paths. */
+  const has = (paths: string[]) => (p: string) => paths.includes(p)
+
+  it('turns updates off without a project ID', () => {
+    expect(
+      updatesConfig('preview', undefined, has(['certs/preview/certificate.pem'])).updates
+    ).toEqual({ enabled: false })
+  })
+
+  it('turns updates off for a variant whose certificate is missing', () => {
+    expect(updatesConfig('preview', ID, has([])).updates).toEqual({ enabled: false })
+  })
+
+  it.each(['development', 'e2e'] as const)('never turns updates on for %s', (variant) => {
+    expect(updatesConfig(variant, ID, () => true).updates).toEqual({ enabled: false })
+  })
+
+  it.each(['preview', 'production'] as const)(
+    'signs %s updates with its own certificate',
+    (variant) => {
+      const { updates, runtimeVersion } = updatesConfig(
+        variant,
+        ID,
+        has([`certs/${variant}/certificate.pem`])
+      )
+      expect(updates).toEqual({
+        enabled: true,
+        url: `https://u.expo.dev/${ID}`,
+        checkAutomatically: 'ON_LOAD',
+        fallbackToCacheTimeout: 0,
+        codeSigningCertificate: `./certs/${variant}/certificate.pem`,
+        codeSigningMetadata: { keyid: 'main', alg: 'rsa-v1_5-sha256' },
+      })
+      expect(runtimeVersion).toEqual({ policy: 'fingerprint' })
+    }
+  )
+
+  it('sets a fingerprint runtime version even when updates are off', () => {
+    expect(updatesConfig('development', undefined, () => false).runtimeVersion).toEqual({
+      policy: 'fingerprint',
+    })
+  })
+
+  it('puts the project ID under extra.eas', () => {
+    expect(configFor({ EAS_PROJECT_ID: ID }).extra?.eas).toEqual({ projectId: ID })
+  })
+
+  it('omits extra.eas without a project ID', () => {
+    expect(configFor({}).extra?.eas).toBeUndefined()
+  })
+
+  it('fails on a project ID that is not a UUID', () => {
+    expect(() => configFor({ EAS_PROJECT_ID: 'my-project' })).toThrow(
+      /EAS_PROJECT_ID must be a UUID/
+    )
+  })
+
+  it('keeps updates off in the exported config without a project ID', () => {
+    expect(configFor({ APP_VARIANT: 'preview' }).updates).toEqual({ enabled: false })
   })
 })

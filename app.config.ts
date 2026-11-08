@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { ConfigContext, ExpoConfig } from 'expo/config'
 import packageJson from './package.json'
 
@@ -116,12 +118,63 @@ export function appVariant(): AppVariant {
   return value as AppVariant
 }
 
+/**
+ * The EAS project ID from `EAS_PROJECT_ID`, or undefined when unset or empty.
+ * @returns A lowercase UUID.
+ * @throws When the value is not a lowercase UUID.
+ */
+function easProjectId(): string | undefined {
+  const id = process.env.EAS_PROJECT_ID?.trim()
+  if (!id) return undefined
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) {
+    throw new Error(
+      `EAS_PROJECT_ID must be a UUID such as 0f8b4a52-3c1e-4d6f-9a7b-2e5c8d1f4a90. Got "${id}".`
+    )
+  }
+  return id
+}
+
+/**
+ * The over-the-air update settings of one variant. Updates are on only when
+ * the variant has a channel, an EAS project ID is set and the variant's
+ * certificate exists, so a build never carries updates it cannot verify.
+ * The runtime version is a fingerprint in every variant.
+ * @param variant - The build variant.
+ * @param projectId - The EAS project ID, or undefined when unset.
+ * @param certExists - Whether a file exists at a project-relative path.
+ * @returns The `updates` and `runtimeVersion` fields.
+ */
+export function updatesConfig(
+  variant: AppVariant,
+  projectId: string | undefined,
+  certExists: (path: string) => boolean
+): Pick<ExpoConfig, 'updates' | 'runtimeVersion'> {
+  const runtimeVersion = { policy: 'fingerprint' } as const
+  const certificate = `certs/${variant}/certificate.pem`
+  if (VARIANTS[variant].channel === null || !projectId || !certExists(certificate)) {
+    return { updates: { enabled: false }, runtimeVersion }
+  }
+  return {
+    updates: {
+      enabled: true,
+      url: `https://u.expo.dev/${projectId}`,
+      checkAutomatically: 'ON_LOAD',
+      fallbackToCacheTimeout: 0,
+      codeSigningCertificate: `./${certificate}`,
+      codeSigningMetadata: { keyid: 'main', alg: 'rsa-v1_5-sha256' },
+    },
+    runtimeVersion,
+  }
+}
+
 /** The app's Expo config. The version comes from package.json, which release tooling bumps. */
 export default ({ config }: ConfigContext): ExpoConfig => {
   const host = appLinkHost()
   const storeId = iosAppStoreId()
   const policyUrl = privacyPolicyUrl()
-  const { idSuffix, nameSuffix, localNetwork } = VARIANTS[appVariant()]
+  const projectId = easProjectId()
+  const variant = appVariant()
+  const { idSuffix, nameSuffix, localNetwork } = VARIANTS[variant]
   const appId = `com.mahaverick.expoboilerplate${idSuffix}`
   return {
     ...config,
@@ -220,11 +273,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // Cleartext HTTP is for the local API of development and e2e builds only.
       ['expo-build-properties', { android: { usesCleartextTraffic: localNetwork } }],
     ],
-    ...((host || storeId || policyUrl) && {
+    ...updatesConfig(variant, projectId, (path) => existsSync(join(__dirname, path))),
+    ...((host || storeId || policyUrl || projectId) && {
       extra: {
         ...(host && { webUrl: `https://${host}` }),
         ...(storeId && { iosAppStoreId: storeId }),
         ...(policyUrl && { privacyPolicyUrl: policyUrl }),
+        ...(projectId && { eas: { projectId } }),
       },
     }),
     experiments: {
