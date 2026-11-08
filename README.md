@@ -69,28 +69,36 @@ Pick the path that matches your machine.
 
 ### With a Mac
 
-- **iOS simulator or iPhone:** install Xcode, then run `npx expo run:ios`. Add
-  `--device` to install on a connected iPhone.
+- **iOS simulator or iPhone:** install Xcode, then run
+  `APP_VARIANT=development npx expo run:ios`. Add `--device` to install on a
+  connected iPhone.
 - **Android emulator or phone:** install Android Studio with a JDK, create an
-  emulator or enable USB debugging on a phone, then run `npx expo run:android`.
+  emulator or enable USB debugging on a phone, then run
+  `APP_VARIANT=development npx expo run:android`.
 
 Each command generates the git-ignored `ios/` or `android/` folder, builds the
 dev client, installs it and starts Metro. Later runs start Metro alone with
 `pnpm start`.
 
+`APP_VARIANT=development` gives the dev client its own app ID
+(`com.mahaverick.expoboilerplate.dev`), the name "expo-boilerplate Dev" and
+plain HTTP to a local API. Without it the config is the production variant's:
+the production app ID, and HTTPS only
+([The build variants](#the-build-variants)). After a change of variant, delete
+`ios/` and `android/` so the next run generates them again.
+
 ### Without a Mac
 
 - **Android** builds on Linux and Windows too: the same Android Studio steps
-  and `npx expo run:android`.
-- **iOS** needs Xcode to build locally, so build in the cloud with EAS Build:
-  create an Expo account, install the EAS command-line tool
-  (`npm i -g eas-cli`), and join the Apple Developer Program, which installing
-  on a physical iPhone requires. This repository has no `eas.json` yet, so run
-  `eas build:configure` first, add a `development` profile with
-  `developmentClient: true` and `distribution: internal`, then
-  `eas build --profile development --platform ios`. Install the build on your
-  iPhone from the link EAS prints, then run `pnpm start` and open the app.
-  There is no iOS simulator without a Mac.
+  and `APP_VARIANT=development npx expo run:android`.
+- **iOS** needs Xcode to build locally, so build in the cloud with EAS Build.
+  It needs the Expo project from [Release setup](#release-setup) steps 1 and
+  2, the EAS command-line tool at 27.5.0 or later
+  (`npm i -g eas-cli@27.5.0`), and the Apple Developer Program, which
+  installing on a physical iPhone requires. Run
+  `EAS_PROJECT_ID=<the project ID> eas build --profile development --platform ios`.
+  Install the build on your iPhone from the link EAS prints, then run
+  `pnpm start` and open the app. There is no iOS simulator without a Mac.
 
 ## Run-time configuration
 
@@ -102,7 +110,12 @@ dev client, installs it and starts Metro. Later runs start Metro alone with
 | `EXPO_PUBLIC_POSTHOG_KEY` | `src/observability/telemetry/config.ts` | The PostHog project key. Unset, analytics and exception reporting are inert and make no request.                  |
 | `EXPO_PUBLIC_APP_ENV`     | `src/observability/telemetry/config.ts` | The environment name that every event and exception carries, such as `production`. Unset, it reads `development`. |
 | `PRIVACY_POLICY_URL`      | `app.config.ts`                         | The privacy policy's https address. Build time only. Each store build must set it.                                |
+| `APP_VARIANT`             | `app.config.ts`                         | `development`, `e2e`, `preview` or `production`. Unset, it reads `production`. Each `eas.json` profile sets it.   |
+| `EAS_PROJECT_ID`          | `app.config.ts`                         | The EAS project's ID, a lowercase UUID. Build time only. Unset, updates are off.                                  |
 
+- **A cloud build reads these from its EAS environment**, not from
+  `.env.local`. [Release setup](#release-setup) says which environment holds
+  which value. `APP_VARIANT` is the exception: `eas.json` sets it per profile.
 - **Expo inlines each `EXPO_PUBLIC_*` value into the bundle when Metro
   builds.** Change one, then run `pnpm start --clear`. They are public: never
   put a secret in an `EXPO_PUBLIC_*` variable.
@@ -116,13 +129,15 @@ dev client, installs it and starts Metro. Later runs start Metro alone with
   machine at `localhost`. The Android emulator reaches it at `10.0.2.2`. A
   physical phone needs your machine's address on the Wi-Fi network, and a
   firewall that admits port 4040.
-- **An `http://` origin works for dev clients only.** A release build needs an
-  `https://` API URL.
-  - Android allows cleartext only in debug builds, whose manifests set
-    `usesCleartextTraffic`. A release build refuses `http://10.0.2.2:4040`.
-  - iOS App Transport Security allows plain HTTP only to local hosts, in every
-    build. On a phone, `localhost` is the phone itself, so
-    `http://localhost:4040` reaches your machine only from the simulator.
+- **An `http://` origin works in the development and e2e variants only.** A
+  preview or production build needs an `https://` API URL.
+  - Android allows cleartext in the development and e2e variants
+    (`usesCleartextTraffic: true` through `expo-build-properties`). Preview
+    and production set it to false and refuse `http://10.0.2.2:4040`.
+  - iOS App Transport Security (ATS) allows plain HTTP to local hosts in the
+    development and e2e variants (`NSAllowsLocalNetworking`), and to no host
+    in preview and production. On a phone, `localhost` is the phone itself,
+    so `http://localhost:4040` reaches your machine only from the simulator.
 - **Unset, the base URL is relative.** No request then counts as an API request,
   so none carries the client headers. The tests set it to
   `https://api.example.test`.
@@ -232,9 +247,16 @@ update screen offers a button to the store.
 | `pnpm styleseed`     | Prints the token table generated from react's `globals.css`; `--write` rewrites `STYLESEED.md`                                                            |
 | `pnpm expo:doctor`   | `expo-doctor`: the SDK's version and configuration checks                                                                                                 |
 | `pnpm export`        | A Hermes bundle for iOS and one for Android, into `dist/`                                                                                                 |
-| `pnpm gate`          | Every check above in order: check, typecheck, lint:docs, sync:check, knip, expo:doctor, test:coverage, export                                             |
+| `pnpm bundle:size`   | Fails when either Hermes bundle in `dist/` is over its budget, 7,500,000 bytes each (`scripts/check-bundle-size.mjs`). Run it after `pnpm export`         |
+| `pnpm gate`          | Every check above in order: check, typecheck, lint:docs, sync:check, knip, expo:doctor, test:coverage, export, bundle:size                                |
 | `pnpm push [args]`   | `pnpm gate`, then `git push --no-verify` with the arguments                                                                                               |
 | `pnpm knip`          | Unused files, exports and dependencies. It runs knip's binary, so `package.json` has no `knip` script (CLAUDE.md says why)                                |
+
+`package.json` also holds two scripts that EAS Build runs and nobody runs by
+hand. `eas-build-post-install` installs the checked PostHog command-line tool
+and prepares the iOS source map. `eas-build-on-success` uploads the build's
+source map. Both skip without `POSTHOG_CLI_API_KEY`
+([Source maps](#source-maps)).
 
 Run the gate against react with:
 
@@ -260,6 +282,252 @@ messages follow Conventional Commits, and commits are GPG-signed.
   network. They check what an event carries and what a report scrubs, not what
   PostHog receives; the device checklist covers that.
 
+## Builds and releases
+
+As of 8 November 2026 the repository holds the build profiles, the signed
+update settings and the release workflows, and none of it has run on EAS. The
+project has no Expo account, no certificate and no secret, so every workflow
+ends with a notice that names what is missing, and every variant has updates
+off. [Release setup](#release-setup) turns each part on.
+
+### The build variants
+
+`APP_VARIANT` picks the variant, and each `eas.json` profile of the same name
+sets it. Unset, it reads `production`, the strictest one.
+
+| Variant       | App ID (iOS and Android)                 | Name                     | Update channel | Plain HTTP to a local API | Distribution           |
+| ------------- | ---------------------------------------- | ------------------------ | -------------- | ------------------------- | ---------------------- |
+| `development` | `com.mahaverick.expoboilerplate.dev`     | expo-boilerplate Dev     | none           | yes                       | internal, dev client   |
+| `e2e`         | `com.mahaverick.expoboilerplate.e2e`     | expo-boilerplate E2E     | none           | yes                       | iOS simulator, APK     |
+| `preview`     | `com.mahaverick.expoboilerplate.preview` | expo-boilerplate Preview | `preview`      | no                        | internal testers       |
+| `production`  | `com.mahaverick.expoboilerplate`         | expo-boilerplate         | `production`   | no                        | App Store, Google Play |
+
+- **Updates are on only in preview and production, and only when the build
+  has both** an `EAS_PROJECT_ID` and the variant's certificate at
+  `certs/<variant>/certificate.pem`. Without either, the build has updates off
+  and accepts none.
+- **The runtime version is the native fingerprint** (`policy: 'fingerprint'`).
+  An update reaches only the builds whose native code matches it. A version
+  bump alone keeps the fingerprint.
+- **An update applies on the next cold start.** The app checks on launch,
+  downloads in the background and keeps running the bundle it started with.
+- **Preview and production take build numbers from EAS** (`appVersionSource:
+  "remote"`, `autoIncrement`), and the version from `package.json`, which
+  release-please sets.
+- **No workflow builds the preview variant.** Run
+  `eas build --profile preview --platform all` by hand when the native code
+  changes.
+
+### Release setup
+
+Do these once, in order. Run every `eas` command from the repository root,
+with `EAS_PROJECT_ID` set in the shell once step 2 gives it.
+
+1. **Create the Expo account** with two-factor sign-in, and take the
+   Production plan. Update code signing needs the Production or Enterprise
+   plan ([Expo's code signing page](https://docs.expo.dev/eas-update/code-signing/),
+   read on 3 November 2026).
+2. **Create the project** with `eas init`. It cannot write to `app.config.ts`,
+   so copy the project ID it prints. Set `EAS_PROJECT_ID` to that ID as a
+   GitHub repository variable and as a plain variable in each of the EAS
+   environments `development`, `preview` and `production`. All four hold the
+   same ID: eas-cli reads the GitHub one to find the project, and the EAS
+   one then replaces it, so a different value changes the fingerprint.
+3. **Create a robot token** scoped to this project, and store it as the
+   GitHub repository secret `EXPO_TOKEN`.
+4. **Create the three GitHub environments** and limit each to the `main`
+   branch:
+   - `preview-updates`, with no reviewer;
+   - `production-updates`, with a required reviewer;
+   - `production-builds`, with a required reviewer.
+5. **Create one signing key and certificate per variant.** For `preview`,
+   then `production`:
+
+   ```bash
+   npx expo-updates codesigning:generate \
+     --key-output-directory <a directory outside the repository> \
+     --certificate-output-directory certs/<variant> \
+     --certificate-validity-duration-years 10 \
+     --certificate-common-name "expo-boilerplate <variant>"
+   ```
+
+   - Commit `certs/<variant>/certificate.pem` only. `.gitignore` ignores
+     every `*.pem` file except `certs/*/certificate.pem`.
+   - Store `private-key.pem` as an environment secret:
+     `PREVIEW_UPDATE_PRIVATE_KEY` on `preview-updates`, and
+     `PRODUCTION_UPDATE_PRIVATE_KEY` on `production-updates`.
+   - Keep the production key in the owner's password manager too. GitHub
+     never shows a secret again, and `eas update:rollback` needs the key.
+     Then delete the key files.
+
+6. **Set the EAS environment variables** in the table below.
+7. **Add the PostHog command-line credentials** to EAS and to GitHub:
+   `POSTHOG_CLI_API_KEY` (a PostHog personal API key),
+   `POSTHOG_CLI_PROJECT_ID` and, for a project outside PostHog's US cloud,
+   `POSTHOG_CLI_HOST`. Without the key, nothing uploads and nothing fails.
+   With the key and no project ID, a store build fails at its upload, after
+   the native compile.
+8. **Create the release GitHub App**, as react does. Give it Contents and Pull
+   requests read and write, install it on this repository, then set its
+   client ID as the variable `RELEASE_APP_CLIENT_ID` and its private key as
+   the secret `RELEASE_APP_PRIVATE_KEY`. `GITHUB_TOKEN` is no substitute:
+   GitHub starts no workflow from an event it creates, so its release PRs
+   would get no CI.
+9. **List each variant's app ID in react.** Add it to the matching
+   environment's `IOS_APP_IDS` and `ANDROID_APP_LINKS` (spec part 2), so the
+   web app's association files name it. Once passkeys land, also add each
+   variant's Android signing hash to `WEBAUTHN_ANDROID_ORIGINS` in express
+   (spec part 1).
+
+Finish steps 2 and 5 before the first store build. A build made without the
+project ID or its certificate has updates off for its whole life, and adding
+either changes the fingerprint, so the next release ships as a store build.
+So does a later change to `APP_LINK_HOST`, `IOS_APP_STORE_ID` or
+`PRIVACY_POLICY_URL`, because each one lands in the config's `extra`.
+The first build of each profile runs interactively (`eas build --profile
+<profile>`), so EAS can create the iOS credentials and the Android upload
+keystore.
+
+#### Secrets and variables
+
+| Name                            | Where                                                       | Read by                                                                     |
+| ------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `EAS_PROJECT_ID`                | GitHub repository variable                                  | `release.yml` (`route`, `update`, `build`) and `preview-update.yml`         |
+| `EXPO_TOKEN`                    | GitHub repository secret                                    | `release.yml` (`route`, `update`, `build`) and `preview-update.yml`         |
+| `RELEASE_APP_CLIENT_ID`         | GitHub repository variable                                  | `release.yml` (`release-please`)                                            |
+| `RELEASE_APP_PRIVATE_KEY`       | GitHub repository secret                                    | `release.yml` (`release-please`)                                            |
+| `PREVIEW_UPDATE_PRIVATE_KEY`    | Secret of the GitHub environment `preview-updates`          | `preview-update.yml`                                                        |
+| `PRODUCTION_UPDATE_PRIVATE_KEY` | Secret of the GitHub environment `production-updates`       | `release.yml` (`update`)                                                    |
+| `POSTHOG_CLI_API_KEY`           | GitHub repository secret                                    | The source-map upload of `release.yml` (`update`) and `preview-update.yml`  |
+| `POSTHOG_CLI_PROJECT_ID`        | GitHub repository variable                                  | The same upload                                                             |
+| `POSTHOG_CLI_HOST`              | GitHub repository variable, optional                        | The same upload. Unset, the command-line tool uses `https://us.posthog.com` |
+| `EAS_PROJECT_ID`                | EAS `development`, `preview` and `production`, plain        | `app.config.ts`: `updates.url` and `extra.eas.projectId`                    |
+| `EXPO_PUBLIC_API_URL`           | Each EAS environment, plain                                 | The bundle                                                                  |
+| `EXPO_PUBLIC_APP_ENV`           | Each EAS environment, plain                                 | The bundle: the environment name on every event, such as `production`       |
+| `EXPO_PUBLIC_POSTHOG_KEY`       | Each EAS environment that sends analytics, plain            | The bundle                                                                  |
+| `APP_LINK_HOST`                 | Each EAS environment, plain                                 | `app.config.ts`                                                             |
+| `PRIVACY_POLICY_URL`            | EAS `preview` and `production`, plain                       | `app.config.ts`                                                             |
+| `IOS_APP_STORE_ID`              | EAS `production`, plain, once App Store Connect has the app | `app.config.ts`                                                             |
+| `POSTHOG_CLI_API_KEY`           | EAS `preview` and `production`, secret                      | `eas-build-post-install` and `eas-build-on-success`                         |
+| `POSTHOG_CLI_PROJECT_ID`        | EAS `preview` and `production`, plain                       | `eas-build-on-success`                                                      |
+| `POSTHOG_CLI_HOST`              | EAS `preview` and `production`, plain, optional             | `eas-build-on-success`                                                      |
+
+- **A value that shapes the app config lives only in the EAS environment,
+  with plain or sensitive visibility, never secret.** That covers
+  `EAS_PROJECT_ID`, `APP_LINK_HOST`, `IOS_APP_STORE_ID`, `PRIVACY_POLICY_URL`
+  and every `EXPO_PUBLIC_*`. The fingerprint's default `balanced` preset
+  includes `extra` and the EAS project, and EAS gives a secret value to a
+  build but not to `eas update` or `eas fingerprint:compare`. A value that
+  differs between the two makes every patch release a store build. The
+  workflows read these values only through `--environment`, and the one
+  exception is the GitHub `EAS_PROJECT_ID`, which must match.
+- **`POSTHOG_CLI_API_KEY` shapes no config**, so in EAS it takes secret
+  visibility.
+- **`APP_VARIANT` and `SOURCEMAP_FILE` come from `eas.json`.** Set neither in
+  an EAS environment.
+
+#### Credentials and who owns them
+
+Each owner is the repository owner until the team names others.
+
+| Credential                                               | Where it lives                                                            | Owner            |
+| -------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------- |
+| iOS distribution certificate and provisioning profiles   | EAS (`eas credentials`)                                                   | Repository owner |
+| Android upload keystore                                  | EAS (`eas credentials`)                                                   | Repository owner |
+| Android app-signing key                                  | Google Play App Signing                                                   | Repository owner |
+| Google Play service-account key, which `eas submit` uses | EAS (`eas credentials`, Android); `eas.json` names no key file            | Repository owner |
+| Preview update signing key                               | GitHub environment `preview-updates`                                      | Repository owner |
+| Production update signing key                            | GitHub environment `production-updates`, and the owner's password manager | Repository owner |
+| Expo robot token                                         | GitHub repository secret `EXPO_TOKEN`                                     | Repository owner |
+| Release GitHub App private key                           | GitHub repository secret `RELEASE_APP_PRIVATE_KEY`                        | Repository owner |
+| PostHog personal API key                                 | EAS `preview` and `production`, and a GitHub repository secret            | Repository owner |
+
+### The release flow
+
+Each push to `main` does two things:
+
+- **`preview-update.yml` publishes a signed update to the `preview`
+  channel.** Every preview build whose fingerprint matches runs `main`'s
+  JavaScript after its next cold start. A newer push cancels an older run.
+- **`release.yml` runs release-please**, which opens or updates the release
+  PR from the conventional commits since the last release.
+
+A person merges the release PR, and nothing merges it on its own, because the
+merge ships. The merge tags `vX.Y.Z`, and the same run routes the release by
+its version bump (`scripts/release-route.mjs`). On 1.x, release-please bumps
+the minor version for a `feat:` commit and the patch version for a `fix:`.
+
+| Release                      | Route                                                                                                                                                |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Patch, fingerprint unchanged | After a reviewer approves `production-updates`, a signed update to the `production` channel at 10% (`--rollout-percentage 10`), then the source maps |
+| Patch, fingerprint changed   | Store builds                                                                                                                                         |
+| Minor (a `feat:` commit)     | Store builds                                                                                                                                         |
+| Major (a breaking change)    | Store builds                                                                                                                                         |
+
+- **The fingerprint check** compares this commit with each platform's latest
+  finished production build (`eas fingerprint:compare --environment
+  production`). A platform with no such build counts as changed, and a
+  fingerprint that cannot be read fails the job, so nothing ships on a guess.
+- **Store builds** wait for a reviewer on `production-builds`, then run
+  `eas build --profile production --platform all --auto-submit`. EAS submits
+  each finished build to TestFlight or the Play internal track, and nobody
+  receives it until a person promotes it in App Store Connect and Play
+  Console.
+- **Widen a rollout** with `eas update:edit <update group ID>
+  --rollout-percentage <1 to 100>`, such as 50, then 100.
+  `eas update:list --branch production` lists the group IDs.
+- **Roll back** with `eas update:rollback <update group ID>
+  --private-key-path <the production key> --force-end-active-rollout`. The
+  group must be the latest on its branch and runtime version. EAS republishes
+  the group before it, or, with none, rolls back to the bundle the build
+  embeds. Run both commands with `APP_VARIANT=production` and
+  `EAS_PROJECT_ID` set, so eas-cli reads the production config and its
+  certificate.
+- **A feature never ships over the air.** Apple's Developer Program License
+  Agreement section 3.3.1(B) and App Review Guideline 2.5.2 forbid using
+  downloaded code to add features. A `feat:` commit bumps the minor version,
+  so it always ships as a store build, and an update carries fixes only.
+
+### Source maps
+
+PostHog's Metro serializer (`posthog-react-native/metro`, in
+`metro.config.js`) writes a chunk ID into each Hermes bundle and its source
+map. An exception frame carries that chunk ID, and PostHog resolves the frame
+through the uploaded map, so a release stack trace names the source file and
+line.
+
+- **An update's maps** upload in the same workflow job, right after
+  `eas update` writes `dist/` (`posthog-cli hermes upload --directory dist`).
+- **A store build's maps** upload from EAS Build's hooks.
+  `eas-build-post-install` installs the command-line tool and, on iOS,
+  rewrites one line of React Native's `react-native-xcode.sh` so the
+  packager's map survives at `$SOURCEMAP_FILE.packager`.
+  `eas-build-on-success` runs `scripts/upload-native-sourcemaps.sh`, which
+  copies the chunk ID into the composed map (`hermes clone`) and uploads it,
+  named by the app ID, the version and the build number. `eas.json` sets
+  `SOURCEMAP_FILE` for the preview and production profiles only.
+- **Without `POSTHOG_CLI_API_KEY`, every step skips** and the build or update
+  ships with no map. Its frames still carry chunk IDs, but PostHog shows
+  them as bundle positions.
+
+### The first store submission
+
+- **Google Play's first upload is manual** in Play Console. Download the
+  Android App Bundle from the EAS build page and upload it; `eas submit`
+  works after that. A new personal developer account must first run a closed
+  test with 12 testers for 14 days (Play Console Help; confirm the rule for
+  this account's type before planning around it).
+- **App review access.** Use a review address on a shared inbox the team
+  watches, on the production API, with a seeded workspace and members.
+  During review the team sends the sign-in link when the reviewer asks for
+  it.
+- **The review notes** in App Store Connect and Play Console say that, and
+  explain the emailed-link sign-in and the read-only billing
+  ([Notes for app review](#notes-for-app-review)).
+- **The store listing needs** the icon (with Android's adaptive and
+  monochrome layers), the splash screen and phone screenshots. The
+  repository holds none of them as of 8 November 2026.
+
 ## Notes for app review
 
 The app sells nothing, as the spec's section 6 requires, so Apple's guideline
@@ -269,6 +537,9 @@ The app sells nothing, as the spec's section 6 requires, so Apple's guideline
   asks the person to buy. The Plan screen (Settings, Workspace, Plan) shows the
   plan's name, its state, its limits and its features, and nothing else.
 - Billing notifications show the app's neutral text, not the server's.
+- Sign-in is by emailed link, with no password. The reviewer gets the
+  review address; the team sends the link when the reviewer asks for it
+  ([The first store submission](#the-first-store-submission)).
 - Account deletion is in Settings, Account, Delete account. A person in
   passkey-required mode cannot use it yet; the blocking screen says to ask by
   email ([SECURITY.md](SECURITY.md#known-gaps)).
@@ -536,6 +807,48 @@ date, the device and the OS version beside each.
       matches the profile, toggling it posts once and shows a toast, and "Read
       our privacy policy" opens the address in the in-app browser. Check it
       with VoiceOver and TalkBack.
+
+These checks need [Release setup](#release-setup) done, and EAS builds of the
+preview variant. None of the release path has run on EAS as of 8 November 2026.
+
+- [ ] **Each variant installs side by side with its own name.** Install the
+      development, preview and production builds on one phone. Three icons
+      show, named "expo-boilerplate Dev", "expo-boilerplate Preview" and
+      "expo-boilerplate", and each keeps its own session.
+- [ ] **A preview build refuses plain HTTP.** In a throwaway preview build
+      with `EXPO_PUBLIC_API_URL` set to an `http://` address, the first
+      request fails on both platforms.
+- [ ] **A preview build refuses an update its certificate does not verify.**
+      Generate a throwaway key with `npx expo-updates codesigning:generate`
+      into a temporary directory, and publish to `preview` with
+      `--private-key-path` set to it. Cold-start the preview build twice: it
+      keeps running the bundle it had, on both platforms.
+- [ ] **A signed patch reaches a preview build on the next cold start.** Push
+      a visible fix to `main`, wait for `preview-update.yml`, then cold-start
+      the preview build. The first launch runs the old bundle and downloads
+      the update. The second runs the fix.
+- [ ] **A crash after an update shows readable frames in PostHog.** With
+      `POSTHOG_CLI_API_KEY` set, trigger a fatal error in a preview build
+      running an update, and launch it again. The `$exception`'s app frames
+      sit under `.expo-internal/`, carry `in_app` true and a `chunk_id`, and
+      PostHog shows them as source files and lines, not bundle positions.
+- [ ] **A crash in a store build shows readable frames too.** Do the same in a
+      preview build that runs its embedded bundle, on iOS and on Android.
+- [ ] **The iOS map rewrite works on EAS.** In an iOS preview build's log, the
+      `eas-build-post-install` step prints "react-native-xcode.sh keeps the
+      packager's source map at /tmp/main.jsbundle.map.packager", which proves
+      the rewrite matched React Native 0.88.1's script.
+- [ ] **`SOURCEMAP_FILE` reaches the Xcode build phase.** The same build's
+      `eas-build-on-success` step finds both maps and uploads. "no Hermes
+      source map at /tmp/main.jsbundle.map" means the Xcode phase never saw
+      the variable.
+- [ ] **The release fields parse on EAS.** On each platform, the upload step
+      prints "uploaded the <platform> Hermes source map for <app ID>
+      <version> (<build>)" with the variant's app ID, `package.json`'s
+      version and the build number EAS assigned.
+- [ ] **Remote versioning raises the build number.** Two preview builds in a
+      row show build numbers one apart on the EAS build page, on both
+      platforms, and the version stays `package.json`'s.
 
 ## Reporting a problem
 
