@@ -51,6 +51,11 @@ function sharedExpoRows(): string[] {
  * - `@posthog/cli` is never imported: `scripts/install-posthog-cli.sh` runs its
  *   installer, and `scripts/upload-native-sourcemaps.sh` and the release
  *   workflows run the binary to upload source maps.
+ * - `@babel/plugin-transform-react-jsx` is never imported: Babel loads it by
+ *   name from react-native-css-interop's preset, which `nativewind/babel`
+ *   re-exports and which does not list it. Babel resolves the name from the
+ *   app's `node_modules`, so a native build's bundle step, which runs node
+ *   without pnpm's `NODE_PATH`, needs it listed here.
  */
 const config: KnipConfig = {
   // The config plugin: Expo loads it by the path in app.config.ts, which knip cannot follow.
@@ -63,7 +68,7 @@ const config: KnipConfig = {
   ],
   ignore: ['scripts/sync-check.d.mts', 'scripts/styleseed.d.mts'],
   ignoreBinaries: ['maestro'],
-  ignoreDependencies: ['@tanstack/react-form', '@posthog/cli'],
+  ignoreDependencies: ['@tanstack/react-form', '@posthog/cli', '@babel/plugin-transform-react-jsx'],
 }
 
 export default config

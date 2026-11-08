@@ -80,6 +80,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@babel/plugin-transform-react-jsx": "^7.29.7",
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
     "@eslint/compat": "^2.1.1",
