@@ -18,6 +18,16 @@ on:
         type: choice
         options: [none, fail, pass]
         default: none
+  push:
+    # feat/e2e runs the job while plan 3e2 is in progress, since a workflow
+    # that is not on the default branch cannot be dispatched; remove it
+    # before the branch merges.
+    branches: [feat/e2e]
+    paths:
+      - .github/workflows/e2e-ios-nightly.yml
+      - e2e/**
+      - scripts/e2e-*
+      - scripts/maestro.sha256
 
 # One run at a time; a run in progress is never cancelled.
 concurrency:
