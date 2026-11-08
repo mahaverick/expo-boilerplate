@@ -39,6 +39,7 @@
     "eas-build-on-success": "bash scripts/upload-native-sourcemaps.sh"
   },
   "dependencies": {
+    "@babel/plugin-transform-react-jsx": "^7.29.7",
     "@formatjs/intl-getcanonicallocales": "^3.3.0",
     "@formatjs/intl-locale": "^5.4.2",
     "@formatjs/intl-pluralrules": "^7.0.2",
@@ -80,7 +81,6 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@babel/plugin-transform-react-jsx": "^7.29.7",
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
     "@eslint/compat": "^2.1.1",
