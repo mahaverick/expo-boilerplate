@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ConfigContext, ExpoConfig } from 'expo/config'
 import packageJson from './package.json'
@@ -135,35 +136,56 @@ function easProjectId(): string | undefined {
 }
 
 /**
+ * The release line of a version: its major and minor numbers. The production
+ * config carries it in `extra`, which the fingerprint hashes, so a minor or
+ * major release starts a new runtime and a patch update reaches only the
+ * builds of its own release line.
+ * @param version - The app version, such as `1.4.2`.
+ * @returns The release line, such as `1.4`.
+ * @throws When the version is not `x.y.z`.
+ */
+export function releaseLine(version: string): string {
+  const match = /^(\d+)\.(\d+)\.\d+$/.exec(version)
+  if (!match) throw new Error(`The app version must be x.y.z, such as 1.4.2. Got "${version}".`)
+  return `${match[1]}.${match[2]}`
+}
+
+/**
  * The over-the-air update settings of one variant. Updates are on only when
  * the variant has a channel, an EAS project ID is set and the variant's
  * certificate exists, so a build never carries updates it cannot verify.
- * The runtime version is a fingerprint in every variant.
+ * The runtime version is a fingerprint in every variant. With updates on, the
+ * certificate's SHA-256 goes in `extra`, so a new certificate changes the
+ * fingerprint and ships as a store build.
  * @param variant - The build variant.
  * @param projectId - The EAS project ID, or undefined when unset.
- * @param certExists - Whether a file exists at a project-relative path.
- * @returns The `updates` and `runtimeVersion` fields.
+ * @param readCertificate - The bytes of a project-relative file, or undefined
+ *   when it does not exist.
+ * @returns The `updates` and `runtimeVersion` fields, and with updates on,
+ *   the certificate's lowercase hex SHA-256 as `certificateSha256`.
  */
 export function updatesConfig(
   variant: AppVariant,
   projectId: string | undefined,
-  certExists: (path: string) => boolean
-): Pick<ExpoConfig, 'updates' | 'runtimeVersion'> {
+  readCertificate: (path: string) => Uint8Array | undefined
+): Pick<ExpoConfig, 'updates' | 'runtimeVersion'> & { certificateSha256?: string } {
   const runtimeVersion = { policy: 'fingerprint' } as const
-  const certificate = `certs/${variant}/certificate.pem`
-  if (VARIANTS[variant].channel === null || !projectId || !certExists(certificate)) {
-    return { updates: { enabled: false }, runtimeVersion }
-  }
+  const path = `certs/${variant}/certificate.pem`
+  const off = { updates: { enabled: false }, runtimeVersion }
+  if (VARIANTS[variant].channel === null || !projectId) return off
+  const certificate = readCertificate(path)
+  if (certificate === undefined) return off
   return {
     updates: {
       enabled: true,
       url: `https://u.expo.dev/${projectId}`,
       checkAutomatically: 'ON_LOAD',
       fallbackToCacheTimeout: 0,
-      codeSigningCertificate: `./${certificate}`,
+      codeSigningCertificate: `./${path}`,
       codeSigningMetadata: { keyid: 'main', alg: 'rsa-v1_5-sha256' },
     },
     runtimeVersion,
+    certificateSha256: createHash('sha256').update(certificate).digest('hex'),
   }
 }
 
@@ -176,6 +198,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const variant = appVariant()
   const { idSuffix, nameSuffix, localNetwork } = VARIANTS[variant]
   const appId = `com.mahaverick.expoboilerplate${idSuffix}`
+  const { certificateSha256, ...updates } = updatesConfig(variant, projectId, (path) => {
+    const file = join(__dirname, path)
+    return existsSync(file) ? readFileSync(file) : undefined
+  })
+  const line = variant === 'production' ? releaseLine(packageJson.version) : undefined
   return {
     ...config,
     name: `expo-boilerplate${nameSuffix}`,
@@ -273,13 +300,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // Cleartext HTTP is for the local API of development and e2e builds only.
       ['expo-build-properties', { android: { usesCleartextTraffic: localNetwork } }],
     ],
-    ...updatesConfig(variant, projectId, (path) => existsSync(join(__dirname, path))),
-    ...((host || storeId || policyUrl || projectId) && {
+    ...updates,
+    ...((host || storeId || policyUrl || projectId || certificateSha256 || line) && {
       extra: {
         ...(host && { webUrl: `https://${host}` }),
         ...(storeId && { iosAppStoreId: storeId }),
         ...(policyUrl && { privacyPolicyUrl: policyUrl }),
         ...(projectId && { eas: { projectId } }),
+        ...(certificateSha256 && { updatesCertificate: certificateSha256 }),
+        ...(line && { releaseLine: line }),
       },
     }),
     experiments: {

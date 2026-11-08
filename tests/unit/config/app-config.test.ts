@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto'
 import { jest } from '@jest/globals'
 import type { ExpoConfig } from 'expo/config'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
-import { updatesConfig } from '../../../app.config'
+import { releaseLine, updatesConfig } from '../../../app.config'
+import packageJson from '../../../package.json'
 
 const ENV_KEYS = [
   'APP_VARIANT',
@@ -264,21 +266,27 @@ describe('app.config store declarations', () => {
 
 describe('app.config updates', () => {
   const ID = '0f8b4a52-3c1e-4d6f-9a7b-2e5c8d1f4a90'
-  /** A certificate check that finds exactly these paths. */
-  const has = (paths: string[]) => (p: string) => paths.includes(p)
+  /** A fixture certificate's bytes. */
+  const CERT = Buffer.from('-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n')
+  /** A certificate reader that finds exactly these files, each holding `CERT`. */
+  const has = (paths: string[]) => (p: string) => (paths.includes(p) ? CERT : undefined)
 
   it('turns updates off without a project ID', () => {
-    expect(
-      updatesConfig('preview', undefined, has(['certs/preview/certificate.pem'])).updates
-    ).toEqual({ enabled: false })
+    const result = updatesConfig('preview', undefined, has(['certs/preview/certificate.pem']))
+    expect(result.updates).toEqual({ enabled: false })
+    expect(result.certificateSha256).toBeUndefined()
   })
 
   it('turns updates off for a variant whose certificate is missing', () => {
-    expect(updatesConfig('preview', ID, has([])).updates).toEqual({ enabled: false })
+    const result = updatesConfig('preview', ID, has([]))
+    expect(result.updates).toEqual({ enabled: false })
+    expect(result.certificateSha256).toBeUndefined()
   })
 
   it.each(['development', 'e2e'] as const)('never turns updates on for %s', (variant) => {
-    expect(updatesConfig(variant, ID, () => true).updates).toEqual({ enabled: false })
+    const result = updatesConfig(variant, ID, () => CERT)
+    expect(result.updates).toEqual({ enabled: false })
+    expect(result.certificateSha256).toBeUndefined()
   })
 
   it.each(['preview', 'production'] as const)(
@@ -301,8 +309,27 @@ describe('app.config updates', () => {
     }
   )
 
+  it.each(['preview', 'production'] as const)(
+    "gives %s the lowercase hex SHA-256 of the certificate's bytes",
+    (variant) => {
+      const { certificateSha256 } = updatesConfig(
+        variant,
+        ID,
+        has([`certs/${variant}/certificate.pem`])
+      )
+      expect(certificateSha256).toBe(createHash('sha256').update(CERT).digest('hex'))
+      expect(certificateSha256).toMatch(/^[0-9a-f]{64}$/)
+    }
+  )
+
+  it('gives a new certificate a new hash', () => {
+    const first = updatesConfig('production', ID, () => Buffer.from('first')).certificateSha256
+    const second = updatesConfig('production', ID, () => Buffer.from('second')).certificateSha256
+    expect(first).not.toBe(second)
+  })
+
   it('sets a fingerprint runtime version even when updates are off', () => {
-    expect(updatesConfig('development', undefined, () => false).runtimeVersion).toEqual({
+    expect(updatesConfig('development', undefined, () => undefined).runtimeVersion).toEqual({
       policy: 'fingerprint',
     })
   })
@@ -322,6 +349,39 @@ describe('app.config updates', () => {
   })
 
   it('keeps updates off in the exported config without a project ID', () => {
-    expect(configFor({ APP_VARIANT: 'preview' }).updates).toEqual({ enabled: false })
+    const config = configFor({ APP_VARIANT: 'preview' })
+    expect(config.updates).toEqual({ enabled: false })
+    expect(config.extra?.updatesCertificate).toBeUndefined()
+  })
+})
+
+describe('app.config releaseLine', () => {
+  it('is the major and minor version', () => {
+    expect(releaseLine('1.4.2')).toBe('1.4')
+  })
+
+  it('stays the same across a patch bump', () => {
+    expect(releaseLine('1.0.1')).toBe(releaseLine('1.0.0'))
+  })
+
+  it.each([
+    ['1.0.1', '1.1.0'],
+    ['1.9.3', '2.0.0'],
+  ])('changes from %s to %s', (before, after) => {
+    expect(releaseLine(after)).not.toBe(releaseLine(before))
+  })
+
+  it.each(['1.4', 'v1.4.2', '1.4.2-beta.1', ''])('rejects %p', (version) => {
+    expect(() => releaseLine(version)).toThrow(/app version must be x\.y\.z/)
+  })
+
+  it("puts package.json's release line in the production config", () => {
+    const [major, minor] = packageJson.version.split('.')
+    expect(configFor({}).extra?.releaseLine).toBe(`${major}.${minor}`)
+    expect(configFor({ APP_VARIANT: 'production' }).extra?.releaseLine).toBe(`${major}.${minor}`)
+  })
+
+  it.each(['development', 'e2e', 'preview'])('gives %s no release line', (variant) => {
+    expect(configFor({ APP_VARIANT: variant }).extra?.releaseLine).toBeUndefined()
   })
 })
