@@ -217,8 +217,11 @@ jobs:
           done
           exit 1
       # The workspace, and its one app scheme, take the name that prebuild
-      # derives from the variant's app name. No code signing: the simulator
-      # runs an unsigned build. Only the runner's own architecture is built.
+      # derives from the variant's app name. Xcode signs the simulator build
+      # to run locally, with no certificate or team: without a signature the
+      # app has no application-identifier entitlement, and every Keychain
+      # call, which expo-secure-store makes for the refresh token, fails with
+      # errSecMissingEntitlement. Only the runner's own architecture is built.
       # The whole log goes to xcodebuild.log, and its tail shows on a failure.
       # The bundle ID and the local-networking exception in the built app are
       # checked before the app is installed.
@@ -232,7 +235,7 @@ jobs:
           log="$RUNNER_TEMP/xcodebuild.log"
           if ! xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO \
+            -derivedDataPath build ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=NO \
             build > "$log" 2>&1; then
             grep -E '(error|fatal):' "$log" | head -n 50 || true
             tail -n 150 "$log"
@@ -240,6 +243,7 @@ jobs:
           fi
           tail -n 5 "$log"
           app=$(ls -d build/Build/Products/Release-iphonesimulator/*.app)
+          codesign -d --entitlements - "$app" 2>&1 || true
           id=$(plutil -extract CFBundleIdentifier raw "$app/Info.plist")
           localnet=$(plutil -extract NSAppTransportSecurity.NSAllowsLocalNetworking raw "$app/Info.plist")
           echo "built $app: bundle ID $id, NSAllowsLocalNetworking $localnet"
