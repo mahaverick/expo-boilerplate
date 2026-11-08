@@ -1,4 +1,4 @@
-# Opens the sign-in link, then switches the Workspace tab to A and then to B.
+# Opens the sign-in link, then switches the Workspace tab to A and then to B; A no longer shows.
 appId: ${APP_ID}
 ---
 - openLink: ${LINK}
@@ -20,3 +20,4 @@ appId: ${APP_ID}
     env:
       ROW: ${ROW_B}
       WORKSPACE: ${WORKSPACE_B}
+- assertNotVisible: '${WORKSPACE_A}'

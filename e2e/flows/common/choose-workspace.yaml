@@ -7,4 +7,7 @@ appId: ${APP_ID}
     visible: 'Your workspaces'
     timeout: 15000
 - tapOn: '${ROW}'
+- extendedWaitUntil:
+    notVisible: 'Your workspaces'
+    timeout: 15000
 - runFlow: workspace-shown.yaml
