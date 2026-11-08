@@ -113,8 +113,9 @@ describe('app.config', () => {
     expect(config.plugins).toContain('expo-web-browser')
   })
 
-  it.each([[undefined], [''], ['  ']])(
-    'adds no PostHog upload plugin when POSTHOG_CLI_API_KEY is %p',
+  // The build and an update must agree on the fingerprint, and only the build sees a secret key.
+  it.each([[undefined], [''], ['  '], ['phx_test_not_real']])(
+    'adds no PostHog plugin whatever POSTHOG_CLI_API_KEY is (%p)',
     (key) => {
       const config = configFor(key === undefined ? {} : { POSTHOG_CLI_API_KEY: key })
       const names = (config.plugins ?? []).map((plugin) =>
@@ -123,11 +124,6 @@ describe('app.config', () => {
       expect(names.filter((name) => name.startsWith('posthog-react-native/expo'))).toEqual([])
     }
   )
-
-  it('adds the PostHog upload plugin when POSTHOG_CLI_API_KEY is set', () => {
-    const config = configFor({ POSTHOG_CLI_API_KEY: 'phx_test_not_real' })
-    expect(config.plugins).toContain('posthog-react-native/expo')
-  })
 
   it('wires app links to APP_LINK_HOST, claiming /auth/link, /tenants/, /auth/confirm, /settings/account/security, /invitations/accept and /invitations/confirm', () => {
     const config = configFor({ APP_LINK_HOST: 'app.example.com' })

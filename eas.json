@@ -22,13 +22,13 @@
       "channel": "preview",
       "environment": "preview",
       "autoIncrement": true,
-      "env": { "APP_VARIANT": "preview" }
+      "env": { "APP_VARIANT": "preview", "SOURCEMAP_FILE": "/tmp/main.jsbundle.map" }
     },
     "production": {
       "channel": "production",
       "environment": "production",
       "autoIncrement": true,
-      "env": { "APP_VARIANT": "production" }
+      "env": { "APP_VARIANT": "production", "SOURCEMAP_FILE": "/tmp/main.jsbundle.map" }
     }
   },
   "submit": {

@@ -174,7 +174,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const policyUrl = privacyPolicyUrl()
   const projectId = easProjectId()
   const variant = appVariant()
-  const uploadsSourceMaps = Boolean(process.env.POSTHOG_CLI_API_KEY?.trim())
   const { idSuffix, nameSuffix, localNetwork } = VARIANTS[variant]
   const appId = `com.mahaverick.expoboilerplate${idSuffix}`
   return {
@@ -273,8 +272,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       './plugins/with-backup-rules',
       // Cleartext HTTP is for the local API of development and e2e builds only.
       ['expo-build-properties', { android: { usesCleartextTraffic: localNetwork } }],
-      // Its Gradle and Xcode steps upload the Hermes source maps through posthog-cli, which needs the key.
-      ...(uploadsSourceMaps ? ['posthog-react-native/expo'] : []),
     ],
     ...updatesConfig(variant, projectId, (path) => existsSync(join(__dirname, path))),
     ...((host || storeId || policyUrl || projectId) && {

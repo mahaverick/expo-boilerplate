@@ -4,6 +4,16 @@ name: Preview update
 # preview builds run main's latest JavaScript. The preview-updates environment
 # has no reviewer.
 #
+# Values that shape the app config (EAS_PROJECT_ID, APP_LINK_HOST,
+# IOS_APP_STORE_ID, PRIVACY_POLICY_URL and every EXPO_PUBLIC_*) live only in
+# the EAS environments, with plain or sensitive visibility, never secret, and
+# the eas steps read them only through --environment. The balanced fingerprint
+# preset includes `extra` and the EAS project, so a value that differs between
+# a build and an update makes every patch a store build. vars.EAS_PROJECT_ID
+# is the one value set on the eas steps: eas-cli reads the project ID from the
+# config before it can fetch an environment, and the environment's value,
+# which must be the same ID, then replaces it.
+#
 # The job checks its secrets in its first step. A missing one prints a notice
 # naming it, and the steps that need it are skipped, so the run passes.
 on:
@@ -97,9 +107,6 @@ jobs:
           umask 077
           printf '%s\n' "$PRIVATE_KEY" > "$RUNNER_TEMP/preview-update-key.pem"
 
-      # The PostHog key stays out of this step: app.config.ts adds a plugin
-      # when it is set, which would change the runtime version. The EAS
-      # preview environment supplies the build's variables instead.
       - name: Publish the update to preview
         if: steps.ready.outputs.ready == 'true'
         run: |

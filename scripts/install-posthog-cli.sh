@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Installs the posthog-cli binary that the PostHog Expo plugin's Gradle and
-# Xcode steps call to upload Hermes source maps, and checks it against
+# Installs the posthog-cli binary that scripts/upload-native-sourcemaps.sh and
+# the update workflows call to upload Hermes source maps, and checks it against
 # scripts/posthog-cli.sha256 before anything runs it. EAS runs this as
-# `eas-build-post-install`. With no POSTHOG_CLI_API_KEY the build uploads
+# `eas-build-post-install`, and the upload script runs it again. With no POSTHOG_CLI_API_KEY the build uploads
 # nothing, so the script skips and exits 0.
 #
 # @posthog/cli's postinstall is off (pnpm-workspace.yaml): its npm wrapper

@@ -64,6 +64,13 @@ describe('eas.json', () => {
     expect(eas.build.production).not.toHaveProperty('distribution')
   })
 
+  it('writes the iOS source map of preview and production to a fixed path, and of no other profile', () => {
+    expect(eas.build.preview?.env?.SOURCEMAP_FILE).toBe('/tmp/main.jsbundle.map')
+    expect(eas.build.production?.env?.SOURCEMAP_FILE).toBe('/tmp/main.jsbundle.map')
+    expect(eas.build.development?.env).not.toHaveProperty('SOURCEMAP_FILE')
+    expect(eas.build.e2e?.env).not.toHaveProperty('SOURCEMAP_FILE')
+  })
+
   it('submits production to the internal Play track', () => {
     expect(eas.submit.production.android.track).toBe('internal')
   })
