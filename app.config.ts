@@ -73,14 +73,59 @@ function privacyPolicyUrl(): string | undefined {
   return url
 }
 
+/** The four builds of the app: one per place it runs. */
+export type AppVariant = 'development' | 'e2e' | 'preview' | 'production'
+
+/**
+ * What differs between variants. Development and e2e reach a local API over
+ * plain HTTP and take no updates; preview and production are HTTPS only and
+ * take updates from the channel of the same name.
+ */
+export const VARIANTS: Record<
+  AppVariant,
+  {
+    idSuffix: string
+    nameSuffix: string
+    channel: 'preview' | 'production' | null
+    localNetwork: boolean
+  }
+> = {
+  development: { idSuffix: '.dev', nameSuffix: ' Dev', channel: null, localNetwork: true },
+  e2e: { idSuffix: '.e2e', nameSuffix: ' E2E', channel: null, localNetwork: true },
+  preview: {
+    idSuffix: '.preview',
+    nameSuffix: ' Preview',
+    channel: 'preview',
+    localNetwork: false,
+  },
+  production: { idSuffix: '', nameSuffix: '', channel: 'production', localNetwork: false },
+}
+
+/**
+ * The build variant from `APP_VARIANT`, or production when unset or empty.
+ * @returns The variant.
+ * @throws When the value is not one of the four variants.
+ */
+export function appVariant(): AppVariant {
+  const value = process.env.APP_VARIANT?.trim() || 'production'
+  if (!Object.hasOwn(VARIANTS, value)) {
+    throw new Error(
+      `APP_VARIANT must be one of development, e2e, preview or production. Got "${value}".`
+    )
+  }
+  return value as AppVariant
+}
+
 /** The app's Expo config. The version comes from package.json, which release tooling bumps. */
 export default ({ config }: ConfigContext): ExpoConfig => {
   const host = appLinkHost()
   const storeId = iosAppStoreId()
   const policyUrl = privacyPolicyUrl()
+  const { idSuffix, nameSuffix, localNetwork } = VARIANTS[appVariant()]
+  const appId = `com.mahaverick.expoboilerplate${idSuffix}`
   return {
     ...config,
-    name: 'expo-boilerplate',
+    name: `expo-boilerplate${nameSuffix}`,
     slug: 'expo-boilerplate',
     version: packageJson.version,
     scheme: 'expo-boilerplate',
@@ -88,16 +133,16 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     orientation: 'portrait',
     userInterfaceStyle: 'automatic',
     ios: {
-      bundleIdentifier: 'com.mahaverick.expoboilerplate',
+      bundleIdentifier: appId,
       supportsTablet: false,
       ...(host && {
         associatedDomains: [`applinks:${host}`, `webcredentials:${host}`],
       }),
       infoPlist: {
-        // Plain HTTP reaches only local hosts, such as a simulator's localhost API.
+        // Development and e2e builds reach a local API over plain HTTP; preview and production allow HTTPS only.
         NSAppTransportSecurity: {
           NSAllowsArbitraryLoads: false,
-          NSAllowsLocalNetworking: true,
+          ...(localNetwork && { NSAllowsLocalNetworking: true }),
         },
         // The app uses only the operating system's exempt encryption (HTTPS).
         ITSAppUsesNonExemptEncryption: false,
@@ -144,7 +189,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       },
     },
     android: {
-      package: 'com.mahaverick.expoboilerplate',
+      package: appId,
       predictiveBackGestureEnabled: true,
       ...(host && {
         intentFilters: [
@@ -168,7 +213,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         'android.permission.WRITE_EXTERNAL_STORAGE',
       ],
     },
-    plugins: ['expo-router', 'expo-web-browser', './plugins/with-backup-rules'],
+    plugins: [
+      'expo-router',
+      'expo-web-browser',
+      './plugins/with-backup-rules',
+      // Cleartext HTTP is for the local API of development and e2e builds only.
+      ['expo-build-properties', { android: { usesCleartextTraffic: localNetwork } }],
+    ],
     ...((host || storeId || policyUrl) && {
       extra: {
         ...(host && { webUrl: `https://${host}` }),
