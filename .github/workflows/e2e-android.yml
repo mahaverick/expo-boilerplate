@@ -135,11 +135,19 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
       # The template signs a release build with the debug key, which suits a
-      # build that never leaves CI. Only the emulator's ABI is built.
+      # build that never leaves CI. Only the emulator's ABI is built. The
+      # wrapper's 10-second download timeout is raised to 60 seconds, and the
+      # download is tried up to 3 times, because services.gradle.org can stall.
       - name: Build the e2e APK
         run: |
           pnpm exec expo prebuild --platform android --no-install
           cd android
+          sed -i 's/^networkTimeout=.*/networkTimeout=60000/' gradle/wrapper/gradle-wrapper.properties
+          for attempt in 1 2 3; do
+            ./gradlew --version && break
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            sleep 10
+          done
           ./gradlew assembleRelease -PreactNativeArchitectures=x86_64
       - name: Install Maestro
         working-directory: ${{ runner.temp }}
