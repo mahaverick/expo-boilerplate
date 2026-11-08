@@ -15,7 +15,9 @@
 #
 # With no POSTHOG_CLI_API_KEY, or no SOURCEMAP_FILE (eas.json sets it for the
 # preview and production profiles only), it does nothing and exits 0. With
-# both set, a missing map or release field fails the build.
+# both set, an empty POSTHOG_CLI_PROJECT_ID fails the build in either mode, so
+# `prepare` stops it before the native compile. A missing map or release field
+# fails the upload.
 set -euo pipefail
 
 mode="${1:-upload}"
@@ -27,6 +29,11 @@ fi
 if [ -z "${SOURCEMAP_FILE:-}" ]; then
   echo "SOURCEMAP_FILE is not set, so this build profile uploads no native source maps."
   exit 0
+fi
+project="${POSTHOG_CLI_PROJECT_ID:-}"
+if [ -z "${project//[[:space:]]/}" ]; then
+  echo "POSTHOG_CLI_PROJECT_ID is not set, and POSTHOG_CLI_API_KEY is. Set POSTHOG_CLI_PROJECT_ID in this build's EAS environment, or remove the key to upload no source maps." >&2
+  exit 1
 fi
 platform="${EAS_BUILD_PLATFORM:-}"
 if [ "$platform" != ios ] && [ "$platform" != android ]; then
