@@ -1,6 +1,7 @@
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo } from 'react'
 import { correctTenant } from '@/lib/tenant-guard'
-import { isEligibleTenant, useTenants } from '@/queries/tenant.queries'
+import { isEligibleTenant, tenantsQueryOptions } from '@/queries/tenant.queries'
 import { useAuthStore } from '@/states/auth.store'
 import { useCurrentTenantStore } from '@/states/current-tenant.store'
 
@@ -18,11 +19,12 @@ export interface CurrentTenant {
  * they last used, else the first eligible. An eligible result is remembered
  * for the signed-in person. Without a signed-in person the status is `none`.
  * @param requested - A web address from the route, if any.
+ * @param isEnabled - False reads no workspace list, as before a session exists; the status is then `pending`.
  * @returns The status, the web address when `ready`, and a retry.
  */
-export function useCurrentTenant(requested?: string): CurrentTenant {
+export function useCurrentTenant(requested?: string, isEnabled = true): CurrentTenant {
   const userId = useAuthStore((state) => state.user?.id ?? null)
-  const tenants = useTenants()
+  const tenants = useQuery({ ...tenantsQueryOptions(), enabled: isEnabled })
   // Subscribes to writes, so a remembered change re-resolves.
   const remembered = useCurrentTenantStore((state) =>
     userId === null ? null : (state.remembered[userId] ?? null)

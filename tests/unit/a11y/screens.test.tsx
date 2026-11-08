@@ -1,5 +1,8 @@
 import { jest } from '@jest/globals'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { screen } from '@testing-library/react-native'
+import Constants from 'expo-constants'
+import { useEffect, useState } from 'react'
 import { Pressable, Text, TextInput } from 'react-native'
 import Home from '@/app/(app)/(tabs)/index'
 import Notifications from '@/app/(app)/(tabs)/notifications'
@@ -7,6 +10,7 @@ import Settings from '@/app/(app)/(tabs)/settings'
 import Workspace from '@/app/(app)/(tabs)/workspace'
 import DeleteAccount from '@/app/(app)/settings/account/delete'
 import NotificationPreferences from '@/app/(app)/settings/account/notifications'
+import Privacy from '@/app/(app)/settings/account/privacy'
 import Profile from '@/app/(app)/settings/account/profile'
 import Security from '@/app/(app)/settings/account/security'
 import WorkspaceActivity from '@/app/(app)/settings/workspace/[slug]/activity'
@@ -29,17 +33,18 @@ import { SigningInScreen } from '@/components/auth/signing-in-screen'
 import { InvitationInbox } from '@/components/invitations/invitation-inbox'
 import { SettingsRow } from '@/components/settings/settings-row'
 import { MaintenanceScreen } from '@/components/shared/maintenance-screen'
+import { RootErrorBoundary } from '@/components/shared/root-error-boundary'
 import { UpdateScreen } from '@/components/shared/update-screen'
 import { StepUpDialog } from '@/components/step-up/step-up-dialog'
 import { StepUpProvider } from '@/components/step-up/step-up-provider'
 import { WorkspaceOverview } from '@/components/workspaces/workspace-overview'
 import type { MembershipRole } from '@/constants/roles'
+import { flagsKey } from '@/observability/flags/flag-query'
 import { accountDeletionKeys } from '@/queries/account-deletion.queries'
 import { tenantAuditListOptions } from '@/queries/audit.queries'
 import { authKeys } from '@/queries/auth.queries'
 import { billingKeys } from '@/queries/billing.queries'
 import { clientSettingsKeys } from '@/queries/client-settings.queries'
-import { tenantFlagsKey } from '@/queries/flags.queries'
 import { insightsKey } from '@/queries/insights.queries'
 import {
   notificationKeys,
@@ -57,14 +62,18 @@ import {
   type TenantMember,
   type TenantWithRole,
 } from '@/queries/tenant.queries'
+import { useAuthStore } from '@/states/auth.store'
 import { A11Y_SCREENS, assertAccessible, renderWithProviders } from '@/tests/support/a11y'
 import { describe, expect, it } from '@/tests/support/runner'
 import type { TenantInvitation } from '@/types/api.types'
 import type { ListPage } from '@/types/list.types'
 
+jest.mock('expo-constants', () => ({ __esModule: true, default: { expoConfig: { extra: {} } } }))
+
 jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), push: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: () => ({ slug: 'acme' }),
+  useGlobalSearchParams: () => ({ slug: 'acme' }),
   Stack: { Screen: () => null },
   useFocusEffect: (effect: () => void) => {
     const { useEffect } = jest.requireActual<typeof import('react')>('react')
@@ -123,6 +132,10 @@ const SCREENS: Array<[string, () => React.JSX.Element]> = [
   ['Signing you in', () => <SigningInScreen />],
   ['Maintenance', () => <MaintenanceScreen message={null} since={null} />],
   ['Update the app', () => <UpdateScreen url="market://details?id=x" />],
+  [
+    'The app hit a problem',
+    () => <RootErrorBoundary error={new Error('boom')} retry={() => Promise.resolve()} />,
+  ],
 ]
 for (const [name, screenElement] of SCREENS) {
   A11Y_SCREENS.push({
@@ -145,7 +158,7 @@ function seeded(detail: unknown, list: TenantWithRole[]): QueryClient {
   seed.setQueryData(tenantKeys.detail('acme'), detail)
   seed.setQueryData(tenantsQueryOptions().queryKey, list)
   seed.setQueryData(billingKeys.billing('acme'), null)
-  seed.setQueryData(tenantFlagsKey('acme'), {
+  seed.setQueryData(flagsKey({ kind: 'tenant', slug: 'acme' }), {
     example_beta_page: false,
     example_cta_experiment: 'control',
   })
@@ -656,6 +669,53 @@ A11Y_SCREENS.push({
   ),
 })
 
+/**
+ * Renders Privacy as a build with analytics and a policy URL, and a signed-in
+ * person, would show it: the switch and the link are both on screen. The
+ * settings return when the screen unmounts.
+ * @returns The screen.
+ */
+function PrivacyWithSwitchAndLink() {
+  const [ready] = useState(() => {
+    const saved = {
+      key: process.env.EXPO_PUBLIC_POSTHOG_KEY,
+      config: Constants.expoConfig,
+      auth: useAuthStore.getState(),
+    }
+    process.env.EXPO_PUBLIC_POSTHOG_KEY = 'phc_test_key_not_real'
+    Constants.expoConfig = { extra: { privacyPolicyUrl: 'https://example.com/privacy' } } as never
+    useAuthStore.getState().login('a', {
+      id: 'u1',
+      email: 'ada@example.com',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      createdAt: '2026-01-05T00:00:00.000Z',
+      platformRole: null,
+      analyticsOptOut: false,
+    })
+    return saved
+  })
+  useEffect(
+    () => () => {
+      if (ready.key === undefined) delete process.env.EXPO_PUBLIC_POSTHOG_KEY
+      else process.env.EXPO_PUBLIC_POSTHOG_KEY = ready.key
+      Constants.expoConfig = ready.config
+      useAuthStore.setState(ready.auth, true)
+    },
+    [ready]
+  )
+  return <Privacy />
+}
+
+A11Y_SCREENS.push({
+  name: 'Privacy',
+  element: (
+    <QueryClientProvider client={deleteClient}>
+      <PrivacyWithSwitchAndLink />
+    </QueryClientProvider>
+  ),
+})
+
 describe('the accessibility harness', () => {
   it('accepts a screen with one header and a labelled pressable', async () => {
     await renderWithProviders(
@@ -740,6 +800,13 @@ describe('A11Y_SCREENS', () => {
       assertAccessible()
     })
   }
+
+  it('renders the Privacy switch and link, so the harness checks them', async () => {
+    const entry = A11Y_SCREENS.find((candidate) => candidate.name === 'Privacy')
+    await renderWithProviders(entry?.element as never)
+    expect(screen.getByLabelText('Share usage analytics')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Read our privacy policy' })).toBeTruthy()
+  })
 
   it('is a list', () => {
     expect(Array.isArray(A11Y_SCREENS)).toBe(true)

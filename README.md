@@ -5,19 +5,20 @@ Expo SDK 58 and TypeScript app for iOS and Android that talks to the
 `express-boilerplate` API and shares its core logic with `react-boilerplate`.
 This file is for a developer who runs, tests or checks the app.
 
-As of 7 November 2026 the app signs a person in with an emailed link and keeps
+As of 8 November 2026 the app signs a person in with an emailed link and keeps
 the session in the device's secure storage. A signed-in person sees four tabs:
 Home, Workspace (the current workspace's overview), Notifications (a live list
 with an unread badge) and Settings. Settings opens Profile, Security (sign-in
 methods, signed-in devices and "Sign out other devices"), notification
-preferences and Delete account, shows each workspace's plan read-only, and
-holds Sign out. An action that needs a recent sign-in asks the
-person to confirm it by an emailed link. The app also
-lists and creates workspaces (`/tenants`, `/welcome`), shows a full-screen
-notice for an update or for maintenance, and has a blocking screen for an
-account that must add a passkey (`/passkey-required`). It holds the shared
-core copied from react, a stored light, dark or system theme, and the gate and
-CI that hold them. The remaining screens are in
+preferences, Privacy (the usage analytics switch and the privacy policy link)
+and Delete account, shows each workspace's plan read-only, and holds Sign out.
+An action that needs a recent sign-in asks the person to confirm it by an
+emailed link. The app also lists and creates workspaces (`/tenants`,
+`/welcome`), shows a full-screen notice for an update or for maintenance, and
+has a blocking screen for an account that must add a passkey
+(`/passkey-required`). It holds the shared core copied from react, a stored
+light, dark or system theme, and the gate and CI that hold them. The remaining
+screens are in
 [the spec](docs/superpowers/specs/2026-11-03-expo-boilerplate-design.md) and
 arrive in later plans.
 
@@ -93,16 +94,19 @@ dev client, installs it and starts Metro. Later runs start Metro alone with
 
 ## Run-time configuration
 
-| Variable              | Used by              | Meaning                                                                                |
-| --------------------- | -------------------- | -------------------------------------------------------------------------------------- |
-| `EXPO_PUBLIC_API_URL` | `src/http/client.ts` | The API's origin, with no path: `http://localhost:4040`. The client appends `/api/v1`. |
-| `APP_LINK_HOST`       | `app.config.ts`      | The web app's bare hostname, such as `app.example.com`. Build time only.               |
-| `IOS_APP_STORE_ID`    | `app.config.ts`      | The app's numeric App Store ID, such as `1234567890`. Build time only.                 |
+| Variable                  | Used by                                 | Meaning                                                                                                           |
+| ------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `EXPO_PUBLIC_API_URL`     | `src/http/client.ts`                    | The API's origin, with no path: `http://localhost:4040`. The client appends `/api/v1`.                            |
+| `APP_LINK_HOST`           | `app.config.ts`                         | The web app's bare hostname, such as `app.example.com`. Build time only.                                          |
+| `IOS_APP_STORE_ID`        | `app.config.ts`                         | The app's numeric App Store ID, such as `1234567890`. Build time only.                                            |
+| `EXPO_PUBLIC_POSTHOG_KEY` | `src/observability/telemetry/config.ts` | The PostHog project key. Unset, analytics and exception reporting are inert and make no request.                  |
+| `EXPO_PUBLIC_APP_ENV`     | `src/observability/telemetry/config.ts` | The environment name that every event and exception carries, such as `production`. Unset, it reads `development`. |
+| `PRIVACY_POLICY_URL`      | `app.config.ts`                         | The privacy policy's https address. Build time only. Each store build must set it.                                |
 
-- **Expo inlines it into the bundle when Metro builds.** Change it, then run
-  `pnpm start --clear`. It is public: never put a secret in an `EXPO_PUBLIC_*`
-  variable.
-- **Set it in `.env.local`**, which git ignores:
+- **Expo inlines each `EXPO_PUBLIC_*` value into the bundle when Metro
+  builds.** Change one, then run `pnpm start --clear`. They are public: never
+  put a secret in an `EXPO_PUBLIC_*` variable.
+- **Set them in `.env.local`**, which git ignores:
 
   ```bash
   EXPO_PUBLIC_API_URL=http://localhost:4040
@@ -151,6 +155,57 @@ token uses it up, so a second open shows the dead-link state.
 - **The web app must serve the association files** for the same host. React's
   `docker/15-app-links.sh` lists the paths.
 
+### Analytics, exception reports and the privacy policy
+
+Events and exception reports go to PostHog through the API's collect proxy
+(`<EXPO_PUBLIC_API_URL>/api/v1/collect`). The app holds no PostHog host.
+
+- **`EXPO_PUBLIC_POSTHOG_KEY` turns them on.** It is the project key, which is
+  public by design. With no key the app sends no event and no report, and the
+  Privacy screen hides the "Share usage analytics" switch.
+- **A signed-in person has analytics on until they turn it off** in Settings,
+  Account, Privacy. The choice is stored on the profile (`analyticsOptOut`).
+  Exception reports send whatever the choice, anonymous unless the person is
+  identified and sharing.
+- **`PRIVACY_POLICY_URL` shows the policy link.** `app.config.ts` reads it at
+  build time, as an https address, into `extra.privacyPolicyUrl`; any other
+  value fails the build. Each store build must set it. The Privacy row hides
+  when the build has neither a key nor a policy address.
+
+### The store answers
+
+These answers describe what the app sends as of 8 November 2026, and match the
+privacy manifest in `app.config.ts` (`ios.privacyManifests`). The app does not
+track people across other companies' apps or websites.
+
+| Data                | App Store privacy label                                            | Google Play Data safety                                                        |
+| ------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| Product interaction | Collected. Linked to the person. Used for analytics.               | App activity, "App interactions". Collected. Used for analytics. Optional.     |
+| User ID             | Collected. Linked to the person. Used for analytics.               | "User IDs" under personal info. Collected. Used for analytics. Optional.       |
+| Crash data          | Collected. Linked to the person. Used for app functionality.       | App info and performance, "Crash logs". Collected. Used for app functionality. |
+| Tracking            | No. `NSPrivacyTracking` is false and no tracking domain is listed. | Nothing is shared with third parties for their own purposes.                   |
+
+- **Product interaction** is the screens the person opens and the actions they
+  take, with names and email addresses masked. **User ID** is the API's user
+  id. Both stop when the person turns "Share usage analytics" off. Google
+  Play's "Optional" means the person can turn the collection off.
+- **Crash data** is an exception report: the scrubbed error text, the stack
+  frames, the app version and build, the route pattern and the environment. It
+  names the person (their user id) only when they are identified and sharing
+  analytics, so crash data is declared as linked. Otherwise it is anonymous,
+  and a crash saved for the next launch always is.
+- **Location is not collected.** Express's collect proxy forwards the
+  client's IP address, which PostHog would resolve to a city and a country.
+  The app sets `$geoip_disable` on every event and every exception report, so
+  PostHog adds no location, and neither store answer declares one. The
+  PostHog project should also have "Discard client IP data" on, which is the
+  project owner's setting.
+- **PostHog processes the data for the app.** On Google Play, mark the data as
+  encrypted in transit (HTTPS), and declare the account deletion path (Settings,
+  Account, Delete account).
+- **Encryption.** `ITSAppUsesNonExemptEncryption` is false, because the app uses
+  only the operating system's HTTPS.
+
 ### The store link
 
 When the installed build is older than the API's `minimumAppVersion`, the
@@ -197,10 +252,13 @@ messages follow Conventional Commits, and commits are GPG-signed.
   react's, unchanged; expo's own cover the ports, the polyfills, the entry
   order, the theme, the root layout, the tokens, the session modules, the
   screens, the UI kit and the accessibility harness.
-- **The coverage thresholds** are statements 90, branches 85, functions 87 and
-  lines 90, above react's (88, 82, 86 and 89). The shared tests alone cover
+- **The coverage thresholds** are statements 92, branches 87, functions 89 and
+  lines 93, above react's (88, 82, 86 and 89). The shared tests alone cover
   less ([CLAUDE.md](CLAUDE.md#follow-ups)).
 - **One copy-style case is skipped by name**, for the reason CLAUDE.md gives.
+- **The analytics and exception tests** use a fake PostHog SDK and a fake
+  network. They check what an event carries and what a report scrubs, not what
+  PostHog receives; the device checklist covers that.
 
 ## Notes for app review
 
@@ -441,6 +499,43 @@ date, the device and the OS version beside each.
       Account, Delete account and send a request. The "Confirm it’s you" dialog
       opens, and the request goes through after the emailed link. The screen
       then shows when the account will be deleted.
+- [ ] **Events reach PostHog through the proxy.** Build with
+      `EXPO_PUBLIC_POSTHOG_KEY` and `EXPO_PUBLIC_APP_ENV` set. Sign in, open a
+      few screens and a workspace. In PostHog, find a `$screen` event for each
+      screen, with a route pattern such as `/tenants/[slug]` and no filled-in
+      path, no email address and no `token` in any property. The API's log
+      shows `POST /api/v1/collect/batch/` and no request to a PostHog host.
+      Every event carries `$geoip_disable` true and no `$geoip_*` property.
+- [ ] **A cold launch from an app link sends only its scheme and host.**
+      Force-quit the app, then open an https app link that carries a web
+      address, such as `https://<web host>/tenants/<slug>`. The app opens on
+      that workspace. In PostHog, the `Application Opened` event's `url` is
+      `https://<web host>`, with no path and no slug.
+- [ ] **Turning analytics off stops the events.** In Settings, Account,
+      Privacy, turn "Share usage analytics" off, then open screens and tap.
+      PostHog receives no new event from this install. Turn it on again and
+      events resume.
+- [ ] **A fatal crash in a release build is sent on the next launch.** In a
+      release build with a key, trigger a fatal JavaScript error (a throw from
+      a button's handler in a throwaway build). The app closes. Launch it
+      again: PostHog shows one `$exception` with origin `global`, no person's
+      id, and `$process_person_profile` false. The launch after that sends
+      nothing more.
+- [ ] **Hermes stack frames parse, and an app frame names only its bundle.**
+      Open the `$exception` from the check above on both platforms. Its app
+      frames show the bundle's base name (`main.jsbundle` on iOS,
+      `index.android.bundle` on Android), a function and a position, with
+      `in_app` true. No filename holds an install directory. The event carries
+      `$geoip_disable` true.
+- [ ] **The privacy report of an archive matches the manifest.** Archive an iOS
+      build in Xcode, then choose Generate Privacy Report. It lists product
+      interaction and user ID (linked, analytics) and crash data (linked,
+      app functionality), no tracking, and no tracking domain.
+- [ ] **The Privacy screen reads and writes the choice.** With a key and
+      `PRIVACY_POLICY_URL` set, open Settings, Account, Privacy. The switch
+      matches the profile, toggling it posts once and shows a toast, and "Read
+      our privacy policy" opens the address in the in-app browser. Check it
+      with VoiceOver and TalkBack.
 
 ## Reporting a problem
 

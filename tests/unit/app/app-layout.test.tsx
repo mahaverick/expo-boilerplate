@@ -7,6 +7,7 @@ import AppLayout, { unstable_settings } from '@/app/(app)/_layout'
 import { useSignOut } from '@/hooks/use-sign-out'
 import { useSessionStatus } from '@/http/session-lifecycle'
 import type { SessionStatus } from '@/http/session-lifecycle'
+import { useFeaturePropertiesSync } from '@/observability/flags/flag-hooks'
 import { useAuthStore } from '@/states/auth.store'
 import { useMaintenanceModeStore } from '@/states/maintenance-mode.store'
 import { useOwnSignOutStore } from '@/states/own-sign-out.store'
@@ -47,6 +48,8 @@ jest.mock('expo-router', () => {
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }))
+jest.mock('@/observability/flags/flag-hooks', () => ({ useFeaturePropertiesSync: jest.fn() }))
+jest.mock('@/observability/telemetry/use-tenant-group', () => ({ useTenantGroup: jest.fn() }))
 jest.mock('@/http/session-lifecycle', () => ({ useSessionStatus: jest.fn(() => 'signed-in') }))
 jest.mock('@/components/notifications/notification-stream', () => {
   const { Text } = jest.requireActual<typeof import('react-native')>('react-native')
@@ -89,6 +92,15 @@ function openAt(
 }
 
 describe('(app) layout', () => {
+  it.each(['restoring', 'signed-out', 'signed-in'] as const)(
+    'syncs the feature properties while %s, before any early return',
+    async (status) => {
+      setStatus(status)
+      await render(<AppLayout />)
+      expect(useFeaturePropertiesSync).toHaveBeenCalled()
+    }
+  )
+
   it('sends a signed-out person to /login with the path they asked for', async () => {
     setStatus('signed-out')
     openAt('/tenants/acme', { slug: 'acme', tab: 'x' }, ['(app)', 'tenants', '[slug]'])

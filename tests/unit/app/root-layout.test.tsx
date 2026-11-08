@@ -3,7 +3,8 @@ import { act, render, waitFor } from '@testing-library/react-native'
 import * as SplashScreen from 'expo-splash-screen'
 import { colorScheme } from 'nativewind'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
-import RootLayout from '@/app/_layout'
+import RootLayout, { ErrorBoundary } from '@/app/_layout'
+import { RootErrorBoundary } from '@/components/shared/root-error-boundary'
 import * as maintenance from '@/http/maintenance'
 import {
   installForegroundRefresh,
@@ -13,6 +14,12 @@ import {
 import type { SessionStatus } from '@/http/session-lifecycle'
 import { queryClient } from '@/lib/query-client'
 import * as queryManagers from '@/lib/query-managers'
+import { installErrorListeners } from '@/observability/errors/listen'
+import {
+  captureScreen,
+  forgetStaleIdentity,
+  initAnalytics,
+} from '@/observability/telemetry/telemetry'
 import { useThemeStore } from '@/states/theme.store'
 import { METRICS } from '@/tests/support/a11y'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
@@ -37,6 +44,18 @@ jest.mock('@/http/maintenance', () => ({
   installMaintenanceRecovery: jest.fn(() => jest.fn()),
 }))
 jest.mock('@/lib/query-managers', () => ({ installQueryManagers: jest.fn(() => jest.fn()) }))
+jest.mock('@/observability/errors/listen', () => ({
+  installErrorListeners: jest.fn(),
+  noteError: jest.fn(),
+}))
+jest.mock('@/observability/telemetry/telemetry', () => ({
+  ...jest.requireActual<typeof import('@/observability/telemetry/telemetry')>(
+    '@/observability/telemetry/telemetry'
+  ),
+  initAnalytics: jest.fn(),
+  captureScreen: jest.fn(),
+  forgetStaleIdentity: jest.fn(),
+}))
 jest.mock('expo-router', () => {
   const { useQueryClient } =
     jest.requireActual<typeof import('@tanstack/react-query')>('@tanstack/react-query')
@@ -44,6 +63,8 @@ jest.mock('expo-router', () => {
   const { StepUpContext } =
     jest.requireActual<typeof import('@/hooks/use-step-up')>('@/hooks/use-step-up')
   return {
+    useSegments: () => mockRoute.segments,
+    usePathname: () => mockRoute.pathname,
     /** Records the query client and the step-up runner the screens would read. */
     Stack: function Stack() {
       mockSeenClients.push(useQueryClient())
@@ -52,6 +73,9 @@ jest.mock('expo-router', () => {
     },
   }
 })
+
+/** What the mocked router reports. */
+const mockRoute = { segments: [] as string[], pathname: '/' }
 
 /** The layout inside the provider expo-router supplies in the app. */
 function Root() {
@@ -81,6 +105,12 @@ let schemeAtHide: string | undefined
 function setStatus(status: SessionStatus): void {
   jest.mocked(useSessionStatus).mockReturnValue(status)
 }
+
+/** How often importing the layout started analytics, read before any case clears the mocks. */
+const initCallsAtImport = jest.mocked(initAnalytics).mock.calls.length
+
+/** How often importing the layout installed the error listeners. */
+const listenCallsAtImport = jest.mocked(installErrorListeners).mock.calls.length
 
 beforeEach(() => {
   jest.useFakeTimers()
@@ -248,5 +278,36 @@ describe('RootLayout', () => {
     expect(maintenance.installMaintenanceRecovery).toHaveBeenCalledTimes(1)
     await view.unmount()
     expect(remove).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts analytics once, when the layout loads, before any screen renders', async () => {
+    expect(initCallsAtImport).toBe(1)
+    await render(<Root />)
+    expect(initAnalytics).not.toHaveBeenCalled()
+  })
+
+  it('installs the error listeners once, when the layout loads', async () => {
+    expect(listenCallsAtImport).toBe(1)
+    await render(<Root />)
+    expect(installErrorListeners).not.toHaveBeenCalled()
+  })
+
+  it('exports the root error boundary for Expo Router', () => {
+    expect(ErrorBoundary).toBe(RootErrorBoundary)
+  })
+})
+
+describe('RootLayout analytics', () => {
+  it('sends the route pattern of a root route, never the path', async () => {
+    mockRoute.segments = ['invitations', 'accept']
+    mockRoute.pathname = '/invitations/accept'
+    await render(<Root />)
+    expect(jest.mocked(captureScreen).mock.calls).toEqual([['/invitations/accept']])
+    expect(JSON.stringify(jest.mocked(captureScreen).mock.calls)).not.toMatch(/acme|"t"/)
+  })
+
+  it('forgets a stale identity once the restore settles with no user', async () => {
+    await render(<Root />)
+    await waitFor(() => expect(forgetStaleIdentity).toHaveBeenCalledTimes(1))
   })
 })

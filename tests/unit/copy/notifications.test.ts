@@ -32,9 +32,19 @@ describe('notificationTypeLabel', () => {
     expect(notificationTypeLabel('billing_upgrade_requested')).toBe('Plan request')
   })
 
-  it('uses the shared label for any other kind', () => {
+  it('uses the shared label for a known kind', () => {
     expect(notificationTypeLabel('billing_payment_failed')).toBe('Payment failed')
-    expect(notificationTypeLabel('billing_renewal_notice')).toBe('Billing renewal notice')
+    expect(notificationTypeLabel('workspace_full')).toBe('Workspace full')
+  })
+
+  it('calls an unknown neutral kind "Plan update"', () => {
+    expect(notificationTypeLabel('billing_renewal_notice')).toBe('Plan update')
+    expect(notificationTypeLabel('billing_upgrade_offer')).toBe('Plan update')
+  })
+
+  it('keeps the shared humanizer for a kind that is not neutral', () => {
+    expect(notificationTypeLabel('tenant_invitation')).toBe('Workspace invitation')
+    expect(notificationTypeLabel('some_new_kind')).toBe('Some new kind')
   })
 })
 

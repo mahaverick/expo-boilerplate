@@ -51,11 +51,11 @@ src/
                     use-is-online, use-list-pages, use-notification-write-toasts
                     and use-top-banner are expo's own
   http/             shared: interceptors, refresh core; client.ts and session.ts are ports; token-store, revoke, body-token, session-lifecycle, maintenance and sse are expo's
-  lib/              shared pure logic; toast.ts is a port; app-links, left-workspaces, minimum-version, notification-href, query-managers, safe-path and stream-backoff are expo's
-  observability/    flags/ and telemetry/: both are ports
+  lib/              shared pure logic; toast.ts is a port; app-links, left-workspaces, minimum-version, notification-href, privacy-policy, query-managers, safe-path and stream-backoff are expo's
+  observability/    errors/ (exception reports), flags/ (the flags client) and telemetry/ (the analytics facade)
   polyfills.ts      the Web APIs Hermes may lack, loaded first
   ports/            navigation.ts, runtime.ts, webauthn.ts
-  queries/          shared TanStack Query hooks; flags.queries.ts is expo's
+  queries/          shared TanStack Query hooks
   schemas/          shared Zod schemas
   states/           auth, maintenance-mode (ports), theme, toast-queue, current-tenant, own-sign-out and tab-bar (expo's own)
   types/            shared types
@@ -80,16 +80,24 @@ a shared file imports.
 2. Expo Router builds the route tree from `src/app/`. `src/app/_layout.tsx` is
    the root layout: one `Stack` with no header, inside a `QueryClientProvider`
    for the app's one query client (`src/lib/query-client.ts`). Each screen
-   draws its own title through `Screen`.
-3. The layout imports `global.css` first, calls
-   `SplashScreen.preventAutoHideAsync()` at module scope, and applies the stored
-   theme ([The theme and the splash screen](#the-theme-and-the-splash-screen)).
-4. The layout calls `restoreSession()` and `installForegroundRefresh()`
-   ([Sessions](#sessions)). Routes under `src/app/(app)/` render only for a
-   signed-in person: its layout shows "Signing you in" with a spinner while the
-   restore runs, sends a signed-out person to `/login` with the path they asked
-   for as `redirect`, and sends an account that must add a passkey to
-   `/passkey-required`. Home is `src/app/(app)/(tabs)/index.tsx`.
+   draws its own title through `Screen`. The file also exports
+   `RootErrorBoundary` as Expo Router's `ErrorBoundary`.
+3. The layout imports `global.css` first and calls
+   `SplashScreen.preventAutoHideAsync()`, `initAnalytics()` and
+   `installErrorListeners()` at module scope, before the first render. It
+   applies the stored theme
+   ([The theme and the splash screen](#the-theme-and-the-splash-screen)).
+4. The layout installs the analytics identity
+   (`installAnalyticsIdentity()`), then calls `restoreSession()` and, once the
+   restore settles, `forgetStaleIdentityWithoutUser()`. It also calls
+   `installForegroundRefresh()` ([Sessions](#sessions)) and `useScreenViews()`
+   ([Analytics, errors, flags and
+   privacy](#analytics-errors-flags-and-privacy)). Routes under
+   `src/app/(app)/` render only for a signed-in person: its layout shows
+   "Signing you in" with a spinner while the restore runs, sends a signed-out
+   person to `/login` with the path they asked for as `redirect`, and sends an
+   account that must add a passkey to `/passkey-required`. Home is
+   `src/app/(app)/(tabs)/index.tsx`.
 5. The same layout also installs `installQueryManagers()` and
    `installMaintenanceRecovery()`
    ([Workspaces and the shell](#workspaces-and-the-shell)).
@@ -136,7 +144,7 @@ manifest, so a new port or export is a change to both.
 | `src/http/session.ts`                  | `broadcastAuthMessage`, `broadcastLogout`, `ensureSession`, `redirectToLogin`, `switchIdentity` | `ensureSession` builds the shared refresh core with the `body` transport over `refreshTokenStore` (SecureStore), so a restore posts the stored token in the body and keeps the rotated one. `broadcastAuthMessage` emits to the handlers that `subscribeAuthMessage` registered in this process, since there is no other tab; `broadcastLogout` does nothing. `broadcastStepUpLinkFailed` and `subscribeStepUpLinkFailed`, which are expo's own and no port, carry a failed verify's copy to a waiting dialog. `refreshSettled()` resolves once the refresh in flight, if any, has settled, and never rejects. `redirectToLogin` calls `router.replace('/login')`. `switchIdentity` clears the query cache and the auth store when a different user signs in. |
 | `src/lib/toast.ts`                     | `toast`                                                                                         | `toast.success`, `toast.error`, `toast.warning` and `toast.dismiss` over the Zustand queue in `src/states/toast-queue.store.ts`. A toast raised with the `id` of a queued one replaces it. `src/components/ui/toaster.tsx` renders the newest 3.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `src/observability/flags/flag-keys.ts` | `CLIENT_FLAGS`                                                                                  | This app's slice of express's flag registry: the entries with `client: true` and an app list that names it, copied by hand. It holds react's two example flags.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `src/observability/telemetry/index.ts` | `AnalyticsKey`, `analyticsKey`, `getAnalyticsSessionIdFor`, `track`                             | `track` does nothing. `analyticsKey` brands its argument and returns it. `getAnalyticsSessionIdFor` returns `null`. No event leaves the app.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `src/observability/telemetry/index.ts` | `AnalyticsKey`, `analyticsKey`, `getAnalyticsSessionIdFor`, `track`                             | The analytics facade over PostHog. `track` sends a registered event through the collect proxy, `analyticsKey` brands a literal, and `getAnalyticsSessionIdFor` returns the SDK's session id while capture is on and the SDK's person is the given user. With no `EXPO_PUBLIC_POSTHOG_KEY` all three are inert: `track` sends nothing and the session id is `null`.                                                                                                                                                                                                                                                                                                                                                                                            |
 | `src/ports/navigation.ts`              | `assignLocation`                                                                                | A `url` that begins with `/` goes to `router.replace`, so back does not return to the signed-in screen. Any other `url` goes to `Linking.openURL`, and its rejection is caught, so a URL nothing handles is dropped, never an unhandled rejection.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `src/ports/runtime.ts`                 | `isDev`                                                                                         | `isDev`, read from `__DEV__`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `src/ports/webauthn.ts`                | `webauthn`                                                                                      | No passkeys. `isSupported` resolves `{ create: false, autofill: false }`, `get` and `create` reject with a not-supported `Error`, `cancelGeneration` returns 0, and the three `signal*` methods do nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -144,9 +152,8 @@ manifest, so a new port or export is a change to both.
 | `src/states/maintenance-mode.store.ts` | `useMaintenanceModeStore`                                                                       | A Zustand store of the maintenance mode, the owner's notice and the start time, set from the `Maintenance-Mode` header, the status endpoint or a 503 body. Memory only, and the same shape as react's.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `tests/support/runner.ts`              | `describe`, `it`, `test`, `expect`, `beforeEach`, `afterEach`, `repoRoot`, `copyStyleRoots`     | Re-exports `describe`, `it`, `test`, `expect`, `beforeEach` and `afterEach` from `@jest/globals`. `repoRoot` is the repository root, and `copyStyleRoots` is `['src', 'src/components/ui']`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
-Later plans replace two ports. The telemetry port gets PostHog, and the
-webauthn port gets a passkey library once a spike on a device picks one.
-Update this table in the same pull request.
+A later plan replaces the webauthn port with a passkey library, once a spike
+on a device picks one. Update this table in the same pull request.
 
 ## Sessions
 
@@ -238,7 +245,7 @@ refresh core posts the token itself and keeps the rotated one.
 
 ```
 src/app/
-  _layout.tsx                  query client, update gate, maintenance gate, top banners, step-up provider, stack, toaster
+  _layout.tsx                  analytics and error listeners, screen views, identity, query client, update gate, maintenance gate, top banners, step-up provider, stack, toaster; exports the error boundary
   login.tsx                    sign-in; reads redirect and notice
   forgot-password.tsx          retired password paths (also register, reset-password, verify-email):
                                redirect to /login?notice=sign-in-link
@@ -249,7 +256,8 @@ src/app/
   passkey-required.tsx         the blocking screen for an account that must add a passkey
   +native-intent.tsx, +not-found.tsx
   (app)/                       the session guard
-    _layout.tsx                restore, sign-in redirect, passkey redirect, NotificationStream;
+    _layout.tsx                restore, sign-in redirect, passkey redirect, NotificationStream,
+                               analytics workspace group and feature properties;
                                anchored on (tabs), so the tabs sit beneath every screen above them
     welcome.tsx                create a first workspace (header with Back)
     (tabs)/
@@ -264,6 +272,7 @@ src/app/
       profile.tsx              edit the name (header with Back)
       security.tsx             sign-in methods, signed-in devices, Sign out other devices
       notifications.tsx        how each kind of notification reaches you
+      privacy.tsx              analytics switch and privacy policy link
       delete.tsx               ask for the account to be deleted, through step-up
     settings/workspace/[slug]/
       index.tsx                redirects to General
@@ -339,7 +348,7 @@ src/app/
   Account rows, and `src/components/settings/settings-row.tsx` draws a row.
   The Workspace group lists General, Members and Activity for the current
   workspace (`WORKSPACE_SECTIONS`), and asks for a workspace first when none
-  resolves.
+  resolves. The Privacy row shows only when `hasPrivacyContent()` is true.
 - **Profile.** `src/hooks/use-changed-fields.ts` tracks what the form started
   from, so a save sends only the changed fields.
 - **Notifications preferences.** `src/components/ui/switch.tsx` is the kit's
@@ -402,10 +411,10 @@ src/app/
   workspace and replaces to the Workspace tab.
 - **Insights and Beta.** `src/app/(app)/tenants/[slug]/insights.tsx` reads the
   entitlements and the insights through the shared billing and insights
-  queries. `beta.tsx` reads the beta page behind `example_beta_page`.
-  `src/queries/flags.queries.ts` holds `useTenantFlags`, which reads
-  `GET /tenants/:slug/flags` and returns the fallbacks on any error. The
-  overview reads it to show the Insights and Beta rows.
+  queries. `beta.tsx` reads the beta page behind `example_beta_page`. The
+  overview reads the workspace's flags through `useFlagValues` to show the
+  Insights and Beta rows ([Analytics, errors, flags and
+  privacy](#analytics-errors-flags-and-privacy)).
 
 ## Notifications, plan and deletion
 
@@ -453,6 +462,56 @@ src/app/
   focus. Both `useListPages` and the Members screen are described in
   [Workspace settings and invitations](#workspace-settings-and-invitations).
 
+## Analytics, errors, flags and privacy
+
+`src/observability/` holds three folders, and only it imports
+`posthog-react-native` or `@posthog/core`. Express's collect proxy carries
+every request, so the app never holds a PostHog host. With no
+`EXPO_PUBLIC_POSTHOG_KEY`, analytics and exception reporting are inert and make
+no request. [CLAUDE.md](CLAUDE.md#analytics-errors-flags-and-privacy) holds the
+rules and their reasons.
+
+- **`telemetry/`.** `telemetry.ts` is the facade over the PostHog SDK: it
+  queues calls made before `initAnalytics`, runs every event through
+  `guardEvent`, stores the SDK's state in MMKV and applies the opt-out. Its
+  identity calls are `identifyUser`, `resetAnalytics`, `forgetStaleIdentity`,
+  `setAnalyticsOptOut` and `setTenantGroup`. `config.ts` reads the public
+  variables and lists the URL query keys an event may keep and the personal
+  property names it never carries. `event-registry.ts` is the typed list of
+  events. `install-identity.ts` follows the auth store's user.
+  `use-screen-views.ts` sends a screen view for each route pattern, and
+  `use-tenant-group.ts` puts events in the group of the workspace on screen
+  (the route's, or the Workspace tab's current one).
+  `install-identity.ts` also forgets the flags module's per-person state.
+  `url-sanitizer.ts` is react's, byte for byte, and `index.ts` is the port.
+- **`errors/`.** `report.ts` filters, builds, scrubs and throttles an
+  `$exception`, names the person only when analytics identified them, and
+  posts batches to `/collect/batch/`. `listen.ts` holds `noteError`, the global
+  handler wrapper, Hermes's rejection tracker and the delivery of fatal
+  crashes saved in MMKV. `scrub.ts` is react's text, kept as expo's own file.
+  `src/components/shared/root-error-boundary.tsx` is the screen Expo Router
+  shows for a render error, and it reports through `noteError`.
+- **`flags/`.** `flag-query.ts` holds the scope (a workspace slug or none), the
+  path, the query key and the query. `flag-hooks.ts` holds `useFlagValues`,
+  `useVariant` and `useFeaturePropertiesSync`. `register.ts` and
+  `feature-property-names.ts` keep the `$feature/*` super properties.
+  `exposure.ts` reports an experiment's keys to express. `flag-keys.ts` (the
+  port) lists the flags this app reads, and `flag-types.ts` and
+  `flag-values.ts` (react's, byte for byte) hold their types and fallbacks.
+- **The root layout** calls `initAnalytics()` and `installErrorListeners()`
+  at module scope, installs the identity, restores the session and runs
+  `useScreenViews()`. It exports `RootErrorBoundary`.
+- **The `(app)` layout** calls `useTenantGroup()` and
+  `useFeaturePropertiesSync()` before its early returns, so both run for every
+  signed-in screen.
+- **Privacy.** `src/app/(app)/settings/account/privacy.tsx` holds the "Share
+  usage analytics" switch, which writes `analyticsOptOut` through
+  `useUpdateAnalyticsOptOut`, and the privacy policy link.
+  `src/lib/privacy-policy.ts` reads `extra.privacyPolicyUrl`, which
+  `app.config.ts` takes from `PRIVACY_POLICY_URL`, and decides whether the
+  Settings row shows. `app.config.ts` also declares the iOS privacy manifest
+  and `ITSAppUsesNonExemptEncryption`.
+
 ## The theme and the splash screen
 
 - **Tokens.** `tailwind.config.ts` holds react's STYLESEED colours in sRGB hex
@@ -497,7 +556,8 @@ Expo's answers to what the shared files assume are in
 
 - `tests/unit/` holds the shared tests, which run unchanged through the runner
   port, and expo's own: the entry order, the polyfills, the ports, the theme,
-  the root layout, the session modules, the query managers, the maintenance
+  the root layout, the analytics facade, the exception reporter, the flags
+  client, the session modules, the query managers, the maintenance
   and update behaviour, `safePath`, the current-workspace store and hook, the
   screens, the UI kit, the accessibility harness (`tests/unit/a11y/`), the app
   config and backup plugin, the STYLESEED table, the contrast of the tokens,

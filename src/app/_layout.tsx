@@ -17,7 +17,16 @@ import {
 } from '@/http/session-lifecycle'
 import { queryClient } from '@/lib/query-client'
 import { installQueryManagers } from '@/lib/query-managers'
+import { installErrorListeners } from '@/observability/errors/listen'
+import {
+  forgetStaleIdentityWithoutUser,
+  installAnalyticsIdentity,
+} from '@/observability/telemetry/install-identity'
+import { initAnalytics } from '@/observability/telemetry/telemetry'
+import { useScreenViews } from '@/observability/telemetry/use-screen-views'
 import { resolvedScheme, useThemeStore } from '@/states/theme.store'
+
+export { RootErrorBoundary as ErrorBoundary } from '@/components/shared/root-error-boundary'
 
 /**
  * How long the splash screen waits for NativeWind to report the stored scheme.
@@ -35,6 +44,12 @@ interface SplashState {
 
 // Before the first render, so the splash screen covers every frame until the stored theme paints.
 void SplashScreen.preventAutoHideAsync()
+
+// Before the first render, so the session restore's identity and a sign-in's first event find the SDK started.
+initAnalytics()
+
+// Before the first render, so a crash in the first frame is reported.
+installErrorListeners()
 
 /**
  * Hides the splash screen, once, and cancels the pending fallback.
@@ -59,6 +74,7 @@ export default function RootLayout() {
   const { colorScheme: applied } = useColorScheme()
   const status = useSessionStatus()
   const splash = useRef<SplashState>({ isHidden: false, fallback: undefined })
+  useScreenViews()
 
   useEffect(() => {
     colorScheme.set(preference)
@@ -75,8 +91,11 @@ export default function RootLayout() {
     }
   }, [])
 
+  // Before the restore, so a restored session is identified before any event.
+  useEffect(() => installAnalyticsIdentity(), [])
+
   useEffect(() => {
-    void restoreSession()
+    void restoreSession().then(forgetStaleIdentityWithoutUser)
     return installForegroundRefresh()
   }, [])
 

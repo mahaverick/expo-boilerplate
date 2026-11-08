@@ -6,9 +6,12 @@ import { useAuthStore } from '@/states/auth.store'
 import { useCurrentTenantStore } from '@/states/current-tenant.store'
 import { renderScreen, restoreApi, serve } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
-import { membership, serveWorkspace } from '@/tests/support/workspace-api'
+import { envelope, membership, serveWorkspace } from '@/tests/support/workspace-api'
 
-jest.mock('expo-router', () => ({ router: { replace: jest.fn(), push: jest.fn() } }))
+jest.mock('expo-router', () => ({
+  router: { replace: jest.fn(), push: jest.fn() },
+  useGlobalSearchParams: () => ({}),
+}))
 
 /** The in-memory stand-in for MMKV. */
 const mockStorage = new Map<string, string>()
@@ -49,6 +52,17 @@ afterEach(() => {
 })
 
 describe('Workspace tab', () => {
+  it('reads the shown workspace’s flags, not the account’s: the Beta row follows its flag', async () => {
+    const sent = serveWorkspace({
+      'GET /tenants/acme/flags': envelope({ flags: { example_beta_page: true } }),
+      'GET /flags': envelope({ flags: { example_beta_page: false } }),
+    })
+    await renderScreen(<Workspace />)
+    expect(await screen.findByText('Beta')).toBeTruthy()
+    expect(sent.some((request) => request.url === '/tenants/acme/flags')).toBe(true)
+    expect(sent.some((request) => request.url === '/flags')).toBe(false)
+  })
+
   it('shows the resolved workspace in place, with no navigation', async () => {
     serveWorkspace()
     await renderScreen(<Workspace />)

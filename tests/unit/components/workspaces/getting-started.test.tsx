@@ -4,6 +4,8 @@ import { router, type Href } from 'expo-router'
 import { Alert, type AlertButton } from 'react-native'
 import { GettingStarted } from '@/components/workspaces/getting-started'
 import type { MembershipRole } from '@/constants/roles'
+import { resetExposureForTests } from '@/observability/flags/exposure'
+import { useAuthStore } from '@/states/auth.store'
 import { useToastQueueStore } from '@/states/toast-queue.store'
 import { renderScreen, restoreApi, type FakeAnswer } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
@@ -16,7 +18,16 @@ import {
 } from '@/tests/support/workspace-api'
 import type { TenantAccess } from '@/types/api.types'
 
-jest.mock('expo-router', () => ({ router: { push: jest.fn() } }))
+const mockTrack = jest.fn()
+
+jest.mock('expo-router', () => ({
+  router: { push: jest.fn() },
+  useGlobalSearchParams: () => ({ slug: 'acme' }),
+}))
+jest.mock('@/observability/telemetry/telemetry', () => ({
+  getAnalyticsSessionIdFor: () => null,
+  track: (...args: unknown[]) => mockTrack(...args),
+}))
 
 const LOAD_ERROR = 'We couldn’t load getting started because the request failed. Select Try again.'
 
@@ -36,9 +47,13 @@ function serveOnboarding(body: unknown, more: Record<string, FakeAnswer> = {}) {
 
 beforeEach(() => {
   useToastQueueStore.setState({ toasts: [] } as never)
+  mockTrack.mockClear()
+  useAuthStore.getState().login('a', { id: 'u1' } as never)
+  resetExposureForTests()
 })
 
 afterEach(() => {
+  useAuthStore.getState().logout()
   restoreApi()
   jest.restoreAllMocks()
 })
@@ -182,6 +197,36 @@ describe('GettingStarted', () => {
     await fireEvent.press(await screen.findByRole('button', { name: label }))
     expect(router.push).toHaveBeenCalledWith(`/settings/workspace/acme/${leaf}` as Href)
     expect(screen.queryByRole('button', { name: 'Mark done' })).toBeNull()
+  })
+
+  it.each([
+    ['control', 'bg-secondary'],
+    ['bold', 'bg-primary'],
+  ])('draws the step button for %s with %s', async (variant, background) => {
+    serveOnboarding(
+      onboarding({ steps: [step('configure_settings', { title: 'Do it', kind: 'auto' })] }),
+      {
+        'GET /tenants/acme/flags': envelope({
+          flags: { example_beta_page: false, example_cta_experiment: variant },
+        }),
+      }
+    )
+    await open('admin')
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Open settings' }).props.className).toContain(
+        background
+      )
+    })
+  })
+
+  it.each([
+    ['configure_settings', 'Open settings', 'onboarding_open_settings'],
+    ['invite_teammate', 'Open members', 'onboarding_open_members'],
+  ])('tracks feature_cta_clicked with the %s cta on a press', async (key, label, cta) => {
+    serveOnboarding(onboarding({ steps: [step(key, { title: 'Do it', kind: 'auto' })] }))
+    await open('admin')
+    await fireEvent.press(await screen.findByRole('button', { name: label }))
+    expect(mockTrack).toHaveBeenCalledWith('feature_cta_clicked', { cta })
   })
 
   it('shows a member who cannot manage the owner-or-admin note, not the links', async () => {

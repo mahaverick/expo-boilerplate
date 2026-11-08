@@ -3,7 +3,8 @@ import { QueryClient } from '@tanstack/react-query'
 import { screen, waitFor } from '@testing-library/react-native'
 import { Text } from 'react-native'
 import Beta from '@/app/(app)/tenants/[slug]/beta'
-import { tenantFlagsKey, useTenantFlags } from '@/queries/flags.queries'
+import { useFlagValues } from '@/observability/flags/flag-hooks'
+import { flagsKey } from '@/observability/flags/flag-query'
 import { useAuthStore } from '@/states/auth.store'
 import { renderScreen, restoreApi } from '@/tests/support/api'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
@@ -12,6 +13,7 @@ import { acme, envelope, NOT_FOUND, serveWorkspace } from '@/tests/support/works
 jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), push: jest.fn() },
   useLocalSearchParams: () => ({ slug: 'acme' }),
+  useGlobalSearchParams: () => ({ slug: 'acme' }),
 }))
 
 beforeEach(() => {
@@ -37,7 +39,7 @@ afterEach(() => {
  * @returns The flag as text.
  */
 function FlagsObserver() {
-  return <Text>{`beta flag: ${String(useTenantFlags('acme').example_beta_page)}`}</Text>
+  return <Text>{`beta flag: ${String(useFlagValues().example_beta_page)}`}</Text>
 }
 
 describe('Beta', () => {
@@ -58,7 +60,7 @@ describe('Beta', () => {
       'GET /tenants/acme/flags': envelope({ flags: { example_beta_page: false } }),
     })
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    client.setQueryData(tenantFlagsKey('acme'), { example_beta_page: true })
+    client.setQueryData(flagsKey({ kind: 'tenant', slug: 'acme' }), { example_beta_page: true })
     await renderScreen(
       <>
         <FlagsObserver />
@@ -71,7 +73,7 @@ describe('Beta', () => {
       expect(sent.filter((request) => request.url === '/tenants/acme/flags')).toHaveLength(1)
     })
     await waitFor(() => {
-      expect(client.getQueryData(tenantFlagsKey('acme'))).toMatchObject({
+      expect(client.getQueryData(flagsKey({ kind: 'tenant', slug: 'acme' }))).toMatchObject({
         example_beta_page: false,
       })
     })

@@ -20,6 +20,7 @@ const mockParams = { slug: 'acme' }
 jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), push: jest.fn() },
   useLocalSearchParams: () => mockParams,
+  useGlobalSearchParams: () => mockParams,
 }))
 
 /** The in-memory stand-in for MMKV. */

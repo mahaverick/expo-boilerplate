@@ -175,8 +175,9 @@ describe('Delete account screen', () => {
     await waitFor(() => expect(toasts()).toEqual(['We emailed you a receipt when you asked.']))
     expect(posts(sent)).toHaveLength(1)
     const due = formatDateTime(REQUEST.dueAt) ?? ''
+    // The toast can land before the query's batched notification re-renders the screen.
     expect(
-      screen.getByText(
+      await screen.findByText(
         `You asked us to delete your account on ${formatDate(REQUEST.requestedAt, 'long') ?? ''}. We’ll delete it by ${due}. To withdraw the request, write to help@x.com before then.`
       )
     ).toBeTruthy()

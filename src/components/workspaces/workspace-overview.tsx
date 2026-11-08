@@ -6,7 +6,7 @@ import { useTrialExplainer } from '@/components/workspaces/trial-explainer'
 import { WorkspaceGate } from '@/components/workspaces/workspace-gate'
 import { ROLE_LABELS } from '@/constants/roles'
 import { formatDate } from '@/lib/format'
-import { useTenantFlags } from '@/queries/flags.queries'
+import { useFlagValues } from '@/observability/flags/flag-hooks'
 import type { TenantDetail } from '@/queries/tenant.queries'
 
 /** Props of `WorkspaceOverview`. */
@@ -45,7 +45,7 @@ function DetailRow({ label, value }: { label: string; value: string | null }) {
  * @returns The rows.
  */
 function EntryRows({ slug }: { slug: string }) {
-  const flags = useTenantFlags(slug)
+  const flags = useFlagValues(slug)
   return (
     <View>
       <SettingsRow
