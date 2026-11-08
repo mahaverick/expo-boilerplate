@@ -1,0 +1,189 @@
+name: E2E Android
+
+# The Maestro flows (e2e/flows/) on an Android emulator, against
+# express-boilerplate's main with Postgres, Redis and Mailpit. The job builds
+# the e2e variant's release APK, boots an API 35 emulator and runs
+# `node scripts/e2e-run.mjs android`. On a failure it uploads Maestro's
+# output, express's log and the emulator's logcat as the `e2e-android`
+# artifact.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# PR runs are grouped per PR, and a newer push cancels the older run. Push
+# runs are grouped per commit, as ci.yml groups them.
+concurrency:
+  group: e2e-android-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # Both are inlined into the JavaScript bundle when Gradle builds it, so
+      # they are set for the whole job. 10.0.2.2 is the emulator's address for
+      # the host's loopback, where express listens on 4040. No PostHog key is
+      # set, so analytics and exception reports stay inert.
+      APP_VARIANT: e2e
+      EXPO_PUBLIC_API_URL: http://10.0.2.2:4040
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      # The udev rule from android-emulator-runner's README.
+      - name: Enable KVM
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # This repo in app/ and express in express/, side by side, as react's
+      # nightly e2e workflow lays them out.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: app
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: mahaverick/express-boilerplate
+          ref: main
+          path: express
+          persist-credentials: false
+      - name: Record express's commit
+        working-directory: express
+        run: |
+          echo "express-boilerplate main under test: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      # setup-vp installs Vite+, Node and the pnpm that packageManager names;
+      # both repos pin the same pnpm.
+      - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+        with:
+          working-directory: app
+          node-version-file: .node-version
+          cache: true
+          run-install: false
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: '0'
+          VP_GIT_HOOKS: '0'
+      - working-directory: express
+        run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: '0'
+          VP_GIT_HOOKS: '0'
+      # Written here, never from a secret: every value is local and throwaway.
+      # RATE_LIMIT_SCALE gives headroom to the per-IP budgets that every
+      # request from this one runner shares. WEB_URL only has to be https,
+      # because the runner turns each mailed link into the app's scheme. The
+      # 1-second cooldown lets switch-workspace sign one address in twice.
+      - name: Write express's .env
+        working-directory: express
+        run: |
+          jwt=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")
+          session=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")
+          cat > .env <<EOF
+          COMPOSE_PROJECT_NAME=e2e
+          APP_ENV=local
+          NODE_ENV=development
+          APP_PORT=4040
+          APP_URL=http://localhost:4040
+          WEB_URL=https://e2e.example.test
+          DATABASE_URL=postgres://boilerplate:boilerplate@localhost:5433/boilerplate
+          REDIS_URL=redis://localhost:6380
+          SMTP_HOST=127.0.0.1
+          SMTP_PORT=1025
+          JWT_ACCESS_SECRET=$jwt
+          SESSION_SECRET=$session
+          WORKER_ENABLED=true
+          RATE_LIMIT_SCALE=10
+          SIGN_IN_LINK_MAIL_COOLDOWN=1s
+          EOF
+      - name: Start Postgres, Redis and Mailpit
+        working-directory: express
+        run: docker compose up -d --wait postgres redis mailpit
+      # The same command and pid file as scripts/e2e-api-restart.sh, which the
+      # forced-update flow runs. /health/ready answers once Postgres and Redis
+      # do, not only the process.
+      - name: Build, migrate and start express
+        working-directory: express
+        run: |
+          pnpm build
+          node dist/database/migrate.js
+          nohup node dist/index.js > api.log 2>&1 < /dev/null &
+          echo $! > api.pid
+          for _ in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:4040/health/ready && exit 0
+            sleep 1
+          done
+          cat api.log
+          exit 1
+      # The maintenance helper runs psql and redis-cli on the host, against
+      # the same URLs as express's .env.
+      - name: Install psql and redis-cli
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-client redis-tools
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      # The template signs a release build with the debug key, which suits a
+      # build that never leaves CI. Only the emulator's ABI is built.
+      - name: Build the e2e APK
+        run: |
+          pnpm exec expo prebuild --platform android --no-install
+          cd android
+          ./gradlew assembleRelease -PreactNativeArchitectures=x86_64
+      - name: Install Maestro
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL --retry 5 --retry-all-errors -o maestro.zip \
+            https://github.com/mobile-dev-inc/Maestro/releases/download/cli-2.11.0/maestro.zip
+          want=$(awk '$1 !~ /^#/ && $2 == "maestro.zip" { print $1 }' "$GITHUB_WORKSPACE/app/scripts/maestro.sha256")
+          got=$(sha256sum maestro.zip | cut -d' ' -f1)
+          if [ -z "$want" ] || [ "$got" != "$want" ]; then
+            echo "::error::maestro.zip hash $got does not match scripts/maestro.sha256 ($want)"
+            exit 1
+          fi
+          unzip -q maestro.zip
+          echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
+      # The action runs each script line in its own shell, so the logcat is
+      # captured on the same line as the run, before the emulator shuts down.
+      - name: Run the Maestro flows
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          E2E_API_URL: http://127.0.0.1:4040
+          E2E_MAILPIT_URL: http://127.0.0.1:8025
+          DATABASE_URL: postgres://boilerplate:boilerplate@localhost:5433/boilerplate
+          REDIS_URL: redis://localhost:6380
+          E2E_API_DIR: ${{ github.workspace }}/express
+          E2E_API_RESTART_CMD: ${{ github.workspace }}/app/scripts/e2e-api-restart.sh
+          E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          working-directory: app
+          script: adb install -r android/app/build/outputs/apk/release/app-release.apk && node scripts/e2e-run.mjs android; status=$?; adb logcat -d > "$RUNNER_TEMP/logcat.txt"; exit $status
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: e2e-android
+          path: |
+            app/maestro-output/
+            express/api.log
+            ${{ runner.temp }}/logcat.txt
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Stop express and the stack
+        if: always()
+        working-directory: express
+        run: |
+          if [ -f api.pid ]; then kill "$(cat api.pid)" || true; fi
+          docker compose down -v || true
