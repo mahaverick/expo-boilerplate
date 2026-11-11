@@ -41,12 +41,14 @@ concurrency:
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
   e2e-ios:
     runs-on: macos-latest
     timeout-minutes: 90
+    outputs:
+      failed_steps: ${{ steps.report.outputs.failed_steps }}
+      express_sha: ${{ steps.express-sha.outputs.sha }}
     env:
       # A schedule run has no inputs, so the input is empty there.
       EXERCISE: ${{ inputs.exercise_issue || 'none' }}
@@ -434,16 +436,43 @@ jobs:
           if [ -f "$RUNNER_TEMP/mailpit.pid" ]; then kill "$(cat "$RUNNER_TEMP/mailpit.pid")" || true; fi
           redis-cli -p 6380 shutdown nosave || true
           if [ -d "$RUNNER_TEMP/pgdata" ]; then pg_ctl -D "$RUNNER_TEMP/pgdata" -m fast stop || true; fi
-      # Acts only on main's runs, scheduled or dispatched, so a branch run
-      # never opens, comments on or closes the issue.
+      - id: fail-run
+        name: Fail the run, as exercise_issue=fail asks
+        if: always() && env.EXERCISE == 'fail'
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo "::error::exercise_issue=fail skipped the flows and fails the run on purpose"
+          exit 1
+      # What the issue job needs from this one: the ids of the steps that
+      # failed. It comes last, so it sees every step above it.
+      - id: report
+        if: always()
+        env:
+          STEPS_JSON: ${{ toJSON(steps) }}
+        run: |
+          failed=$(node -e 'const s = JSON.parse(process.env.STEPS_JSON); console.log(Object.keys(s).filter((id) => s[id].outcome === "failure").join(","))')
+          echo "failed_steps=$failed" >> "$GITHUB_OUTPUT"
+
+  # Acts only on main's runs, scheduled or dispatched, so a branch run never
+  # opens, comments on or closes the issue. It holds the only token that can
+  # write issues, and runs no code from the repository or from express.
+  e2e-ios-issue:
+    needs: e2e-ios
+    if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      EXERCISE: ${{ inputs.exercise_issue || 'none' }}
+    steps:
       - id: issue
         name: Open, comment on or close the e2e-nightly issue
-        if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          JOB_STATUS: ${{ job.status }}
-          STEPS_JSON: ${{ toJSON(steps) }}
-          EXPRESS_SHA: ${{ steps.express-sha.outputs.sha }}
+          JOB_STATUS: ${{ needs.e2e-ios.result }}
+          FAILED_STEPS: ${{ needs.e2e-ios.outputs.failed_steps }}
+          EXPRESS_SHA: ${{ needs.e2e-ios.outputs.express_sha }}
         with:
           script: |
             const label = 'e2e-nightly'
@@ -452,9 +481,9 @@ jobs:
             const exercise = process.env.EXERCISE
             const failed =
               exercise === 'none' ? process.env.JOB_STATUS !== 'success' : exercise === 'fail'
-            const failedSteps = Object.entries(JSON.parse(process.env.STEPS_JSON))
-              .filter(([, step]) => step.outcome === 'failure')
-              .map(([id]) => `\`${id}\``)
+            const failedSteps = process.env.FAILED_STEPS.split(',')
+              .filter(Boolean)
+              .map((id) => `\`${id}\``)
             const why =
               exercise !== 'none'
                 ? `none: exercise_issue=${exercise} skipped the flows`
@@ -531,10 +560,3 @@ jobs:
             } else {
               core.info('Green, and no open e2e-nightly issue to close.')
             }
-      - id: fail-run
-        name: Fail the run, as exercise_issue=fail asks
-        if: always() && env.EXERCISE == 'fail'
-        working-directory: ${{ github.workspace }}
-        run: |
-          echo "::error::exercise_issue=fail skipped the flows and fails the run on purpose"
-          exit 1
