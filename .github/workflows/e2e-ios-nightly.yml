@@ -232,7 +232,7 @@ jobs:
       # checked before the app is installed.
       - id: build
         if: env.EXERCISE == 'none'
-        timeout-minutes: 50
+        timeout-minutes: 25
         run: |
           workspace=$(ls -d ios/*.xcworkspace)
           scheme=$(basename "$workspace" .xcworkspace)
@@ -301,21 +301,24 @@ jobs:
           fi
           unzip -q maestro-zip/maestro.zip
           echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
-      # One iPhone from the newest iOS runtime, so Maestro sees exactly one
-      # booted device. Maestro opens a link with `simctl openurl`, and iOS
-      # asks "Open in …?" before it hands an expo-boilerplate:// link to the
-      # app. The scheme's approval for the e2e app is written to the
-      # simulator's Launch Services preferences before and after the boot, so
-      # every link opens the app at once.
+      # One iPhone 17 Pro, the model every green run used, from the newest
+      # iOS runtime that has one, so Maestro sees exactly one booted device
+      # and the flows see the screen they were written against. Without one,
+      # the first iPhone in the newest runtime boots, with a warning. Maestro
+      # opens a link with `simctl openurl`, and iOS asks "Open in …?" before it
+      # hands an expo-boilerplate:// link to the app. The scheme's approval for
+      # the e2e app is written to the simulator's Launch Services preferences
+      # before and after the boot, so every link opens the app at once.
       - id: simulator
         if: env.EXERCISE == 'none'
         timeout-minutes: 10
         env:
           APP: ${{ steps.build.outputs.app }}
           APP_ID: com.mahaverick.expoboilerplate.e2e
+          DEVICE: iPhone 17 Pro
         run: |
           xcrun simctl list devices available -j > "$RUNNER_TEMP/devices.json"
-          udid=$(node -e '
+          pick=$(node -e '
             const { devices } = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))
             const runtimes = Object.keys(devices).filter((key) => key.includes("SimRuntime.iOS"))
             const version = (key) => key.split("iOS-")[1].split("-").map(Number)
@@ -323,19 +326,26 @@ jobs:
               const [x, y] = [version(a), version(b)]
               return y[0] - x[0] || (y[1] ?? 0) - (x[1] ?? 0)
             })
-            for (const runtime of runtimes) {
-              const phone = devices[runtime].find((device) => device.name.startsWith("iPhone"))
-              if (phone) {
-                console.error("booting " + phone.name + " on " + runtime)
-                console.log(phone.udid)
-                break
+            const find = (match) => {
+              for (const runtime of runtimes) {
+                const phone = devices[runtime].find(match)
+                if (phone) return [phone.udid, phone.name, runtime]
               }
+              return null
             }
-          ' "$RUNNER_TEMP/devices.json")
-          if [ -z "$udid" ]; then
+            const named = find((device) => device.name === process.argv[2])
+            const chosen = named ?? find((device) => device.name.startsWith("iPhone"))
+            if (chosen) console.log([...chosen, named ? "named" : "fallback"].join("\t"))
+          ' "$RUNNER_TEMP/devices.json" "$DEVICE")
+          if [ -z "$pick" ]; then
             echo "::error::no available iPhone simulator"
             exit 1
           fi
+          IFS=$'\t' read -r udid name runtime how <<< "$pick"
+          if [ "$how" != named ]; then
+            echo "::warning::no $DEVICE simulator is available; booting $name on $runtime instead"
+          fi
+          echo "booting $name on $runtime"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
           approval="com.apple.CoreSimulator.CoreSimulatorBridge-->expo-boilerplate"
           prefs="$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Library/Preferences"
@@ -372,6 +382,7 @@ jobs:
           UDID: ${{ steps.simulator.outputs.udid }}
           EXE: ${{ steps.build.outputs.exe }}
         run: |
+          started=$(date '+%Y-%m-%d %H:%M:%S')
           maestro hierarchy > /dev/null 2>&1 || true
           status=0
           node scripts/e2e-run.mjs ios || status=$?
@@ -381,7 +392,7 @@ jobs:
             status=0
             E2E_RUN_ID="$E2E_RUN_ID-2" node scripts/e2e-run.mjs ios || status=$?
           fi
-          xcrun simctl spawn "$UDID" log show --last 40m --style compact \
+          xcrun simctl spawn "$UDID" log show --start "$started" --style compact \
             --predicate "process == \"$EXE\"" > "$RUNNER_TEMP/simulator.log" 2>&1 || true
           exit "$status"
       # How often express's rate limit refused the app's maintenance status
@@ -410,6 +421,8 @@ jobs:
             ${{ runner.temp }}/pod-install.log
             ${{ runner.temp }}/simulator.log
             ${{ runner.temp }}/postgres.log
+            ${{ runner.temp }}/initdb.log
+            ${{ runner.temp }}/redis.log
             ${{ runner.temp }}/mailpit.log
           retention-days: 7
           if-no-files-found: ignore
