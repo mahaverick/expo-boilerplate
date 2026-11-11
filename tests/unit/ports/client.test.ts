@@ -62,6 +62,14 @@ describe('apiClient', () => {
     expect(config?.headers.has('traceparent')).toBe(false)
   })
 
+  it('asks the network, not a cache, for an API answer and leaves other hosts alone', async () => {
+    const { adapter, sent } = recordingAdapter()
+    await apiClient.get('/status/client-settings', { adapter })
+    await apiClient.get('https://elsewhere.example.test/thing', { adapter })
+    expect(sent[0]?.headers.get('Cache-Control')).toBe('no-cache')
+    expect(sent[1]?.headers.has('Cache-Control')).toBe(false)
+  })
+
   it('sends the bearer token to the API and to no other origin', async () => {
     useAuthStore.getState().setToken('token-1')
     const { adapter, sent } = recordingAdapter()

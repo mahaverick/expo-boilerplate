@@ -54,13 +54,19 @@ function isApiRequest(client: AxiosInstance, config: InternalAxiosRequestConfig)
 /**
  * Names this client to the API on each of its requests: `X-Client: native`,
  * so express answers in the native shape, and `X-Device-Name`, the device's
- * model, which the session list shows.
+ * model, which the session list shows. It also sends `Cache-Control:
+ * no-cache`, so every API answer comes from the network. The app acts on the
+ * `Maintenance-Mode` header of every answer, and on iOS `NSURLCache` would
+ * replay a cached answer (client settings are cacheable for 5 minutes) with
+ * the header it had during maintenance. That puts the app back into `full`
+ * each time maintenance ends, and every recovery refetches it again, in a loop.
  */
 function addClientHeaders(
   client: AxiosInstance,
   config: InternalAxiosRequestConfig
 ): InternalAxiosRequestConfig {
   if (!isApiRequest(client, config)) return config
+  config.headers.set('Cache-Control', 'no-cache')
   config.headers.set('X-Client', 'native')
   if (modelName) config.headers.set('X-Device-Name', modelName)
   return config
