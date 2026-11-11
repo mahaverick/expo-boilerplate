@@ -138,7 +138,10 @@ port, `tests/support/runner.ts`.
 ## Toolchain
 
 Each tool below was checked on 6 November 2026 against Expo SDK 58
-(`expo` 58.0.23, React Native 0.88.1), pnpm 12.16.1 and Node 26.13.0.
+(`expo` 58.0.23, React Native 0.88.1), pnpm 12.16.1 and Node 26.13.0. On
+11 November 2026 `npx expo install --fix` moved `expo` to 58.0.24 and eight
+companion packages to their matching patches; `expo-doctor` passed 20 of 20
+checks and the gate passed on it.
 
 - **`vp check` runs as the siblings run it.** `pnpm check` is `vp check`
   (Oxfmt, then Oxlint with type-aware rules), then `eslint . --max-warnings 0`.
@@ -205,6 +208,13 @@ Each tool below was checked on 6 November 2026 against Expo SDK 58
   it. Change both in one commit.
 - **Renovate holds every Node pin below 27** (`.node-version`, CI). A Node
   major also moves `engines.node` and `devEngines.runtime` by hand.
+- **`babel-preset-expo` and `@babel/plugin-transform-react-jsx` are listed
+  dependencies**, though no file imports them. `babel.config.js` names the
+  preset, and NativeWind's Babel preset names the plugin by string. pnpm's
+  `.bin` shims put `node_modules/.pnpm/node_modules` on `NODE_PATH`, so
+  `pnpm export` and the gate found both unlisted. Gradle's bundle task runs
+  `node … export:embed` with no `NODE_PATH`, and the release build failed
+  with `Cannot find module`. `knip.ts` ignores the plugin, with the reason.
 
 ## Theme and splash screen
 
@@ -306,7 +316,8 @@ candidate, and each has a reason. The files are listed in
 - **`+native-intent.tsx` strips the query and fragment from every non-https
   link.** Any app can claim a custom scheme and read its query, and a token
   travels in the query. A token path under the scheme becomes `/`. An https
-  link passes through, since the operating system verifies it.
+  link passes through, since the operating system verifies it. The `e2e`
+  build is the one exception ([End-to-end tests](#end-to-end-tests)).
 - **Touch targets are `TOUCH_TARGET` (`min-h-12`, 48 points) on both
   platforms.** Apple asks for 44 and Android for 48, so one value serves both.
   A control that sets its own height loses the guarantee.
@@ -329,6 +340,31 @@ The files are listed in [ARCHITECTURE.md](ARCHITECTURE.md#workspaces-and-the-she
   React Native never reports focus, so queries never refetch when the app
   returns, and a query keeps retrying offline. An unknown NetInfo state
   counts as online, so a slow first report does not pause every query.
+- **Online means express answers `GET /health`, on both platforms.**
+  `configureReachability()` points NetInfo at `apiOriginUrl('/health')` with
+  HEAD, `x-client: native` and `Cache-Control: no-cache`, and sets
+  `useNativeReachability: false`, so Android probes it too instead of
+  trusting the system's own check. Any HTTP answer counts as online; only a
+  failed request or a timeout counts as offline. NetInfo's default probe
+  reaches Google, which CI runners and some networks cannot reach: on
+  11 November 2026 two iOS runs showed the offline banner while express
+  answered. Client settings is no probe either: express limits it to 120
+  requests a minute per IP address (`RATE_LIMITS.clientSettings`), and the
+  forced-update read needs that budget. `/health` (express's `src/app.ts`)
+  has no rate limit and passes in every maintenance mode. The offline banner
+  says "You’re offline, or the app can’t reach its server.", because both
+  read the same.
+- **Every API request sends `Cache-Control: no-cache`** (`addClientHeaders`
+  in `src/http/client.ts`). The app acts on the `Maintenance-Mode` header of
+  every answer, and express lets client settings be cached for 300 seconds.
+  On iOS, `NSURLCache` replayed a client-settings answer fetched during
+  `full`, header and all, after maintenance ended, so each recovery put the
+  app back into `full` and refetched again. One iOS run on 8 November 2026
+  logged 2,610 refusals from express's `maintenance-status` limiter; the
+  three iOS runs with the header that reached the maintenance flow, on 11
+  November 2026, logged 0. The cost: iOS loses the 300-second cache of
+  client settings. Android's networking keeps no HTTP cache, so it never
+  looped.
 - **One interceptor reads maintenance from every API answer.**
   `installMaintenanceInterceptor` in `src/http/maintenance.ts` reads the
   `Maintenance-Mode` header on successes and failures and the body of a 503,
@@ -1101,6 +1137,75 @@ and the owner's setup is in [README.md](README.md#release-setup).
   rule, and update the measurement in the JSDoc. A budget raised without a
   measurement stops catching growth.
 
+## End-to-end tests
+
+The rules below cover the Maestro flows in `e2e/`, their runner and the two
+e2e workflows. They are plan 3e2's. The files are listed in
+[ARCHITECTURE.md](ARCHITECTURE.md#end-to-end-tests), and how to run them is in
+[README.md](README.md#end-to-end-tests).
+
+- **Only the `e2e` build keeps the query on a custom-scheme link.**
+  `redirectSystemPath` keeps `/<path>?<query>`, with the fragment dropped,
+  when `extra.appVariant === 'e2e'`, so a flow can open a sign-in or
+  invitation link. Every other variant strips it, and
+  `tests/unit/app/native-intent.test.ts` pins `development`, `preview`,
+  `production` and a missing `extra`. It is safe because the `e2e` build has
+  its own bundle ID (`.e2e`), only the e2e workflows build it, and no
+  `eas.json` profile submits it.
+- **Flows open links on the custom scheme on both platforms.** An unverified
+  https app link opens a browser chooser on Android, and the iOS simulator
+  cannot verify a universal link against a local host. `appLink` in
+  `e2e/helpers/links.mjs` turns each mailed https link into
+  `expo-boilerplate://`, which removes a platform branch from every flow.
+- **Maintenance is set in Postgres, not through the staff route.**
+  `e2e/helpers/maintenance.mjs` updates the `maintenance_mode_state` row and
+  publishes on Redis, and express's store rereads on that message. The staff
+  route would need a platform account and step-up. The update must touch one
+  row, or the helper fails before it publishes.
+- **The forced-update flow runs last.** It restarts express with
+  `MINIMUM_APP_VERSION_<PLATFORM>=99.0.0`, because express reads the minimum
+  only from its environment, and its cleanup restarts express again without
+  it. Last, no other flow runs against a restarting express or a raised
+  minimum. The runner waits until client settings serve the expected minimum,
+  since a restart that never happened would also answer.
+- **Each flow signs in a fresh address**, `e2e+<flow>-<run id>@example.test`.
+  Express mails one address at most one sign-in link per cooldown, and a
+  reused address could read an older run's link. The runner snapshots the
+  address's Mailpit message IDs before each step that sends a mail and reads
+  only a newer one, never by clock.
+- **The e2e express runs with `SIGN_IN_LINK_MAIL_COOLDOWN=1s`.**
+  switch-workspace signs one address in through the API, then through the
+  app, and the default cooldown of 1 minute mails nothing the second time.
+- **The Maestro zip is checked against `scripts/maestro.sha256`** on every
+  run, cached or downloaded, before it is unzipped. A Maestro version bump
+  updates the hash and the URL in the same change. A changed release asset
+  then fails the job instead of running on the runner.
+- **A rerun follows exit 75 alone.** The runner exits 75 only when the failed
+  flow's one error is a Maestro run whose own output shows a lost device or
+  driver (`TRANSPORT_FAILURES` in `scripts/e2e-run.mjs`, iOS driver classes
+  included). Each workflow then prints `::warning::` and reruns the flows
+  once. Every other failure exits 1 and stays red, so a rerun never masks a
+  real failure. Reading anything an earlier flow logged would let one blip
+  qualify any later failure.
+- **Android runs `psql` and `redis-cli` from the compose stack's images**
+  (`E2E_PSQL` and `E2E_REDIS_CLI`, written to `$GITHUB_ENV`). On 11 November
+  2026 the Ubuntu runners could not resolve their apt mirrors, and retries
+  did not help. The images are already on the machine.
+- **The iOS simulator build is signed ad hoc, and the job checks it with
+  `codesign --verify`.** An unsigned app gets no answer from the simulator's
+  Keychain, so sign-in fails before the verify request leaves. Do not add
+  `CODE_SIGNING_ALLOWED=NO`.
+- **The iOS job approves the app's scheme in the simulator** before and after
+  the boot. Without it, iOS asks "Open in …?" over the app on each
+  `openLink`.
+- **`hideKeyboard` runs on Android only.** On iOS it failed when a loaded
+  runner's keyboard queue stalled. On iOS, "Email me a link" sits above the
+  keyboard, and `first-workspace-link.yaml` taps plain text instead, which
+  closes the keyboard because `Screen` sets
+  `keyboardShouldPersistTaps="handled"`.
+- **The iOS issue step acts on `main` only**, so a branch run never opens,
+  comments on or closes the `e2e-nightly` issue.
+
 ## Copy
 
 - **Customers read "workspace", never "tenant", and "web address", never
@@ -1247,13 +1352,18 @@ Each item is a change for react or for a later plan, with the reason it waits.
   `enableSessionReplay: false`. The same plan adds react's `<Pii>` wrapper and
   its probe, which checks that no personally identifiable information (PII)
   reaches a replay.
-- **The build variants lack icon badges, end-to-end flows and a per-profile
-  API URL.** Each variant has a name suffix in place of a badged icon; the
-  badged icons arrive with the store assets. The `e2e` variant and profile
-  exist, and plan 3e2 adds the Maestro flows and their CI jobs.
-  `EXPO_PUBLIC_API_URL` comes from each EAS environment, and no profile in
-  `eas.json` names an API, so a staging API for preview is the owner's
-  setting in the `preview` environment.
+- **The build variants lack icon badges and a per-profile API URL.** Each
+  variant has a name suffix in place of a badged icon; the badged icons
+  arrive with the store assets. `EXPO_PUBLIC_API_URL` comes from each EAS
+  environment, and no profile in `eas.json` names an API, so a staging API
+  for preview is the owner's setting in the `preview` environment.
+- **The end-to-end flows leave out the PII probe.** It waits with session
+  replay (above), because there is no replay to probe yet.
+- **React's web client may replay a stale `Maintenance-Mode` header.** A
+  browser's HTTP cache can keep a client-settings answer for its 300 seconds,
+  as iOS's `NSURLCache` did here. React should check whether its own fetch of
+  client settings asks past the cache, and send `Cache-Control: no-cache` if
+  not.
 - **The iOS source-map rewrite is not idempotent.**
   `scripts/upload-native-sourcemaps.sh prepare` fails the single-line check
   on a build that restored a rewritten `node_modules` from a cache. EAS

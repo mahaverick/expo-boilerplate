@@ -281,6 +281,169 @@ messages follow Conventional Commits, and commits are GPG-signed.
 - **The analytics and exception tests** use a fake PostHog SDK and a fake
   network. They check what an event carries and what a report scrubs, not what
   PostHog receives; the device checklist covers that.
+- **The end-to-end tests** drive the `e2e` build on an emulator or a
+  simulator against a real express ([End-to-end tests](#end-to-end-tests)).
+
+## End-to-end tests
+
+Seven Maestro flows in `e2e/flows/` drive the `e2e` build against
+express-boilerplate's `main`, with Postgres, Redis and Mailpit.
+`scripts/e2e-run.mjs` runs them in a fixed order, and each flow signs in a
+fresh address, `e2e+<flow>-<run id>@example.test`.
+
+| Flow                | What it proves                                                                                                                                                                    |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sign-in`           | A signed-out app asks for a link, and the mailed link opens the app and signs a new account in, landing on Welcome                                                                |
+| `cold-start`        | The session survives a stop and a relaunch: the app opens Home with no sign-in                                                                                                    |
+| `first-workspace`   | A new account creates its first workspace on Welcome and lands on the Workspace tab                                                                                               |
+| `switch-workspace`  | An account with two workspaces, created through the API, switches from one to the other in the switcher                                                                           |
+| `accept-invitation` | A mailed invitation link, opened by the signed-in invitee, joins the workspace and lands on the Workspace tab                                                                     |
+| `maintenance`       | Maintenance `full` covers the app with the owner's message, and when the mode goes `off` the screen goes within one status poll (30 to 40 seconds) and the sign-in screen returns |
+| `forced-update`     | With express requiring version 99.0.0 for the platform, the update screen covers the app                                                                                          |
+
+Every flow that starts signed out clears the Keychain and the app's state
+first. A failure prints `e2e: <flow> failed: <step>: <reason>`, every later
+flow prints `not run`, and the runner exits non-zero: 75 for a lost device
+connection ([One rerun](#one-rerun-for-a-lost-device-connection-only)), 1 for
+anything else.
+
+### Where they run
+
+- **`e2e-android.yml`** runs on every pull request, with no path filter, and
+  on pushes to `main`. It builds the release APK for `x86_64` and runs the
+  flows on an API 35 emulator. Between 8 and 11 November 2026 the job took 15
+  to 25 minutes.
+- **`e2e-ios-nightly.yml`** runs every night at 03:43 UTC and on dispatch. It
+  builds a Release app for the simulator and runs the flows on an iPhone 17
+  Pro. Between 8 and 11 November 2026 the job took 16 to 51 minutes, because
+  the macOS runners' build time varied from 4 to 14 minutes.
+- **On a failure** each job uploads Maestro's output, express's `api.log` and
+  the device's log as the `e2e-android` or `e2e-ios` artifact, kept 7 days.
+
+### The throwaway environment
+
+Each run writes its own environment and reads no secret.
+
+- **Express** runs from its `main` checkout with a `.env` that the workflow
+  writes: a JWT secret and a session secret generated in the step, the
+  database password `boilerplate`, `WEB_URL=https://e2e.example.test`,
+  `RATE_LIMIT_SCALE=10` (every request comes from one runner address),
+  `SIGN_IN_LINK_MAIL_COOLDOWN=1s` (switch-workspace signs one address in
+  twice, and the default cooldown of 1 minute mails nothing the second time)
+  and `WORKER_ENABLED=true` (the worker sends the mail).
+- **Mailpit catches every mail.** The addresses are on `example.test`, a
+  domain reserved for testing (RFC 2606), so nothing leaves the runner.
+- **No PostHog key is set**, so analytics and exception reports stay inert.
+- **Android** runs Postgres, Redis and Mailpit from express's
+  `docker-compose.yml`, and deletes their volumes at the end. The maintenance
+  helper runs `psql` and `redis-cli` from the stack's own images
+  (`docker run --rm -i --network host <image>`), because on 11 November 2026
+  the runner could not resolve its apt mirrors.
+- **iOS** installs Postgres 18, Redis and Mailpit with Homebrew, because the
+  macOS runner has no Docker. They listen on the ports that express's compose
+  file publishes (5433, 6380, 1025 and 8025), so both jobs use the same
+  addresses.
+
+### What the iOS job does that a simulator needs
+
+- **It signs the simulator build ad hoc**, with no certificate or team, and
+  fails when `codesign --verify` does not pass. An unsigned app gets no answer
+  from the simulator's Keychain, where `expo-secure-store` keeps the refresh
+  token, so sign-in cannot finish.
+- **It approves the app's scheme in the simulator** before and after the
+  boot. Without the approval, iOS asks "Open in …?" before it hands an
+  `expo-boilerplate://` link to the app, and the flow waits on the prompt.
+- **It boots an iPhone 17 Pro** from the newest iOS runtime that has one, the
+  model every green run used. Without one, it boots the first iPhone in the
+  newest runtime and prints a warning.
+- **The issue step acts on `main` only.** A red scheduled or dispatched run on
+  `main` opens an `e2e-nightly` issue, or comments on the open one, and a green
+  one closes it. `exercise_issue=fail` or `pass` skips the flows to test the
+  step.
+
+### One rerun, for a lost device connection only
+
+The runner exits 75 when the failed flow's own Maestro run lost the device or
+its driver: on Android, a dropped adb link or a driver that did not start; on
+iOS, an XCTest driver that did not start or stopped answering. On 75, and on
+no other code, each workflow prints a `::warning::` naming the flow and the
+reason, moves the output to `maestro-output-1/` and runs the flows once more
+with a new run id. A failed selector, a missing mail, a helper or a restart
+exits 1 and is never rerun, so a real failure is never masked.
+
+### Run them locally
+
+You need an Android emulator or an iOS simulator, express-boilerplate checked
+out beside this repository, Docker, Java 17, `psql` and `redis-cli`, and
+Maestro CLI 2.11.0. Check the Maestro zip against `scripts/maestro.sha256`
+before you unzip it.
+
+1. **Start express** in its checkout. Write its `.env` as
+   `.github/workflows/e2e-android.yml` does (step "Write express's .env"),
+   then:
+
+   ```bash
+   docker compose up -d --wait postgres redis mailpit
+   pnpm run build
+   node dist/database/migrate.js
+   nohup node dist/index.js > api.log 2>&1 < /dev/null &
+   echo $! > api.pid
+   ```
+
+   `scripts/e2e-api-restart.sh` restarts express for the forced-update flow by
+   the pid in `api.pid`, so start it this way.
+
+2. **Build and install the `e2e` variant.** Set `APP_VARIANT=e2e` and
+   `EXPO_PUBLIC_API_URL` before the build, because both are inlined into the
+   bundle: `http://10.0.2.2:4040` for the Android emulator, or
+   `http://localhost:4040` for the iOS simulator. For Android:
+
+   ```bash
+   pnpm exec expo prebuild --platform android --no-install
+   (cd android && ./gradlew assembleRelease -PreactNativeArchitectures=x86_64)
+   adb install -r android/app/build/outputs/apk/release/app-release.apk
+   ```
+
+   For iOS, run the `prebuild` and `build` steps of
+   `.github/workflows/e2e-ios-nightly.yml`, then `xcrun simctl install`. Answer
+   Open on the first "Open in …?" prompt, or write the scheme approval as the
+   workflow's `simulator` step does.
+
+3. **Run the flows** from this repository:
+
+   ```bash
+   E2E_API_URL=http://127.0.0.1:4040 \
+   E2E_MAILPIT_URL=http://127.0.0.1:8025 \
+   DATABASE_URL=postgres://boilerplate:boilerplate@localhost:5433/boilerplate \
+   REDIS_URL=redis://localhost:6380 \
+   E2E_API_DIR="$PWD/../express-boilerplate" \
+   E2E_API_RESTART_CMD="$PWD/scripts/e2e-api-restart.sh" \
+   E2E_RUN_ID=local-1 \
+   node scripts/e2e-run.mjs android
+   ```
+
+   Use `ios` for the simulator. `E2E_RUN_ID` takes lowercase letters, digits
+   and hyphens; change it for each run, because each address signs in once.
+   Maestro's output goes to `maestro-output/`, which git ignores. To run
+   `psql` and `redis-cli` from containers instead of the host, set
+   `E2E_PSQL` and `E2E_REDIS_CLI` to the command and its leading arguments.
+
+### Make `e2e-android` a required check
+
+Branch protection is the owner's setting. As of 11 November 2026 the job
+passed 4 of 4 attempts on `5a820f1`, 2 of 2 on `9dc3928`, 2 of 2 on `43f02e9`
+and 1 of 1 on `ce4085e`, all on pushes to a branch. Once it passes on pull
+requests too:
+
+1. In the repository's **Settings**, open **Rules** (or **Branches**) and edit
+   the rule for `main`.
+2. Turn on **Require status checks to pass**, and add the check
+   `e2e-android`, the job's ID.
+3. Save.
+
+The workflow has no path filter on `pull_request`, so every pull request gets
+the check, and none waits on a check that never runs. Do not require the iOS
+job: it runs nightly, not on pull requests.
 
 ## Builds and releases
 
@@ -516,9 +679,8 @@ the minor version for a `feat:` commit and the patch version for a `fix:`.
 - **Widen a rollout** with `eas update:edit <update group ID>
   --rollout-percentage <1 to 100>`, such as 50, then 100.
   `eas update:list --branch production` lists the group IDs.
-- **Roll back** with `eas update:rollback <update group ID> --environment
-  production --private-key-path <the production key>
-  --force-end-active-rollout`. The group must be the latest on its branch and
+- **Roll back** with `eas update:rollback <update group ID> --private-key-path
+  <the production key> --force-end-active-rollout`. The group must be the latest on its branch and
   runtime version. EAS republishes the group before it, or, with none, rolls
   back to the bundle the build embeds. Run both commands with
   `APP_VARIANT=production` and `EAS_PROJECT_ID` set, so eas-cli reads the
@@ -646,7 +808,8 @@ date, the device and the OS version beside each.
       set to a host whose association files are live. Open a mailed
       `https://<host>/auth/link?...` link from the mail app: it opens in the
       app, not the browser. Open `expo-boilerplate://auth/link?token=x`: the
-      app opens on Home or the sign-in screen and ignores the token.
+      app opens on Home or the sign-in screen and ignores the token. (Only the
+      `e2e` build keeps the token, so the Maestro flows can sign in.)
 - [ ] **Android backup leaves the app signed out.** Signed in, run
       `adb shell bmgr backupnow com.mahaverick.expoboilerplate`, uninstall,
       reinstall to restore, and open the app. It shows the sign-in screen. If it
@@ -671,7 +834,10 @@ date, the device and the OS version beside each.
 - [ ] **Offline and back.** Turn on airplane mode. The offline banner shows
       below the status bar, queries pause, and no screen shows an empty state
       for a failed load. Turn it off. The banner goes, and the screens refetch
-      without a reload.
+      without a reload. Then stop the API with the network on: within 75
+      seconds the same banner shows ("You’re offline, or the app can’t reach
+      its server."). The app's online check asks express's `/health` every
+      60 seconds and waits 15 for an answer (NetInfo's defaults).
 - [ ] **Full maintenance and its recovery.** Set the API's maintenance mode to
       `full`. The maintenance screen covers the app on both platforms, the back
       gesture does nothing, and a signed-in person keeps their place. Set the
