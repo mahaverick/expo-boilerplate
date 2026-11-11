@@ -389,10 +389,16 @@ before you unzip it.
    node dist/database/migrate.js
    nohup node dist/index.js > api.log 2>&1 < /dev/null &
    echo $! > api.pid
+   for _ in $(seq 1 60); do
+     curl -sf -o /dev/null http://localhost:4040/health/ready && break
+     sleep 1
+   done
    ```
 
    `scripts/e2e-api-restart.sh` restarts express for the forced-update flow by
-   the pid in `api.pid`, so start it this way.
+   the pid in `api.pid`, so start it this way. The loop waits up to 60
+   seconds for `/health/ready`, as the workflow does; if it ends without an
+   answer, read `api.log` before you go on.
 
 2. **Build and install the `e2e` variant.** Set `APP_VARIANT=e2e` and
    `EXPO_PUBLIC_API_URL` before the build, because both are inlined into the
@@ -433,8 +439,17 @@ before you unzip it.
 
 Branch protection is the owner's setting. As of 11 November 2026 the job
 passed 4 of 4 attempts on `5a820f1`, 2 of 2 on `9dc3928`, 2 of 2 on `43f02e9`
-and 1 of 1 on `ce4085e`, all on pushes to a branch. Once it passes on pull
-requests too:
+and 1 of 1 on `ce4085e`, all on pushes to a branch, and no pull request had
+run it. Require it once it has passed 5 pull-request runs in a row.
+
+The job checks out express-boilerplate's `main` unpinned: the second
+`actions/checkout` step in `e2e-android.yml` sets `ref: main`. As a required
+check, an express change can then fail every open pull request here. If that
+happens, pin `ref` to the last express commit that passed (the job prints it
+in "Record express's commit"), or drop the requirement until express is
+fixed.
+
+To require it:
 
 1. In the repository's **Settings**, open **Rules** (or **Branches**) and edit
    the rule for `main`.
@@ -681,11 +696,11 @@ the minor version for a `feat:` commit and the patch version for a `fix:`.
   --rollout-percentage <1 to 100>`, such as 50, then 100.
   `eas update:list --branch production` lists the group IDs.
 - **Roll back** with `eas update:rollback <update group ID> --private-key-path
-  <the production key> --force-end-active-rollout`. The group must be the latest on its branch and
-  runtime version. EAS republishes the group before it, or, with none, rolls
-  back to the bundle the build embeds. Run both commands with
-  `APP_VARIANT=production` and `EAS_PROJECT_ID` set, so eas-cli reads the
-  production config and its certificate.
+  <the production key> --force-end-active-rollout`. The group must be the
+  latest on its branch and runtime version. EAS republishes the group before
+  it, or, with none, rolls back to the bundle the build embeds. Run both
+  commands with `APP_VARIANT=production` and `EAS_PROJECT_ID` set, so eas-cli
+  reads the production config and its certificate.
 - **A feature never ships over the air.** Apple's Developer Program License
   Agreement section 3.3.1(B) and App Review Guideline 2.5.2 forbid using
   downloaded code to add features. A `feat:` commit bumps the minor version,

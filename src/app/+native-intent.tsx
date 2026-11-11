@@ -30,7 +30,8 @@ function reachesTokenScreen(path: string): boolean {
  * and passes through. The `e2e` build is the one exception: a custom-scheme URL
  * keeps its query, with the fragment dropped, so Maestro flows can open sign-in
  * and invitation links. That is safe because the e2e build has its own bundle
- * ID, CI builds it alone, and it never ships to a store or a person.
+ * ID, the repository builds it only in the e2e workflows, and no `eas.json`
+ * profile submits it, so it never ships to a store or a person.
  * @param args - The incoming URL and whether it launched the app.
  * @param args.path - The raw incoming URL or path.
  * @param args.initial - True when the URL launched the app.

@@ -1151,8 +1151,11 @@ e2e workflows. They are plan 3e2's. The files are listed in
   invitation link. Every other variant strips it, and
   `tests/unit/app/native-intent.test.ts` pins `development`, `preview`,
   `production` and a missing `extra`. It is safe because the `e2e` build has
-  its own bundle ID (`.e2e`), only the e2e workflows build it, and no
-  `eas.json` profile submits it.
+  its own bundle ID (`.e2e`), the repository builds it only in the two e2e
+  workflows, and no `eas.json` profile submits it. The `e2e` profile in
+  `eas.json` exists, though nothing runs it, and can still build an internal
+  APK or a simulator app by hand. Such a build's scheme carries tokens, so it
+  must never go to a person's phone.
 - **Flows open links on the custom scheme on both platforms.** An unverified
   https app link opens a browser chooser on Android, and the iOS simulator
   cannot verify a universal link against a local host. `appLink` in
@@ -1171,9 +1174,8 @@ e2e workflows. They are plan 3e2's. The files are listed in
   since a restart that never happened would also answer.
 - **Each flow signs in a fresh address**, `e2e+<flow>-<run id>@example.test`.
   Express mails one address at most one sign-in link per cooldown, 1 minute
-  by default. The runner snapshots the
-  address's Mailpit message IDs before each step that sends a mail and reads
-  only a newer one, never by clock.
+  by default. The runner snapshots the address's Mailpit message IDs before
+  each step that sends a mail and reads only a newer one, never by clock.
 - **The e2e express runs with `SIGN_IN_LINK_MAIL_COOLDOWN=1s`.**
   switch-workspace signs one address in through the API, then through the
   app, and the default cooldown of 1 minute mails nothing the second time.
