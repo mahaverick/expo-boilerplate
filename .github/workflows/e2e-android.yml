@@ -127,8 +127,8 @@ jobs:
       # the same URLs as express's .env.
       - name: Install psql and redis-cli
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q postgresql-client redis-tools
+          sudo apt-get -o Acquire::Retries=5 update -q
+          sudo apt-get -o Acquire::Retries=5 install -y -q postgresql-client redis-tools
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
