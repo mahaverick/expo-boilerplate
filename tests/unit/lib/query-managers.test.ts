@@ -111,7 +111,25 @@ describe('installQueryManagers', () => {
     })
   })
 
-  it("counts any HTTP answer as reachable, maintenance's 503 included", async () => {
+  it('leaves NetInfo on its defaults when the build names no API origin', () => {
+    const saved = process.env.EXPO_PUBLIC_API_URL
+    delete process.env.EXPO_PUBLIC_API_URL
+    try {
+      jest.isolateModules(() => {
+        const netInfo = jest.requireActual<{ default: typeof NetInfo }>(
+          '@react-native-community/netinfo'
+        ).default
+        const managers =
+          jest.requireActual<typeof import('@/lib/query-managers')>('@/lib/query-managers')
+        cleanup = managers.installQueryManagers()
+        expect(netInfo.configure).not.toHaveBeenCalled()
+      })
+    } finally {
+      process.env.EXPO_PUBLIC_API_URL = saved
+    }
+  })
+
+  it("counts any HTTP answer as reachable, a proxy's 5xx included", async () => {
     cleanup = installQueryManagers()
     const test = jest.mocked(NetInfo.configure).mock.calls[0]?.[0].reachabilityTest
     for (const status of [204, 200, 503]) {

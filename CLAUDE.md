@@ -341,12 +341,14 @@ The files are listed in [ARCHITECTURE.md](ARCHITECTURE.md#workspaces-and-the-she
   React Native never reports focus, so queries never refetch when the app
   returns, and a query keeps retrying offline. An unknown NetInfo state
   counts as online, so a slow first report does not pause every query.
-- **Online means express answers `GET /health`, on both platforms.**
+- **Online means the API's address answers `/health` over HTTP, on both platforms.**
   `configureReachability()` points NetInfo at `apiOriginUrl('/health')` with
   HEAD, `x-client: native` and `Cache-Control: no-cache`, and sets
   `useNativeReachability: false`, so Android probes it too instead of
   trusting the system's own check. Any HTTP answer counts as online; only a
-  failed request or a timeout counts as offline. NetInfo's default probe
+  failed request or a timeout counts as offline, and a proxy's 502 in front of
+  a down express counts as online. A build with no `EXPO_PUBLIC_API_URL`
+  keeps NetInfo's defaults. NetInfo's default probe
   reaches Google, which CI runners and some networks cannot reach: on
   11 November 2026 two iOS runs showed the offline banner while express
   answered. Client settings is no probe either: express limits it to 120
@@ -1172,7 +1174,7 @@ e2e workflows. They are plan 3e2's. The files are listed in
   it. Last, no other flow runs against a restarting express or a raised
   minimum. The runner waits until client settings serve the expected minimum,
   since a restart that never happened would also answer.
-- **Each flow signs in a fresh address**, `e2e+<flow>-<run id>@example.test`.
+- **Each flow that signs in uses a fresh address**, `e2e+<flow>-<run id>@example.test`.
   Express mails one address at most one sign-in link per cooldown, 1 minute
   by default. The runner snapshots the address's Mailpit message IDs before
   each step that sends a mail and reads only a newer one, never by clock.
@@ -1207,7 +1209,9 @@ e2e workflows. They are plan 3e2's. The files are listed in
   closes the keyboard because `Screen` sets
   `keyboardShouldPersistTaps="handled"`.
 - **The iOS issue step acts on `main` only**, so a branch run never opens,
-  comments on or closes the `e2e-nightly` issue.
+  comments on or closes the `e2e-nightly` issue. It runs in its own job,
+  `e2e-ios-issue`, the only one with `issues: write`; the flows job passes it
+  the failed step IDs as a job output.
 
 ## Copy
 

@@ -289,7 +289,7 @@ messages follow Conventional Commits, and commits are GPG-signed.
 
 Seven Maestro flows in `e2e/flows/` drive the `e2e` build against
 express-boilerplate's `main`, with Postgres, Redis and Mailpit.
-`scripts/e2e-run.mjs` runs them in a fixed order, and each flow signs in a
+`scripts/e2e-run.mjs` runs them in a fixed order, and each flow that signs in uses a
 fresh address, `e2e+<flow>-<run id>@example.test`.
 
 | Flow                | What it proves                                                                                                                                                                    |

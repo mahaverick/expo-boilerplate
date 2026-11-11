@@ -2,16 +2,17 @@
  * @file Ties TanStack Query to the device. Focus follows the app's foreground
  * state, and online follows the network, so queries refetch when the app
  * returns and pause while the device is offline. On iOS and Android alike,
- * "online" means express answers: NetInfo probes express's `/health` instead
- * of the platform's own check, which reaches Google. A network that blocks
- * Google but reaches express is not offline; one that reaches Google but not
- * express is, on both platforms.
+ * "online" means the API's address answers over HTTP: NetInfo probes express's
+ * `/health` instead of the platform's own check, which reaches Google. A
+ * network that blocks Google but reaches the API's address is not offline; one
+ * that reaches Google but not that address is, on both platforms. Any HTTP
+ * answer counts, so a proxy's 502 in front of a down express reads as online.
  */
 import NetInfo from '@react-native-community/netinfo'
 import type { NetInfoState } from '@react-native-community/netinfo'
 import { focusManager, onlineManager } from '@tanstack/react-query'
 import { AppState } from 'react-native'
-import { apiOriginUrl } from '@/http/client'
+import { apiOriginUrl, hasApiOrigin } from '@/http/client'
 
 /**
  * Points NetInfo's internet check at express's `/health` on both platforms.
@@ -19,10 +20,13 @@ import { apiOriginUrl } from '@/http/client'
  * trusting the system's own validation. `/health` sits outside the API prefix,
  * has no rate limit and passes in every maintenance mode, so the probe spends
  * no budget a real read needs. Any HTTP answer counts as reachable; only a
- * failed request or a timeout counts as unreachable. The request names the
- * native client and asks past the HTTP cache, as every API request does.
+ * failed request or a timeout counts as unreachable; a proxy's error answer is
+ * not. The request names the native client and asks past the HTTP cache, as
+ * every API request does. A build with no API origin keeps NetInfo's defaults,
+ * since a relative probe URL would read offline for good.
  */
 function configureReachability(): void {
+  if (!hasApiOrigin) return
   NetInfo.configure({
     reachabilityUrl: apiOriginUrl('/health'),
     useNativeReachability: false,

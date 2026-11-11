@@ -26,6 +26,9 @@ export { unwrap } from '@/http/create-api-client'
  */
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? ''
 
+/** Whether this build names an API origin. False when `EXPO_PUBLIC_API_URL` is unset. */
+export const hasApiOrigin = API_URL !== ''
+
 /**
  * The absolute URL of an API path, for the one caller that cannot go through
  * axios (the notification stream).
