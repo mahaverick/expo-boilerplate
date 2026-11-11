@@ -37,6 +37,16 @@ export function apiUrl(path: string): string {
 }
 
 /**
+ * The absolute URL of a path on the API's origin, outside the API prefix,
+ * such as express's `/health`.
+ * @param path - The path from the origin's root, with a leading slash.
+ * @returns The origin and the path.
+ */
+export function apiOriginUrl(path: string): string {
+  return `${API_URL}${path}`
+}
+
+/**
  * Whether `config` is a call to this app's API: the configured origin, under
  * `API_PREFIX`. Only those carry the client, device and trace headers; an
  * absolute URL to anywhere else never does.

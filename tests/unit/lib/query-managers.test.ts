@@ -99,12 +99,13 @@ describe('installQueryManagers', () => {
     expect(installQueryManagers()).toBe(cleanup)
   })
 
-  it('judges reachability by express, not Google', () => {
+  it("judges reachability by express's /health on both platforms, not Google", () => {
     cleanup = installQueryManagers()
     expect(NetInfo.configure).toHaveBeenCalledTimes(1)
     const config = jest.mocked(NetInfo.configure).mock.calls[0]?.[0]
     expect(config).toMatchObject({
-      reachabilityUrl: 'https://api.example.test/api/v1/status/client-settings',
+      reachabilityUrl: 'https://api.example.test/health',
+      useNativeReachability: false,
       reachabilityMethod: 'HEAD',
       reachabilityHeaders: { 'x-client': 'native', 'Cache-Control': 'no-cache' },
     })
