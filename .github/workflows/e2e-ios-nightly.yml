@@ -379,6 +379,17 @@ jobs:
           xcrun simctl spawn "$UDID" log show --last 40m --style compact \
             --predicate "process == \"$EXE\"" > "$RUNNER_TEMP/simulator.log" 2>&1 || true
           exit "$status"
+      # How often express's rate limit refused the app's maintenance status
+      # reads in this run. A loop between `full` and `off` after maintenance
+      # ends shows here as hundreds of refusals; a healthy run has none or
+      # few.
+      - id: status-refusals
+        if: always() && env.EXERCISE == 'none'
+        working-directory: ${{ github.workspace }}
+        run: |
+          count=0
+          if [ -f express/api.log ]; then count=$(grep -c 'limiter: "maintenance-status"' express/api.log || true); fi
+          echo "express refused $count maintenance status reads (limiter maintenance-status)" | tee -a "$GITHUB_STEP_SUMMARY"
       # On a failure, a cancellation or a timeout, and after a transport
       # rerun even when the rerun passed.
       - id: upload-artifact
