@@ -19,7 +19,11 @@ describe('OfflineBanner', () => {
     onlineManager.setOnline(false)
     await renderWithProviders(<OfflineBanner />)
     expect(screen.getByRole('alert')).toBeTruthy()
-    expect(screen.getByText('You’re offline. The app refreshes when you reconnect.')).toBeTruthy()
+    expect(
+      screen.getByText(
+        'You’re offline, or the app can’t reach its server. It refreshes when the connection returns.'
+      )
+    ).toBeTruthy()
   })
 
   it('follows the network as it changes', async () => {
