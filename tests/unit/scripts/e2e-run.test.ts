@@ -496,7 +496,7 @@ describe('transport failures', () => {
       "Maestro's driver did not start",
     ],
     [
-      'maestro.MaestroException$IOSDeviceDriverSetupException: Unable to launch app',
+      'maestro.MaestroException$IOSDeviceDriverSetupException: Failed to build iOS driver for connected iOS device.',
       "Maestro's driver did not start",
     ],
     [

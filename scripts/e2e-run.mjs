@@ -39,10 +39,12 @@ const TRANSPORT_NOTE = 'transport-failure.txt'
  * the reason the runner reports for each. The iOS names are Maestro 2.11.0's
  * classes: `IOSDriverTimeoutException` (maestro-ios-driver's
  * `LocalXCTestInstaller`, when the XCTest runner does not come up),
- * `IOSDeviceDriverSetupException` and `DeviceUnreachableException`
- * (maestro-client, which `IOSDriver` throws as "Device unreachable while
- * processing …"). A UI query that times out on a busy app is the app's, not
- * the transport's, and is not listed.
+ * `IOSDeviceDriverSetupException` (maestro-client; only the CLI's
+ * `DriverBuilder` throws it, when `xcodebuild` cannot build the driver for a
+ * connected device, never when the app under test fails to launch) and
+ * `DeviceUnreachableException` (maestro-client, which `IOSDriver` throws as
+ * "Device unreachable while processing …"). A UI query that times out on a
+ * busy app is the app's, not the transport's, and is not listed.
  */
 const TRANSPORT_FAILURES = [
   { reason: 'the adb connection dropped', pattern: /device offline|DeviceServerDiedException/ },
