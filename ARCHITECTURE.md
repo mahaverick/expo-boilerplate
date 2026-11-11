@@ -191,7 +191,8 @@ event. These expo-owned modules hold the session:
 - `src/lib/app-links.ts`: `TOKEN_PATHS`, the paths whose query holds a one-time
   token.
 - `src/app/+native-intent.tsx`: Expo Router's hook for an incoming URL. It
-  strips the query and fragment from every non-https link.
+  strips the query and fragment from every non-https link, in every variant
+  but `e2e`, which keeps the query for the Maestro flows.
 - `plugins/with-backup-rules.js`: the config plugin that writes Android's two
   backup rule files and points the manifest at them.
 

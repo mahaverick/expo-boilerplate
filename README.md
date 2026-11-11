@@ -165,7 +165,8 @@ token uses it up, so a second open shows the dead-link state.
   too, until that plan ships.
 - **Unset, the app has no app links.** The custom scheme
   (`expo-boilerplate://`) still opens the app, but `src/app/+native-intent.tsx`
-  drops its query and fragment, so a token never arrives that way. The
+  drops its query and fragment in every variant but `e2e`, so a token never
+  arrives that way. The
   passkey screen then shows no "Open the website" button.
 - **The web app must serve the association files** for the same host. React's
   `docker/15-app-links.sh` lists the paths.
@@ -405,9 +406,9 @@ before you unzip it.
    ```
 
    For iOS, run the `prebuild` and `build` steps of
-   `.github/workflows/e2e-ios-nightly.yml`, then `xcrun simctl install`. Answer
-   Open on the first "Open in …?" prompt, or write the scheme approval as the
-   workflow's `simulator` step does.
+   `.github/workflows/e2e-ios-nightly.yml`, then write the scheme approval as
+   the workflow's `simulator` step does, then `xcrun simctl install`. Without
+   the approval, iOS asks "Open in …?" on each link.
 
 3. **Run the flows** from this repository:
 

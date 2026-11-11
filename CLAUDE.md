@@ -336,7 +336,8 @@ The files are listed in [ARCHITECTURE.md](ARCHITECTURE.md#workspaces-and-the-she
 
 - **TanStack Query learns focus and connectivity from the device.**
   `installQueryManagers()` in `src/lib/query-managers.ts` ties
-  `focusManager` to `AppState` and `onlineManager` to NetInfo. Without it,
+  `focusManager` to `AppState` and `onlineManager` to NetInfo, whose internet
+  check probes express's `/health` (next rule). Without it,
   React Native never reports focus, so queries never refetch when the app
   returns, and a query keeps retrying offline. An unknown NetInfo state
   counts as online, so a slow first report does not pause every query.
@@ -1169,8 +1170,8 @@ e2e workflows. They are plan 3e2's. The files are listed in
   minimum. The runner waits until client settings serve the expected minimum,
   since a restart that never happened would also answer.
 - **Each flow signs in a fresh address**, `e2e+<flow>-<run id>@example.test`.
-  Express mails one address at most one sign-in link per cooldown, and a
-  reused address could read an older run's link. The runner snapshots the
+  Express mails one address at most one sign-in link per cooldown, 1 minute
+  by default. The runner snapshots the
   address's Mailpit message IDs before each step that sends a mail and reads
   only a newer one, never by clock.
 - **The e2e express runs with `SIGN_IN_LINK_MAIL_COOLDOWN=1s`.**
