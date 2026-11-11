@@ -25,7 +25,13 @@ interface FakeMessage {
 const servers: http.Server[] = []
 
 afterEach(async () => {
-  await Promise.all(servers.splice(0).map((server) => new Promise((done) => server.close(done))))
+  await Promise.all(
+    servers.splice(0).map((server) => {
+      // A server that never answers holds its sockets open until they are cut.
+      server.closeAllConnections()
+      return new Promise((done) => server.close(done))
+    })
+  )
 })
 
 /**
@@ -87,6 +93,151 @@ async function latest(...args: [string, string, string, number?, string[]?]) {
   const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '-e', code])
   return JSON.parse(stdout) as { link?: string; error?: string }
 }
+
+/**
+ * Start a local server with a handler of the test's own.
+ * @param handler - Answers, or holds, each request.
+ * @returns Its origin.
+ */
+async function serveRaw(handler: http.RequestListener) {
+  const server = http.createServer(handler)
+  servers.push(server)
+  await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready))
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+}
+
+/**
+ * Start a fake Mailpit whose search honours `start` and `limit`, as Mailpit
+ * v1.31.1 does, over a fixed list of messages, and whose message endpoint
+ * serves each one.
+ * @param messages - Every message, newest first.
+ * @returns Its origin and each search's `start` and `limit`.
+ */
+async function pagedMailpit(messages: FakeMessage[]) {
+  const pages: [string | null, string | null][] = []
+  const origin = await serveRaw((request, response) => {
+    const url = new URL(request.url ?? '/', 'http://fake')
+    response.setHeader('content-type', 'application/json')
+    if (url.pathname.startsWith('/api/v1/message/')) {
+      const message = messages.find((m) => m.ID === url.pathname.split('/').pop())
+      response.end(JSON.stringify({ HTML: message?.HTML ?? '', Text: '' }))
+      return
+    }
+    const start = Number(url.searchParams.get('start') ?? 0)
+    const limit = Number(url.searchParams.get('limit') ?? 50)
+    pages.push([url.searchParams.get('start'), url.searchParams.get('limit')])
+    response.end(
+      JSON.stringify({
+        messages_count: messages.length,
+        start,
+        messages: messages.slice(start, start + limit),
+      })
+    )
+  })
+  return { origin, pages }
+}
+
+/**
+ * Runs `messageIds` in Node with the request timeout replaced, and records
+ * the timeouts the module asked for. The timeout fires after 50 ms, or, with
+ * `afterHeaders`, as soon as each response's headers arrive, so a stalled
+ * body is what times out.
+ * @param origin - Mailpit's origin.
+ * @param afterHeaders - Fire the timeout once the headers arrive.
+ * @returns The ids, or the error message, and the timeouts asked for.
+ */
+async function idsWithShortTimeout(origin: string, afterHeaders = false) {
+  const code = `
+    const asked = []
+    let fire = () => {}
+    AbortSignal.timeout = (ms) => {
+      asked.push(ms)
+      const controller = new AbortController()
+      fire = () => controller.abort(new DOMException('timed out', 'TimeoutError'))
+      if (!${afterHeaders}) setTimeout(fire, 50)
+      return controller.signal
+    }
+    const realFetch = globalThis.fetch
+    globalThis.fetch = async (...args) => {
+      const response = await realFetch(...args)
+      if (${afterHeaders}) fire()
+      return response
+    }
+    const { messageIds } = await import(${JSON.stringify(MODULE)})
+    try {
+      console.log(JSON.stringify({ asked, ids: await messageIds(${JSON.stringify(origin)}, ${JSON.stringify(TO)}) }))
+    } catch (error) {
+      console.log(JSON.stringify({ asked, error: error.message }))
+    }
+  `
+  const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '-e', code])
+  return JSON.parse(stdout) as { asked: number[]; ids?: string[]; error?: string }
+}
+
+describe('Mailpit requests', () => {
+  it('gives up on a request after 10 s, naming the URL', async () => {
+    const origin = await serveRaw(() => {})
+    const result = await idsWithShortTimeout(origin)
+    expect(result.asked).toEqual([10_000])
+    expect(result.error).toMatch(
+      new RegExp(`^Mailpit request to ${origin}/api/v1/search\\?query=\\S+ failed: `)
+    )
+  })
+
+  it('gives up on a body that stalls after the headers, naming the URL', async () => {
+    const origin = await serveRaw((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.write('{"messages":')
+    })
+    const result = await idsWithShortTimeout(origin, true)
+    expect(result.asked).toEqual([10_000])
+    expect(result.error).toMatch(
+      new RegExp(`^Mailpit request to ${origin}/api/v1/search\\?query=\\S+ failed: timed out$`)
+    )
+  })
+
+  it('reads every page of a search, 50 at a time', async () => {
+    const messages = Array.from({ length: 120 }, (_, i) =>
+      mail(`m${i}`, 0, `https://app.example.com/auth/link?token=t${i}`)
+    )
+    const { origin, pages } = await pagedMailpit(messages)
+    const ids = await execFileAsync(process.execPath, [MODULE, 'message-ids', origin, TO])
+    expect(JSON.parse(ids.stdout)).toEqual(messages.map((m) => m.ID))
+    expect(pages).toEqual([
+      ['0', '50'],
+      ['50', '50'],
+      ['100', '50'],
+    ])
+  })
+
+  it('finds a link on a later page when the earlier pages are excluded', async () => {
+    const messages = Array.from({ length: 60 }, (_, i) =>
+      mail(`m${i}`, 0, `https://app.example.com/invitations/accept?token=t${i}`)
+    )
+    messages[55] = mail('m55', 0, 'https://app.example.com/auth/link?token=late')
+    const { origin } = await pagedMailpit(messages)
+    const result = await latest(origin, TO, '/auth/link', 5_000)
+    expect(result.link).toBe('https://app.example.com/auth/link?token=late')
+  })
+
+  it('fails instead of truncating when a search runs past 20 pages', async () => {
+    const page = Array.from({ length: 50 }, (_, i) => mail(`m${i}`, 0, 'https://app.example.com/x'))
+    const origin = await serveRaw((_request, response) => {
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({ messages_count: 5_000, messages: page }))
+    })
+    const failure = await execFileAsync(process.execPath, [
+      MODULE,
+      'message-ids',
+      origin,
+      TO,
+    ]).catch((error: { code: number; stderr: string }) => error)
+    expect(failure).toMatchObject({ code: 1 })
+    expect((failure as { stderr: string }).stderr.trim()).toBe(
+      `mailpit: Mailpit holds more than 1000 messages to ${TO}; use a fresh address`
+    )
+  })
+})
 
 describe('latestLink', () => {
   it('returns the link of a message that arrives on the third poll', async () => {
@@ -196,6 +347,22 @@ describe('mailpit command', () => {
       'abc',
     ]).catch((error: { code: number; stderr: string }) => error)
     expect(failure).toMatchObject({ code: 1 })
+  })
+
+  it('exits 1 with a usage message on an empty timeout', async () => {
+    const { origin } = await fakeMailpit([[]])
+    const failure = await execFileAsync(process.execPath, [
+      MODULE,
+      'latest-link',
+      origin,
+      TO,
+      '/auth/link',
+      '',
+    ]).catch((error: { code: number; stderr: string }) => error)
+    expect(failure).toMatchObject({ code: 1 })
+    expect((failure as { stderr: string }).stderr.trim()).toBe(
+      'mailpit: the timeout argument is empty; pass a positive number of milliseconds, or leave it out for 60000'
+    )
   })
 
   it('prints the app link for latest-app-link', async () => {

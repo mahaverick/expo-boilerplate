@@ -22,7 +22,13 @@ interface Seen {
 const servers: http.Server[] = []
 
 afterEach(async () => {
-  await Promise.all(servers.splice(0).map((server) => new Promise((done) => server.close(done))))
+  await Promise.all(
+    servers.splice(0).map((server) => {
+      // A server that never answers holds its sockets open until they are cut.
+      server.closeAllConnections()
+      return new Promise((done) => server.close(done))
+    })
+  )
 })
 
 /**
@@ -152,6 +158,35 @@ describe('api commands', () => {
     const run = await cli('create-workspace', api, 'access-1', 'E2E Team 7')
     expect(run.code).toBe(1)
     expect(run.stderr).toMatch(/workspace creation failed: 400 .*NATIVE_CLIENT_REFUSED/)
+  })
+
+  it('gives up on a request to express after 10 s, naming the URL', async () => {
+    const api = await serve(() => {})
+    const mailpit = await serve((_request, _body, response) => {
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({ messages: [] }))
+    })
+    // The request's own timeout is cut to 50 ms; the test records what the module asked for.
+    const code = `
+      import http from 'node:http'
+      const asked = []
+      const real = http.ClientRequest.prototype.setTimeout
+      http.ClientRequest.prototype.setTimeout = function (ms, callback) {
+        asked.push(ms)
+        return real.call(this, 50, callback)
+      }
+      const { signIn } = await import(${JSON.stringify(MODULE)})
+      try {
+        await signIn(${JSON.stringify(api)}, ${JSON.stringify(mailpit)}, 'e2e+t-1@example.test')
+      } catch (error) {
+        console.log(JSON.stringify({ asked, error: error.message }))
+      }
+    `
+    const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '-e', code])
+    expect(JSON.parse(stdout)).toEqual({
+      asked: [10_000],
+      error: `request to ${api}/api/v1/auth/link/request timed out after 10 s`,
+    })
   })
 
   it('exits 1 with usage on an unknown command', async () => {

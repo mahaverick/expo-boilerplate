@@ -4,8 +4,22 @@ import { appLink } from './links.mjs'
 /** How long to wait between two looks at Mailpit. */
 const POLL_INTERVAL_MS = 1000
 
-/** How long one request to Mailpit may take. */
+/** How long one request to Mailpit may take, its body included. */
 const REQUEST_TIMEOUT_MS = 10_000
+
+/** How many messages one search page asks for. */
+const PAGE_SIZE = 50
+
+/**
+ * How many search pages `messagesTo` reads before it fails: 1,000 messages.
+ * Each flow mails a fresh address one to three times, so a search that runs
+ * past this is a reused address, and the caller should fail rather than read
+ * a truncated list.
+ */
+const MAX_PAGES = 20
+
+/** How long `latestLink` waits by default. */
+const DEFAULT_TIMEOUT_MS = 60_000
 
 /**
  * Wait for a time.
@@ -17,35 +31,56 @@ function sleep(ms) {
 }
 
 /**
- * Read JSON from a Mailpit endpoint.
+ * Read JSON from a Mailpit endpoint. The timeout covers the body too, so a
+ * body that stalls fails with the URL.
  * @param url - The endpoint.
  * @returns The parsed body.
- * @throws When Mailpit answers with a status other than 200.
+ * @throws When Mailpit answers with a status other than 200, or does not answer in time.
  */
 async function getJson(url) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }).catch(
-    (error) => {
-      throw new Error(`Mailpit request to ${url} failed: ${error.message}`, { cause: error })
-    }
-  )
+  /**
+   * Name the URL in a failed request.
+   * @param error - The failure.
+   * @throws Always.
+   */
+  const fail = (error) => {
+    throw new Error(`Mailpit request to ${url} failed: ${error.message}`, { cause: error })
+  }
+  const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }).catch(fail)
   if (response.status !== 200) throw new Error(`Mailpit answered ${response.status} for ${url}`)
-  return response.json()
+  return response.json().catch(fail)
 }
 
 /**
- * The messages sent to exactly `to`, newest first. The address holds `+` and
- * `@`, so the query is URL-encoded; Mailpit's search matches by substring, so
- * the recipients are checked again here.
+ * The messages sent to exactly `to`, newest first, from every search page.
+ * The address holds `+` and `@`, so the query is URL-encoded; Mailpit's search
+ * matches by substring, so the recipients are checked again here. A page
+ * shorter than `PAGE_SIZE`, or one that reaches `messages_count`, is the last.
  * @param origin - Mailpit's origin, e.g. `http://localhost:8025`.
  * @param to - The recipient address.
  * @returns Mailpit's summaries of those messages.
+ * @throws When the search runs past `MAX_PAGES` pages.
  */
 async function messagesTo(origin, to) {
   const query = encodeURIComponent(`to:"${to}"`)
-  const found = await getJson(`${origin}/api/v1/search?query=${query}`)
-  const wanted = to.toLowerCase()
-  return (found.messages ?? []).filter((message) =>
-    (message.To ?? []).some((recipient) => recipient.Address?.toLowerCase() === wanted)
+  const found = []
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const start = page * PAGE_SIZE
+    const result = await getJson(
+      `${origin}/api/v1/search?query=${query}&start=${start}&limit=${PAGE_SIZE}`
+    )
+    const messages = result.messages ?? []
+    found.push(...messages)
+    const total = result.messages_count
+    if (messages.length < PAGE_SIZE || (typeof total === 'number' && found.length >= total)) {
+      const wanted = to.toLowerCase()
+      return found.filter((message) =>
+        (message.To ?? []).some((recipient) => recipient.Address?.toLowerCase() === wanted)
+      )
+    }
+  }
+  throw new Error(
+    `Mailpit holds more than ${MAX_PAGES * PAGE_SIZE} messages to ${to}; use a fresh address`
   )
 }
 
@@ -89,7 +124,13 @@ export async function messageIds(origin, to) {
  * @returns The link, query included.
  * @throws When no such mail arrives in time, when `timeoutMs` is not a positive number, and at once when Mailpit fails.
  */
-export async function latestLink(origin, to, pathPrefix, timeoutMs = 60_000, excludeIds = []) {
+export async function latestLink(
+  origin,
+  to,
+  pathPrefix,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  excludeIds = []
+) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error(`timeoutMs must be a positive number, got ${timeoutMs}`)
   }
@@ -124,8 +165,10 @@ function hasPathPrefix(href, pathPrefix) {
 /**
  * Run `message-ids <origin> <to>` (prints the ids as a JSON array) or
  * `latest-link|latest-app-link <origin> <to> <pathPrefix> [timeoutMs] [--exclude <json array>]`
- * (prints the emailed web link, or the app link it maps to). Any failure prints
- * a message to stderr and sets exit code 1.
+ * (prints the emailed web link, or the app link it maps to). An empty
+ * `timeoutMs` is a usage error, not the default, since it is most likely an
+ * unset shell variable. Any failure prints a message to stderr and sets exit
+ * code 1.
  */
 async function main() {
   const argv = process.argv.slice(2)
@@ -137,6 +180,11 @@ async function main() {
     if (command === 'message-ids' && to) {
       console.log(JSON.stringify(await messageIds(origin, to)))
     } else if (['latest-link', 'latest-app-link'].includes(command) && pathPrefix) {
+      if (timeoutMs !== undefined && timeoutMs.trim() === '') {
+        throw new Error(
+          `the timeout argument is empty; pass a positive number of milliseconds, or leave it out for ${DEFAULT_TIMEOUT_MS}`
+        )
+      }
       const timeout = timeoutMs === undefined ? undefined : Number(timeoutMs)
       const link = await latestLink(origin, to, pathPrefix, timeout, exclude)
       console.log(command === 'latest-app-link' ? appLink(link) : link)
