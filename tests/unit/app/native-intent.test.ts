@@ -61,6 +61,36 @@ describe('redirectSystemPath', () => {
     )
   })
 
+  /** Odd-slash and percent-encoded token paths, and what the e2e build opens for each. */
+  const ODD_TOKEN_PATHS: [string, string][] = [
+    ['expo-boilerplate:///auth/link?token=x', '/auth/link?token=x'],
+    ['expo-boilerplate:/auth/link?token=x', '/auth/link?token=x'],
+    ['expo-boilerplate://auth//link?token=x', '/auth//link?token=x'],
+    ['expo-boilerplate://auth/link/?token=x', '/auth/link/?token=x'],
+    ['expo-boilerplate://auth%2Flink?token=x', '/auth%2Flink?token=x'],
+    ['expo-boilerplate://%2Fauth%2Flink?token=x', '/%2Fauth%2Flink?token=x'],
+    ['expo-boilerplate://auth/%6Cink?token=x', '/auth/%6Cink?token=x'],
+    ['expo-boilerplate://AUTH/Link?token=x#frag', '/AUTH/Link?token=x'],
+  ]
+
+  it.each(ODD_TOKEN_PATHS)(
+    'passes an odd token path through unchanged in the e2e build: %s',
+    (path, opened) => {
+      mockVariant('e2e')
+      expect(redirectSystemPath({ path, initial: true })).toBe(opened)
+      expect(redirectSystemPath({ path, initial: false })).toBe(opened)
+    }
+  )
+
+  it.each(
+    ['development', 'preview', 'production', undefined].flatMap((variant) =>
+      ODD_TOKEN_PATHS.map(([path]) => [variant, path] as const)
+    )
+  )('drops an odd token path for %s: %s', (variant, path) => {
+    mockVariant(variant)
+    expect(redirectSystemPath({ path, initial: true })).toBe('/')
+  })
+
   it.each(['development', 'preview', 'production', undefined])(
     'strips the token for %s',
     (variant) => {
