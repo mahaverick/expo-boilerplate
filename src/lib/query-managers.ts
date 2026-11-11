@@ -20,9 +20,9 @@ import { apiOriginUrl, hasApiOrigin } from '@/http/client'
  * trusting the system's own validation. `/health` sits outside the API prefix,
  * has no rate limit and passes in every maintenance mode, so the probe spends
  * no budget a real read needs. Any HTTP answer counts as reachable; only a
- * failed request or a timeout counts as unreachable; a proxy's error answer is
- * not. The request names the native client and asks past the HTTP cache, as
- * every API request does. A build with no API origin keeps NetInfo's defaults,
+ * failed request or a timeout counts as unreachable, and a proxy's error
+ * answer counts as reachable. The request names the native client and asks
+ * past the HTTP cache, as every API request does. A build with no API origin keeps NetInfo's defaults,
  * since a relative probe URL would read offline for good.
  */
 function configureReachability(): void {
