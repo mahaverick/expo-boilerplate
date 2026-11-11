@@ -107,6 +107,23 @@ jobs:
       - name: Start Postgres, Redis and Mailpit
         working-directory: express
         run: docker compose up -d --wait postgres redis mailpit
+      # The runner cannot resolve its apt mirrors, and these images are on the machine already.
+      # The maintenance helper runs psql and redis-cli from the stack's own
+      # images, on the host network, so the URLs in express's .env work as
+      # they are; -i lets psql read the SQL from stdin.
+      - name: Point the maintenance helper at the stack's psql and redis-cli
+        working-directory: express
+        run: |
+          pg=$(docker inspect -f '{{.Image}}' "$(docker compose ps -q postgres)")
+          redis=$(docker inspect -f '{{.Image}}' "$(docker compose ps -q redis)")
+          if [ -z "$pg" ] || [ -z "$redis" ]; then
+            echo "::error::could not read the postgres and redis image IDs (postgres '$pg', redis '$redis')"
+            exit 1
+          fi
+          {
+            echo "E2E_PSQL=docker run --rm -i --network host $pg psql"
+            echo "E2E_REDIS_CLI=docker run --rm --network host $redis redis-cli"
+          } >> "$GITHUB_ENV"
       # The same command and pid file as scripts/e2e-api-restart.sh, which the
       # forced-update flow runs. /health/ready answers once Postgres and Redis
       # do, not only the process.
@@ -123,12 +140,6 @@ jobs:
           done
           cat api.log
           exit 1
-      # The maintenance helper runs psql and redis-cli on the host, against
-      # the same URLs as express's .env.
-      - name: Install psql and redis-cli
-        run: |
-          sudo apt-get -o Acquire::Retries=5 update -q
-          sudo apt-get -o Acquire::Retries=5 install -y -q postgresql-client redis-tools
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
