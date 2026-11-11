@@ -28,6 +28,11 @@ on:
       - e2e/**
       - scripts/e2e-*
       - scripts/maestro.sha256
+      # The app under test, so an app change runs the flows too.
+      - src/**
+      - app.config.ts
+      - package.json
+      - pnpm-lock.yaml
 
 # One run at a time; a run in progress is never cancelled.
 concurrency:
