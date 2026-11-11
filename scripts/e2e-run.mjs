@@ -22,9 +22,9 @@ const OUTPUT_DIR = process.env.E2E_OUTPUT_DIR
   : path.join(ROOT, 'maestro-output')
 
 /**
- * The exit code of a run whose first failure was a dropped adb connection or a
- * Maestro driver that did not start. The e2e workflows rerun the flows once on
- * this code, and on no other.
+ * The exit code of a run whose first failure was a dropped adb connection, an
+ * iOS XCTest driver that stopped answering, or a Maestro driver that did not
+ * start. The e2e workflows rerun the flows once on this code, and on no other.
  */
 export const TRANSPORT_EXIT_CODE = 75
 
@@ -36,14 +36,24 @@ const TRANSPORT_NOTE = 'transport-failure.txt'
 
 /**
  * The messages that mark a failed Maestro run as a transport failure, with
- * the reason the runner reports for each.
+ * the reason the runner reports for each. The iOS names are Maestro 2.11.0's
+ * classes: `IOSDriverTimeoutException` (maestro-ios-driver's
+ * `LocalXCTestInstaller`, when the XCTest runner does not come up),
+ * `IOSDeviceDriverSetupException` and `DeviceUnreachableException`
+ * (maestro-client, which `IOSDriver` throws as "Device unreachable while
+ * processing …"). A UI query that times out on a busy app is the app's, not
+ * the transport's, and is not listed.
  */
 const TRANSPORT_FAILURES = [
   { reason: 'the adb connection dropped', pattern: /device offline|DeviceServerDiedException/ },
   {
     reason: "Maestro's driver did not start",
     pattern:
-      /MaestroDriverStartupException|AndroidDriverTimeoutException|AndroidInstrumentationSetupFailure|driver did not start up in time/,
+      /MaestroDriverStartupException|AndroidDriverTimeoutException|AndroidInstrumentationSetupFailure|driver did not start up in time|IOSDriverTimeoutException|IOSDeviceDriverSetupException/,
+  },
+  {
+    reason: "the simulator's XCTest driver stopped answering",
+    pattern: /DeviceUnreachableException/,
   },
 ]
 
@@ -377,7 +387,8 @@ function maestroLogs(dir) {
  * @returns Resolves when Maestro exits 0.
  * @throws When Maestro exits non-zero or cannot start. The error carries
  *   `transport`, the reason, when this run's own output or `maestro.log`
- *   shows a dropped adb connection or a driver that did not start.
+ *   shows a dropped adb connection, an iOS driver that stopped answering, or a
+ *   driver that did not start.
  */
 async function runMaestro(flow, file, vars) {
   const output = path.join(OUTPUT_DIR, flow, path.basename(file, '.yaml'))
@@ -486,8 +497,8 @@ export async function runPlan(plan) {
  * Run `node scripts/e2e-run.mjs <android|ios>` with the app installed on one
  * booted device and Maestro on `PATH`. It exits 1 on a bad argument, a
  * missing variable or the first failing flow, and `TRANSPORT_EXIT_CODE` (75)
- * when that flow failed only on a dropped adb connection or a Maestro driver
- * that did not start.
+ * when that flow failed only on a dropped adb connection, an iOS XCTest driver
+ * that stopped answering, or a Maestro driver that did not start.
  *
  * Environment:
  * - `E2E_API_URL`: express's origin, for the helpers.

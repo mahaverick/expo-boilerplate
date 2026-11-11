@@ -489,6 +489,47 @@ describe('transport failures', () => {
     expect(run.note).toBe("only: Maestro's driver did not start\n")
   })
 
+  // Class names from Maestro 2.11.0's jars: maestro-ios-driver (LocalXCTestInstaller) and maestro-client.
+  it.each([
+    [
+      'xcuitest.installer.LocalXCTestInstaller$IOSDriverTimeoutException: iOS driver not ready in time',
+      "Maestro's driver did not start",
+    ],
+    [
+      'maestro.MaestroException$IOSDeviceDriverSetupException: Unable to launch app',
+      "Maestro's driver did not start",
+    ],
+    [
+      'maestro.DeviceUnreachableException: Device unreachable while processing tap',
+      "the simulator's XCTest driver stopped answering",
+    ],
+  ])("exits 75 when the failed run's maestro.log shows %s", async (line, reason) => {
+    const maestro = scriptedMaestro(
+      `fs.mkdirSync(path.join(outputDir, 'run', 'logs'), { recursive: true })
+       fs.writeFileSync(path.join(outputDir, 'run', 'logs', 'maestro.log'), ${JSON.stringify(line)})`,
+      1
+    )
+    const run = await runWith(
+      `const plan = [{ name: 'only', vars: {}, steps: [{ file: 'cold-start.yaml' }] }]`,
+      maestro
+    )
+    expect(run.code).toBe(75)
+    expect(run.note).toBe(`only: ${reason}\n`)
+  })
+
+  it('exits 1 when an iOS UI query times out on a busy app', async () => {
+    const maestro = scriptedMaestro(
+      `process.stderr.write('Timed out while evaluating UI query. Unable to perform work on main run loop, process main thread busy\\n')`,
+      1
+    )
+    const run = await runWith(
+      `const plan = [{ name: 'only', vars: {}, steps: [{ file: 'cold-start.yaml' }] }]`,
+      maestro
+    )
+    expect(run.code).toBe(1)
+    expect(run.note).toBeNull()
+  })
+
   it('exits 1 when only the device logcat mentions a dropped connection', async () => {
     const maestro = scriptedMaestro(
       `fs.mkdirSync(path.join(outputDir, 'run', 'logs'), { recursive: true })
