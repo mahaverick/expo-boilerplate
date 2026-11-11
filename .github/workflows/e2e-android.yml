@@ -219,7 +219,7 @@ jobs:
       # - The first line runs scripts/e2e-android-ready.sh: bounded waits for
       #   the boot, the package manager, a default network and the image's
       #   SDK setup app, with the system's error dialogs off, then 30 seconds
-      #   to settle.
+      #   to settle and a last check for a default network.
       # - The second installs the APK, starts Maestro's driver once
       #   (`maestro hierarchy`), then runs the flows. The runner exits 75 only
       #   when the failed flow's own Maestro run shows a dropped adb

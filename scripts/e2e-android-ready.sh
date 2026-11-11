@@ -17,7 +17,12 @@
 # 4. Waits up to 60 seconds for the SDK setup process to be gone or cached,
 #    since an app still at work can stop responding over the app under test.
 #    Android keeps a finished app's process cached, so cached counts as done.
-# 5. Lets the device settle for 30 seconds, and prints how long it all took.
+#    The process counts as gone only when the process list has `Proc #` lines
+#    and none names it, so a list in another format never reads as done. It
+#    prints what it saw: gone, cached, active or an unknown format.
+# 5. Lets the device settle for 30 seconds, then requires a default network
+#    within 30 seconds, since Wi-Fi can be connected to AndroidWifi before
+#    that network is the default. It prints how long it all took.
 set -euo pipefail
 
 # Runs adb with a 30-second limit.
@@ -70,11 +75,24 @@ network_ready() {
   state=$(connectivity) || return 1
   grep -qE 'Active default network: [0-9]+' <<< "$state" && grep -q 'VALIDATED' <<< "$state"
 }
+# Sets sdk_setup to what the last look saw.
+sdk_setup='not read'
 sdk_setup_settled() {
   local processes line
   processes=$(adb_ shell dumpsys activity processes 2>/dev/null) || return 1
+  if ! grep -q 'Proc #' <<< "$processes"; then
+    sdk_setup='unknown: the process list has no "Proc #" line'
+    return 1
+  fi
   line=$(grep -E 'Proc #.*com\.google\.android\.googlesdksetup' <<< "$processes" || true)
-  [ -z "$line" ] || grep -qE ' cch|CACHED' <<< "$line"
+  if [ -z "$line" ]; then
+    sdk_setup=gone
+  elif grep -qE ' cch|CACHED' <<< "$line"; then
+    sdk_setup=cached
+  else
+    sdk_setup=active
+    return 1
+  fi
 }
 
 wait_for 150 error 'the device did not finish booting within 5 minutes' booted
@@ -93,7 +111,10 @@ fi
 connectivity | grep -E 'Active default network' || true
 echo "network ready after ${SECONDS} s"
 
-wait_for 30 warning 'the SDK setup app is still active after 60 seconds' sdk_setup_settled || true
+wait_for 30 warning 'the SDK setup app is not gone or cached after 60 seconds' sdk_setup_settled || true
+echo "SDK setup app: ${sdk_setup}"
 
 sleep 30
+wait_for 15 error 'the device has no default network 30 seconds after the settle' default_network
+connectivity | grep -E 'Active default network' || true
 echo "device ready after ${SECONDS} s"
