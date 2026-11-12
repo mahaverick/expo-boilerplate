@@ -33,7 +33,7 @@
     "export": "expo export --platform all --output-dir dist",
     "bundle:size": "node scripts/check-bundle-size.mjs",
     "prepare": "vp config --hooks --no-agent",
-    "gate": "pnpm check && pnpm typecheck && pnpm lint:docs && pnpm sync:check && pnpm knip && pnpm expo:doctor && pnpm test:coverage && pnpm export && pnpm bundle:size",
+    "gate": "pnpm check && pnpm typecheck && pnpm lint:docs && pnpm sync:check && pnpm knip && EXPO_OFFLINE=1 pnpm expo:doctor && pnpm test:coverage && pnpm export && pnpm bundle:size",
     "push": "bash scripts/push.sh",
     "eas-build-post-install": "bash scripts/install-posthog-cli.sh && bash scripts/upload-native-sourcemaps.sh prepare",
     "eas-build-on-success": "bash scripts/upload-native-sourcemaps.sh"

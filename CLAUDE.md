@@ -90,8 +90,11 @@ SSH connection opens.
    react's copies. With no react checkout it warns and passes; under `CI=true`
    it fails. Point it at react with `REACT_BOILERPLATE_DIR=<path>`.
 5. `pnpm knip`: unused files, exports, types and dependencies.
-6. `pnpm expo:doctor`: `expo-doctor`'s 20 checks, among them the SDK's pinned
-   versions.
+6. `pnpm expo:doctor`, with `EXPO_OFFLINE=1`: `expo-doctor`'s 20 checks. The
+   version check then reads the installed `expo`'s `bundledNativeModules.json`,
+   so it still fails a companion package that does not match the installed
+   SDK, but a patch Expo publishes upstream cannot fail it. Run
+   `pnpm expo:doctor` alone for the online check.
 7. `pnpm test:coverage`: Jest with the coverage thresholds. `pnpm test` runs
    the same tests with no thresholds.
 8. `pnpm export`: a Hermes bundle for iOS and one for Android.
@@ -114,13 +117,19 @@ port, `tests/support/runner.ts`.
 **What CI runs** (`.github/workflows/ci.yml`):
 
 - `lint`: `pnpm check`, `pnpm lint:docs`, `pnpm knip`, `pnpm typecheck`,
-  `pnpm expo:doctor`, `pnpm export`, `pnpm bundle:size` and `pnpm audit
+  `pnpm expo:doctor` (offline, as in the gate), `pnpm export`, `pnpm bundle:size` and `pnpm audit
   --prod --audit-level moderate`.
 - `sync`, on pull requests only: `pnpm sync:check` and the STYLESEED test
   against react's `main`.
 - Four `unit` jobs, each one shard of `pnpm test:coverage`, then `test`, which
   merges the shards' coverage and enforces the thresholds. The thresholds
   appear in `jest.config.ts` and in `ci.yml`; change both together.
+
+`expo-sdk-drift.yml` runs `pnpm expo:doctor` online every day at 06:17 UTC
+and on dispatch, and turns red when Expo lists a newer patch for the SDK.
+Before it existed, Expo patches published on 11 and 12 November 2026 turned
+CI red with no change in the repository, and pnpm's 1-day minimum release
+age then blocked the fix for a day.
 
 `release.yml` and `preview-update.yml` run on each push to `main` and ship;
 [Builds, updates and releases](#builds-updates-and-releases) covers them.
@@ -202,8 +211,9 @@ checks and the gate passed on it.
   parser peer `typescript <6.1.0`, and `renovate.json` holds the range. Expo's
   own check (`npx expo install --check`) accepts it for SDK 58.
 - **Expo SDK, `react-native` and their companions move together**, with
-  `npx expo install --fix`, never one at a time. `pnpm expo:doctor` fails a
-  version that SDK 58 does not list.
+  `npx expo install --fix`, never one at a time. The gate's offline
+  `expo:doctor` fails a companion that the installed `expo` does not list, and
+  `expo-sdk-drift.yml` reports a newer patch that Expo lists online.
 - **The pnpm version lives only in `packageManager`**, and the lockfile records
   it. Change both in one commit.
 - **Renovate holds every Node pin below 27** (`.node-version`, CI). A Node
