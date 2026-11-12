@@ -1,0 +1,547 @@
+name: E2E iOS nightly
+
+# The Maestro flows (e2e/flows/) on an iOS simulator, against
+# express-boilerplate's main with Postgres, Redis and Mailpit from Homebrew,
+# every night and on demand. The job builds the e2e variant's Release app for
+# the simulator, boots one iPhone and runs `node scripts/e2e-run.mjs ios`. On
+# a failure it uploads Maestro's output, express's log, the xcodebuild log and
+# the app's simulator log as the `e2e-ios` artifact. A red run on main opens
+# an issue labelled e2e-nightly, or comments on the open one; a green run
+# closes it.
+on:
+  schedule:
+    - cron: '43 3 * * *'
+  workflow_dispatch:
+    inputs:
+      exercise_issue:
+        description: 'none runs the flows; fail or pass skips them and forces that outcome. The issue step acts on main only'
+        type: choice
+        options: [none, fail, pass]
+        default: none
+
+# One run at a time; a run in progress is never cancelled.
+concurrency:
+  group: e2e-ios-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-ios:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    outputs:
+      failed_steps: ${{ steps.report.outputs.failed_steps }}
+      express_sha: ${{ steps.express-sha.outputs.sha }}
+    env:
+      # A schedule run has no inputs, so the input is empty there.
+      EXERCISE: ${{ inputs.exercise_issue || 'none' }}
+      # Both are inlined into the JavaScript bundle when Xcode builds it, so
+      # they are set for the whole job. The simulator shares the host's
+      # loopback, where express listens on 4040. No PostHog key is set, so
+      # analytics and exception reports stay inert.
+      APP_VARIANT: e2e
+      EXPO_PUBLIC_API_URL: http://localhost:4040
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: '1'
+    defaults:
+      run:
+        working-directory: app
+        shell: bash
+    steps:
+      - id: toolchain
+        if: env.EXERCISE == 'none'
+        working-directory: ${{ github.workspace }}
+        run: |
+          uname -m
+          xcodebuild -version
+          xcrun simctl list runtimes
+      # This repo in app/ and express in express/, side by side, as react's
+      # nightly e2e workflow lays them out.
+      - id: app-checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.EXERCISE == 'none'
+        with:
+          path: app
+          persist-credentials: false
+      - id: express-checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.EXERCISE == 'none'
+        with:
+          repository: mahaverick/express-boilerplate
+          ref: main
+          path: express
+          persist-credentials: false
+      - id: express-sha
+        if: env.EXERCISE == 'none'
+        working-directory: express
+        run: |
+          sha=$(git rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "express-boilerplate main under test: $sha" >> "$GITHUB_STEP_SUMMARY"
+      # setup-vp installs Vite+, Node and the pnpm that packageManager names;
+      # both repos pin the same pnpm.
+      - id: vp-setup
+        uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+        if: env.EXERCISE == 'none'
+        with:
+          working-directory: app
+          node-version-file: .node-version
+          cache: true
+          run-install: false
+      - id: install
+        if: env.EXERCISE == 'none'
+        run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: '0'
+          VP_GIT_HOOKS: '0'
+      - id: express-install
+        if: env.EXERCISE == 'none'
+        working-directory: express
+        run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: '0'
+          VP_GIT_HOOKS: '0'
+      # The runner has no Docker, so the services come from Homebrew, on the
+      # host ports that express's docker-compose.yml publishes (5433, 6380,
+      # 1025 and 8025). postgresql@18 is keg-only, so its bin directory goes
+      # on PATH for this step and the later ones: the maintenance helper runs
+      # psql and redis-cli on the host. The boilerplate role is a superuser,
+      # as compose's POSTGRES_USER is, because a migration creates pg_trgm.
+      # Each wait is bounded.
+      - id: services
+        if: env.EXERCISE == 'none'
+        working-directory: ${{ runner.temp }}
+        run: |
+          brew install postgresql@18 redis mailpit
+          pgbin="$(brew --prefix postgresql@18)/bin"
+          echo "$pgbin" >> "$GITHUB_PATH"
+          export PATH="$pgbin:$PATH"
+          initdb -D pgdata --auth=trust --encoding=UTF8 > initdb.log
+          pg_ctl -D pgdata -o '-p 5433 -k /tmp' -l postgres.log -w -t 60 start
+          psql -h localhost -p 5433 -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE boilerplate LOGIN SUPERUSER PASSWORD 'boilerplate'" \
+            -c 'CREATE DATABASE boilerplate OWNER boilerplate'
+          redis-server --port 6380 --daemonize yes --logfile "$RUNNER_TEMP/redis.log"
+          nohup mailpit --smtp-disable-rdns --smtp 127.0.0.1:1025 --listen 127.0.0.1:8025 > mailpit.log 2>&1 < /dev/null &
+          echo $! > mailpit.pid
+          for _ in $(seq 1 30); do
+            if pg_isready -h localhost -p 5433 -q && [ "$(redis-cli -p 6380 ping)" = PONG ] \
+              && curl -sf -o /dev/null http://127.0.0.1:8025/readyz; then
+              psql --version
+              redis-cli --version
+              exit 0
+            fi
+            sleep 1
+          done
+          cat postgres.log mailpit.log "$RUNNER_TEMP/redis.log"
+          exit 1
+      # Written here, never from a secret: every value is local and throwaway.
+      # RATE_LIMIT_SCALE gives headroom to the per-IP budgets that every
+      # request from this one runner shares. WEB_URL only has to be https,
+      # because the runner turns each mailed link into the app's scheme. The
+      # 1-second cooldown lets switch-workspace sign one address in twice.
+      - id: env
+        if: env.EXERCISE == 'none'
+        working-directory: express
+        run: |
+          jwt=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")
+          session=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")
+          cat > .env <<EOF
+          APP_ENV=local
+          NODE_ENV=development
+          APP_PORT=4040
+          APP_URL=http://localhost:4040
+          WEB_URL=https://e2e.example.test
+          DATABASE_URL=postgres://boilerplate:boilerplate@localhost:5433/boilerplate
+          REDIS_URL=redis://localhost:6380
+          SMTP_HOST=127.0.0.1
+          SMTP_PORT=1025
+          JWT_ACCESS_SECRET=$jwt
+          SESSION_SECRET=$session
+          WORKER_ENABLED=true
+          RATE_LIMIT_SCALE=10
+          SIGN_IN_LINK_MAIL_COOLDOWN=1s
+          EOF
+      # The same command and pid file as scripts/e2e-api-restart.sh, which the
+      # forced-update flow runs. /health/ready answers once Postgres and Redis
+      # do, not only the process.
+      - id: api
+        if: env.EXERCISE == 'none'
+        working-directory: express
+        run: |
+          pnpm run build
+          node dist/database/migrate.js
+          nohup node dist/index.js > api.log 2>&1 < /dev/null &
+          echo $! > api.pid
+          for _ in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:4040/health/ready && exit 0
+            sleep 1
+          done
+          cat api.log
+          exit 1
+      # Maestro runs on Java 17 or later.
+      - id: java-setup
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        if: env.EXERCISE == 'none'
+        with:
+          distribution: temurin
+          java-version: '17'
+      # Some pods download from GitHub release assets, which can answer 504,
+      # so `pod install` is tried up to 5 times when its output shows a
+      # network error; any other failure stops the step at once.
+      - id: prebuild
+        if: env.EXERCISE == 'none'
+        run: |
+          pnpm exec expo prebuild --platform ios --no-install
+          cd ios
+          log="$RUNNER_TEMP/pod-install.log"
+          for attempt in 1 2 3 4 5; do
+            pod install 2>&1 | tee "$log" && exit 0
+            if ! grep -qE 'response code 50[234]|50[234] |Failed to download|curl: \([0-9]+\)|timed out|Connection reset|Could not resolve host' "$log"; then
+              echo "::error::pod install failed without a network error, so it is not retried"
+              exit 1
+            fi
+            echo "::warning::attempt $attempt of pod install failed on a network error"
+            sleep $((attempt * 15))
+          done
+          exit 1
+      # The workspace, and its one app scheme, take the name that prebuild
+      # derives from the variant's app name. Xcode signs the simulator build
+      # to run locally, with no certificate or team. An unsigned app gets no
+      # answer from the simulator's Keychain, where expo-secure-store keeps
+      # the refresh token, so the step checks the signature. Only the runner's
+      # own architecture is built.
+      # The whole log goes to xcodebuild.log, and its tail shows on a failure.
+      # The bundle ID and the local-networking exception in the built app are
+      # checked before the app is installed.
+      - id: build
+        if: env.EXERCISE == 'none'
+        timeout-minutes: 25
+        run: |
+          workspace=$(ls -d ios/*.xcworkspace)
+          scheme=$(basename "$workspace" .xcworkspace)
+          xcodebuild -list -workspace "$workspace"
+          log="$RUNNER_TEMP/xcodebuild.log"
+          if ! xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=NO \
+            build > "$log" 2>&1; then
+            grep -E '(error|fatal):' "$log" | head -n 50 || true
+            tail -n 150 "$log"
+            exit 1
+          fi
+          tail -n 5 "$log"
+          app=$(ls -d build/Build/Products/Release-iphonesimulator/*.app)
+          if ! codesign --verify "$app"; then
+            echo "::error::the simulator build is not signed, so the Keychain would refuse the app"
+            exit 1
+          fi
+          id=$(plutil -extract CFBundleIdentifier raw "$app/Info.plist")
+          localnet=$(plutil -extract NSAppTransportSecurity.NSAllowsLocalNetworking raw "$app/Info.plist")
+          echo "built $app: bundle ID $id, NSAllowsLocalNetworking $localnet"
+          if [ "$id" != com.mahaverick.expoboilerplate.e2e ] || [ "$localnet" != true ]; then
+            echo "::error::the e2e build must be com.mahaverick.expoboilerplate.e2e with NSAllowsLocalNetworking true"
+            exit 1
+          fi
+          {
+            echo "app=$PWD/$app"
+            echo "exe=$(plutil -extract CFBundleExecutable raw "$app/Info.plist")"
+          } >> "$GITHUB_OUTPUT"
+      # The zip is cached by version and pinned hash, so a run with a warm
+      # cache downloads nothing. On a miss, gh downloads the asset through the
+      # API, which serves it when the github.com release download path
+      # answers 504. The hash is checked on every run, cached or not, before
+      # the zip is unzipped.
+      - id: maestro-pin
+        if: env.EXERCISE == 'none'
+        run: |
+          echo "sha256=$(awk '$1 !~ /^#/ && $2 == "maestro.zip" { print $1 }' scripts/maestro.sha256)" >> "$GITHUB_OUTPUT"
+      - id: maestro-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: env.EXERCISE == 'none'
+        with:
+          path: ${{ runner.temp }}/maestro-zip
+          key: maestro-2.11.0-${{ steps.maestro-pin.outputs.sha256 }}
+      - id: maestro
+        if: env.EXERCISE == 'none'
+        working-directory: ${{ runner.temp }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WANT: ${{ steps.maestro-pin.outputs.sha256 }}
+        run: |
+          mkdir -p maestro-zip
+          if [ ! -f maestro-zip/maestro.zip ]; then
+            for attempt in 1 2 3 4 5; do
+              gh release download cli-2.11.0 -R mobile-dev-inc/Maestro -p maestro.zip -D maestro-zip --clobber && break
+              if [ "$attempt" = 5 ]; then exit 1; fi
+              sleep $((attempt * 10))
+            done
+          fi
+          got=$(shasum -a 256 maestro-zip/maestro.zip | cut -d' ' -f1)
+          if [ -z "$WANT" ] || [ "$got" != "$WANT" ]; then
+            echo "::error::maestro.zip hash $got does not match scripts/maestro.sha256 ($WANT)"
+            rm -f maestro-zip/maestro.zip
+            exit 1
+          fi
+          unzip -q maestro-zip/maestro.zip
+          echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
+      # One iPhone 17 Pro, the model every green run used, from the newest
+      # iOS runtime that has one, so Maestro sees exactly one booted device
+      # and the flows see the screen they were written against. Without one,
+      # the first iPhone in the newest runtime boots, with a warning. Maestro
+      # opens a link with `simctl openurl`, and iOS asks "Open in …?" before it
+      # hands an expo-boilerplate:// link to the app. The scheme's approval for
+      # the e2e app is written to the simulator's Launch Services preferences
+      # before and after the boot, so every link opens the app at once.
+      - id: simulator
+        if: env.EXERCISE == 'none'
+        timeout-minutes: 10
+        env:
+          APP: ${{ steps.build.outputs.app }}
+          APP_ID: com.mahaverick.expoboilerplate.e2e
+          DEVICE: iPhone 17 Pro
+        run: |
+          xcrun simctl list devices available -j > "$RUNNER_TEMP/devices.json"
+          pick=$(node -e '
+            const { devices } = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))
+            const runtimes = Object.keys(devices).filter((key) => key.includes("SimRuntime.iOS"))
+            const version = (key) => key.split("iOS-")[1].split("-").map(Number)
+            runtimes.sort((a, b) => {
+              const [x, y] = [version(a), version(b)]
+              return y[0] - x[0] || (y[1] ?? 0) - (x[1] ?? 0)
+            })
+            const find = (match) => {
+              for (const runtime of runtimes) {
+                const phone = devices[runtime].find(match)
+                if (phone) return [phone.udid, phone.name, runtime]
+              }
+              return null
+            }
+            const named = find((device) => device.name === process.argv[2])
+            const chosen = named ?? find((device) => device.name.startsWith("iPhone"))
+            if (chosen) console.log([...chosen, named ? "named" : "fallback"].join("\t"))
+          ' "$RUNNER_TEMP/devices.json" "$DEVICE")
+          if [ -z "$pick" ]; then
+            echo "::error::no available iPhone simulator"
+            exit 1
+          fi
+          IFS=$'\t' read -r udid name runtime how <<< "$pick"
+          if [ "$how" != named ]; then
+            echo "::warning::no $DEVICE simulator is available; booting $name on $runtime instead"
+          fi
+          echo "booting $name on $runtime"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          approval="com.apple.CoreSimulator.CoreSimulatorBridge-->expo-boilerplate"
+          prefs="$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Library/Preferences"
+          mkdir -p "$prefs"
+          defaults write "$prefs/com.apple.launchservices.schemeapproval" "$approval" -string "$APP_ID"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl spawn "$udid" defaults write com.apple.launchservices.schemeapproval "$approval" -string "$APP_ID"
+          xcrun simctl install "$udid" "$APP"
+      # Starts Maestro's driver once (`maestro hierarchy`), then runs the
+      # flows. The runner exits 75 only when the failed flow's own Maestro run
+      # shows a dropped device connection or a driver that did not start
+      # (scripts/e2e-run.mjs, `TRANSPORT_EXIT_CODE`). On 75 alone, the flows
+      # run once more with a fresh run id, the first output moves to
+      # maestro-output-1/, and a warning names the flow and the reason. Any
+      # other failure is final. The app's simulator log is captured after the
+      # flows. The step's timeout turns a hang into a failure, so the upload
+      # and the stop step still run. The seven flows measured 26 minutes on a
+      # slow runner on 8 November 2026, so the step allows 45.
+      # MAESTRO_DRIVER_STARTUP_TIMEOUT gives Maestro's driver 3 minutes to
+      # start.
+      - id: flows
+        if: env.EXERCISE == 'none'
+        timeout-minutes: 45
+        env:
+          E2E_API_URL: http://127.0.0.1:4040
+          E2E_MAILPIT_URL: http://127.0.0.1:8025
+          DATABASE_URL: postgres://boilerplate:boilerplate@localhost:5433/boilerplate
+          REDIS_URL: redis://localhost:6380
+          E2E_API_DIR: ${{ github.workspace }}/express
+          E2E_API_RESTART_CMD: ${{ github.workspace }}/app/scripts/e2e-api-restart.sh
+          E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '180000'
+          UDID: ${{ steps.simulator.outputs.udid }}
+          EXE: ${{ steps.build.outputs.exe }}
+        run: |
+          started=$(date '+%Y-%m-%d %H:%M:%S')
+          maestro hierarchy > /dev/null 2>&1 || true
+          status=0
+          node scripts/e2e-run.mjs ios || status=$?
+          if [ "$status" = 75 ]; then
+            echo "::warning::rerunning the flows once after a transport failure in $(cat maestro-output/transport-failure.txt)"
+            mv maestro-output maestro-output-1
+            status=0
+            E2E_RUN_ID="$E2E_RUN_ID-2" node scripts/e2e-run.mjs ios || status=$?
+          fi
+          xcrun simctl spawn "$UDID" log show --start "$started" --style compact \
+            --predicate "process == \"$EXE\"" > "$RUNNER_TEMP/simulator.log" 2>&1 || true
+          exit "$status"
+      # How often express's rate limit refused the app's maintenance status
+      # reads in this run. A loop between `full` and `off` after maintenance
+      # ends shows here as hundreds of refusals; a healthy run has none or
+      # few.
+      - id: status-refusals
+        if: always() && env.EXERCISE == 'none'
+        working-directory: ${{ github.workspace }}
+        run: |
+          count=0
+          if [ -f express/api.log ]; then count=$(grep -c 'limiter: "maintenance-status"' express/api.log || true); fi
+          echo "express refused $count maintenance status reads (limiter maintenance-status)" | tee -a "$GITHUB_STEP_SUMMARY"
+      # On a failure, a cancellation or a timeout, and after a transport
+      # rerun even when the rerun passed.
+      - id: upload-artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: env.EXERCISE == 'none' && (failure() || cancelled() || hashFiles('app/maestro-output-1/**') != '')
+        with:
+          name: e2e-ios
+          path: |
+            app/maestro-output/
+            app/maestro-output-1/
+            express/api.log
+            ${{ runner.temp }}/xcodebuild.log
+            ${{ runner.temp }}/pod-install.log
+            ${{ runner.temp }}/simulator.log
+            ${{ runner.temp }}/postgres.log
+            ${{ runner.temp }}/initdb.log
+            ${{ runner.temp }}/redis.log
+            ${{ runner.temp }}/mailpit.log
+          retention-days: 7
+          if-no-files-found: ignore
+      - id: teardown
+        if: always() && env.EXERCISE == 'none'
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -f express/api.pid ]; then kill "$(cat express/api.pid)" || true; fi
+          if [ -f "$RUNNER_TEMP/mailpit.pid" ]; then kill "$(cat "$RUNNER_TEMP/mailpit.pid")" || true; fi
+          redis-cli -p 6380 shutdown nosave || true
+          if [ -d "$RUNNER_TEMP/pgdata" ]; then pg_ctl -D "$RUNNER_TEMP/pgdata" -m fast stop || true; fi
+      - id: fail-run
+        name: Fail the run, as exercise_issue=fail asks
+        if: always() && env.EXERCISE == 'fail'
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo "::error::exercise_issue=fail skipped the flows and fails the run on purpose"
+          exit 1
+      # What the issue job needs from this one: the ids of the steps that
+      # failed. It comes last, so it sees every step above it.
+      - id: report
+        if: always()
+        env:
+          STEPS_JSON: ${{ toJSON(steps) }}
+        run: |
+          failed=$(node -e 'const s = JSON.parse(process.env.STEPS_JSON); console.log(Object.keys(s).filter((id) => s[id].outcome === "failure").join(","))')
+          echo "failed_steps=$failed" >> "$GITHUB_OUTPUT"
+
+  # Acts only on main's runs, scheduled or dispatched, so a branch run never
+  # opens, comments on or closes the issue. It holds the only token that can
+  # write issues, and runs no code from the repository or from express.
+  e2e-ios-issue:
+    needs: e2e-ios
+    if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      EXERCISE: ${{ inputs.exercise_issue || 'none' }}
+    steps:
+      - id: issue
+        name: Open, comment on or close the e2e-nightly issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          JOB_STATUS: ${{ needs.e2e-ios.result }}
+          FAILED_STEPS: ${{ needs.e2e-ios.outputs.failed_steps }}
+          EXPRESS_SHA: ${{ needs.e2e-ios.outputs.express_sha }}
+        with:
+          script: |
+            const label = 'e2e-nightly'
+            const { owner, repo } = context.repo
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`
+            const exercise = process.env.EXERCISE
+            const failed =
+              exercise === 'none' ? process.env.JOB_STATUS !== 'success' : exercise === 'fail'
+            const failedSteps = process.env.FAILED_STEPS.split(',')
+              .filter(Boolean)
+              .map((id) => `\`${id}\``)
+            const why =
+              exercise !== 'none'
+                ? `none: exercise_issue=${exercise} skipped the flows`
+                : failedSteps.length > 0
+                  ? failedSteps.join(', ')
+                  : 'no step with an id failed; see the run log'
+            const details = [
+              `- Run: ${runUrl}`,
+              `- Job status: ${process.env.JOB_STATUS}`,
+              `- Failed steps: ${why}`,
+              `- ${repo} commit: ${context.sha}`,
+              `- express-boilerplate main: ${process.env.EXPRESS_SHA || 'not checked out'}`,
+            ].join('\n')
+
+            try {
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name: label,
+                color: 'b60205',
+                description: 'Opened by the nightly iOS Maestro e2e workflow',
+              })
+            } catch (error) {
+              // 422: the label exists already.
+              if (error.status !== 422) throw error
+            }
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: 'open',
+              labels: label,
+              per_page: 10,
+            })
+            const issue = open.find((item) => !item.pull_request)
+
+            if (failed && issue) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issue.number,
+                body: `Still failing.\n\n${details}`,
+              })
+              core.notice(`Commented on #${issue.number}`)
+            } else if (failed) {
+              const { data: created } = await github.rest.issues.create({
+                owner,
+                repo,
+                title: 'Nightly iOS e2e failed',
+                labels: [label],
+                body: [
+                  'The nightly Maestro run on the iOS simulator failed.',
+                  '',
+                  details,
+                  '',
+                  "The run's `e2e-ios` artifact holds Maestro's output, express's api.log, the xcodebuild log and the app's simulator log. The next green run closes this issue.",
+                ].join('\n'),
+              })
+              core.notice(`Opened #${created.number}`)
+            } else if (issue) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issue.number,
+                body: `Green again: ${runUrl}`,
+              })
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'completed',
+              })
+              core.notice(`Closed #${issue.number}`)
+            } else {
+              core.info('Green, and no open e2e-nightly issue to close.')
+            }

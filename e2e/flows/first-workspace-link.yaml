@@ -1,0 +1,32 @@
+# Opens the sign-in link, creates ${WORKSPACE} on Welcome and lands on the Workspace tab.
+appId: ${APP_ID}
+---
+- openLink: ${LINK}
+- extendedWaitUntil:
+    visible: 'Name your workspace. You can invite your team next.'
+    timeout: 30000
+- tapOn:
+    id: 'workspace-name'
+- inputText: ${WORKSPACE}
+- tapOn:
+    id: 'workspace-slug'
+- inputText: ${SLUG}
+# On iOS a tap on plain text closes the keyboard (Screen's keyboardShouldPersistTaps is handled); Maestro's hideKeyboard can time out there.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: 'Name your workspace. You can invite your team next.'
+- scrollUntilVisible:
+    element:
+      text: 'Create workspace'
+- tapOn: 'Create workspace'
+- extendedWaitUntil:
+    notVisible: 'Name your workspace. You can invite your team next.'
+    timeout: 30000
+- runFlow: common/workspace-shown.yaml

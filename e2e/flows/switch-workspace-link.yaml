@@ -1,0 +1,23 @@
+# Opens the sign-in link, then switches the Workspace tab to A and then to B; A no longer shows.
+appId: ${APP_ID}
+---
+- openLink: ${LINK}
+- extendedWaitUntil:
+    visible: 'Welcome back, .+'
+    timeout: 30000
+- tapOn: 'Workspace'
+- runFlow:
+    file: common/workspace-shown.yaml
+    env:
+      WORKSPACE: '${WORKSPACE_A}|${WORKSPACE_B}'
+- runFlow:
+    file: common/choose-workspace.yaml
+    env:
+      ROW: ${ROW_A}
+      WORKSPACE: ${WORKSPACE_A}
+- runFlow:
+    file: common/choose-workspace.yaml
+    env:
+      ROW: ${ROW_B}
+      WORKSPACE: ${WORKSPACE_B}
+- assertNotVisible: '${WORKSPACE_A}'

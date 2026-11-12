@@ -1,0 +1,12 @@
+# Waits for the workspace ${WORKSPACE} (a pattern) to show on a workspace screen, which alone renders the switcher, and closes the Paid trial alert when it opens.
+appId: ${APP_ID}
+---
+- extendedWaitUntil:
+    visible: '(Got it|${WORKSPACE})'
+    timeout: 30000
+- tapOn:
+    text: 'Got it'
+    optional: true
+- assertVisible: '${WORKSPACE}'
+- assertVisible:
+    id: 'workspace-switcher'

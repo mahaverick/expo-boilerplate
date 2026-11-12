@@ -1,0 +1,268 @@
+name: E2E Android
+
+# The Maestro flows (e2e/flows/) on an Android emulator, against
+# express-boilerplate's main with Postgres, Redis and Mailpit. The job builds
+# the e2e variant's release APK, boots an API 35 emulator and runs
+# `node scripts/e2e-run.mjs android`. On a failure it uploads Maestro's
+# output, express's log and the emulator's logcat as the `e2e-android`
+# artifact.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# PR runs are grouped per PR, and a newer push cancels the older run. Push
+# runs are grouped per commit, as ci.yml groups them.
+concurrency:
+  group: e2e-android-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # Both are inlined into the JavaScript bundle when Gradle builds it, so
+      # they are set for the whole job. 10.0.2.2 is the emulator's address for
+      # the host's loopback, where express listens on 4040. No PostHog key is
+      # set, so analytics and exception reports stay inert.
+      APP_VARIANT: e2e
+      EXPO_PUBLIC_API_URL: http://10.0.2.2:4040
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      # The udev rule from android-emulator-runner's README.
+      - name: Enable KVM
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # This repo in app/ and express in express/, side by side, as react's
+      # nightly e2e workflow lays them out.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: app
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: mahaverick/express-boilerplate
+          ref: main
+          path: express
+          persist-credentials: false
+      - name: Record express's commit
+        working-directory: express
+        run: |
+          echo "express-boilerplate main under test: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      # setup-vp installs Vite+, Node and the pnpm that packageManager names;
+      # both repos pin the same pnpm.
+      - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+        with:
+          working-directory: app
+          node-version-file: .node-version
+          cache: true
+          run-install: false
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: '0'
+          VP_GIT_HOOKS: '0'
+      - working-directory: express
+        run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: '0'
+          VP_GIT_HOOKS: '0'
+      # Written here, never from a secret: every value is local and throwaway.
+      # RATE_LIMIT_SCALE gives headroom to the per-IP budgets that every
+      # request from this one runner shares. WEB_URL only has to be https,
+      # because the runner turns each mailed link into the app's scheme. The
+      # 1-second cooldown lets switch-workspace sign one address in twice.
+      - name: Write express's .env
+        working-directory: express
+        run: |
+          jwt=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")
+          session=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")
+          cat > .env <<EOF
+          COMPOSE_PROJECT_NAME=e2e
+          APP_ENV=local
+          NODE_ENV=development
+          APP_PORT=4040
+          APP_URL=http://localhost:4040
+          WEB_URL=https://e2e.example.test
+          DATABASE_URL=postgres://boilerplate:boilerplate@localhost:5433/boilerplate
+          REDIS_URL=redis://localhost:6380
+          SMTP_HOST=127.0.0.1
+          SMTP_PORT=1025
+          JWT_ACCESS_SECRET=$jwt
+          SESSION_SECRET=$session
+          WORKER_ENABLED=true
+          RATE_LIMIT_SCALE=10
+          SIGN_IN_LINK_MAIL_COOLDOWN=1s
+          EOF
+      - name: Start Postgres, Redis and Mailpit
+        working-directory: express
+        run: docker compose up -d --wait postgres redis mailpit
+      # The runner cannot resolve its apt mirrors, and these images are on the machine already.
+      # The maintenance helper runs psql and redis-cli from the stack's own
+      # images, on the host network, so the URLs in express's .env work as
+      # they are; -i lets psql read the SQL from stdin.
+      - name: Point the maintenance helper at the stack's psql and redis-cli
+        working-directory: express
+        run: |
+          pg=$(docker inspect -f '{{.Image}}' "$(docker compose ps -q postgres)")
+          redis=$(docker inspect -f '{{.Image}}' "$(docker compose ps -q redis)")
+          if [ -z "$pg" ] || [ -z "$redis" ]; then
+            echo "::error::could not read the postgres and redis image IDs (postgres '$pg', redis '$redis')"
+            exit 1
+          fi
+          {
+            echo "E2E_PSQL=docker run --rm -i --network host $pg psql"
+            echo "E2E_REDIS_CLI=docker run --rm --network host $redis redis-cli"
+          } >> "$GITHUB_ENV"
+      # The same command and pid file as scripts/e2e-api-restart.sh, which the
+      # forced-update flow runs. /health/ready answers once Postgres and Redis
+      # do, not only the process.
+      - name: Build, migrate and start express
+        working-directory: express
+        run: |
+          pnpm run build
+          node dist/database/migrate.js
+          nohup node dist/index.js > api.log 2>&1 < /dev/null &
+          echo $! > api.pid
+          for _ in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:4040/health/ready && exit 0
+            sleep 1
+          done
+          cat api.log
+          exit 1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      # The template signs a release build with the debug key, which suits a
+      # build that never leaves CI. Only the emulator's ABI is built. The
+      # Gradle distribution and some build dependencies download from GitHub
+      # release assets, which can answer 504, so the wrapper's timeout is
+      # raised from 10 to 60 seconds and a Gradle command that fails on a
+      # network error is tried up to 5 times. A retry reuses whatever the
+      # earlier attempt downloaded; any other failure stops the step at once.
+      - name: Build the e2e APK
+        # bash with pipefail, so a Gradle failure is not hidden behind tee.
+        shell: bash
+        run: |
+          pnpm exec expo prebuild --platform android --no-install
+          cd android
+          sed -i 's/^networkTimeout=.*/networkTimeout=60000/' gradle/wrapper/gradle-wrapper.properties
+          retry() {
+            log="$RUNNER_TEMP/gradle-attempt.log"
+            for attempt in 1 2 3 4 5; do
+              "$@" 2>&1 | tee "$log" && return 0
+              if ! grep -qE 'response code: 50[234]|status code 50[234]|Read timed out|[Cc]onnect timed out|SocketTimeoutException|Could not GET|Could not HEAD|Could not download|Connection reset' "$log"; then
+                echo "::error::'$*' failed without a network error, so it is not retried"
+                return 1
+              fi
+              echo "::warning::attempt $attempt of '$*' failed on a network error"
+              sleep $((attempt * 15))
+            done
+            return 1
+          }
+          retry ./gradlew --version
+          retry ./gradlew assembleRelease -PreactNativeArchitectures=x86_64
+      # The zip is cached by version and pinned hash, so a run with a warm
+      # cache downloads nothing. On a miss, gh downloads the asset through the
+      # API, which serves it when the github.com release download path
+      # answers 504. The hash is checked on every run, cached or not, before
+      # the zip is unzipped.
+      - name: Read the pinned Maestro hash
+        id: maestro-pin
+        run: |
+          echo "sha256=$(awk '$1 !~ /^#/ && $2 == "maestro.zip" { print $1 }' scripts/maestro.sha256)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/maestro-zip
+          key: maestro-2.11.0-${{ steps.maestro-pin.outputs.sha256 }}
+      - name: Install Maestro
+        working-directory: ${{ runner.temp }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WANT: ${{ steps.maestro-pin.outputs.sha256 }}
+        run: |
+          mkdir -p maestro-zip
+          if [ ! -f maestro-zip/maestro.zip ]; then
+            for attempt in 1 2 3 4 5; do
+              gh release download cli-2.11.0 -R mobile-dev-inc/Maestro -p maestro.zip -D maestro-zip --clobber && break
+              if [ "$attempt" = 5 ]; then exit 1; fi
+              sleep $((attempt * 10))
+            done
+          fi
+          got=$(sha256sum maestro-zip/maestro.zip | cut -d' ' -f1)
+          if [ -z "$WANT" ] || [ "$got" != "$WANT" ]; then
+            echo "::error::maestro.zip hash $got does not match scripts/maestro.sha256 ($WANT)"
+            rm -f maestro-zip/maestro.zip
+            exit 1
+          fi
+          unzip -q maestro-zip/maestro.zip
+          echo "$RUNNER_TEMP/maestro/bin" >> "$GITHUB_PATH"
+      # The action runs each script line in its own shell and stops at the
+      # first line that fails.
+      # - The first line runs scripts/e2e-android-ready.sh: bounded waits for
+      #   the boot, the package manager, a default network and the image's
+      #   SDK setup app, with the system's error dialogs off, then 30 seconds
+      #   to settle and a last check for a default network.
+      # - The second installs the APK, starts Maestro's driver once
+      #   (`maestro hierarchy`), then runs the flows. The runner exits 75 only
+      #   when the failed flow's own Maestro run shows a dropped adb
+      #   connection or a driver that did not start (scripts/e2e-run.mjs,
+      #   `TRANSPORT_EXIT_CODE`). On 75 alone, the flows run once more with a
+      #   fresh run id, the first output moves to maestro-output-1/, and a
+      #   warning names the flow and the reason. Any other failure is final.
+      #   The logcat is captured on the same line, before the emulator shuts
+      #   down.
+      # The step's timeout turns a hang into a failure, so the upload and the
+      # stop step still run. MAESTRO_DRIVER_STARTUP_TIMEOUT gives Maestro's
+      # driver 3 minutes to start on the software-rendered emulator.
+      - name: Run the Maestro flows
+        timeout-minutes: 35
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          E2E_API_URL: http://127.0.0.1:4040
+          E2E_MAILPIT_URL: http://127.0.0.1:8025
+          DATABASE_URL: postgres://boilerplate:boilerplate@localhost:5433/boilerplate
+          REDIS_URL: redis://localhost:6380
+          E2E_API_DIR: ${{ github.workspace }}/express
+          E2E_API_RESTART_CMD: ${{ github.workspace }}/app/scripts/e2e-api-restart.sh
+          E2E_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '180000'
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          ram-size: 4096M
+          disable-animations: true
+          working-directory: app
+          script: |
+            bash scripts/e2e-android-ready.sh
+            adb install -r android/app/build/outputs/apk/release/app-release.apk && { maestro hierarchy > /dev/null 2>&1 || true; } && node scripts/e2e-run.mjs android; status=$?; if [ "$status" = 75 ]; then echo "::warning::rerunning the flows once after a transport failure in $(cat maestro-output/transport-failure.txt)"; mv maestro-output maestro-output-1; E2E_RUN_ID="$E2E_RUN_ID-2" node scripts/e2e-run.mjs android; status=$?; fi; adb logcat -d > "$RUNNER_TEMP/logcat.txt"; exit $status
+      # On a failure, a cancellation or a timeout, and after a transport
+      # rerun even when the rerun passed.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure() || cancelled() || hashFiles('app/maestro-output-1/**') != ''
+        with:
+          name: e2e-android
+          path: |
+            app/maestro-output/
+            app/maestro-output-1/
+            express/api.log
+            ${{ runner.temp }}/logcat.txt
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Stop express and the stack
+        if: always()
+        working-directory: express
+        run: |
+          if [ -f api.pid ]; then kill "$(cat api.pid)" || true; fi
+          docker compose down -v || true

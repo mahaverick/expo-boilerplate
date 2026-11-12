@@ -119,6 +119,7 @@ export function WorkspaceSwitcher({ currentSlug, inPlace = false }: WorkspaceSwi
   return (
     <>
       <Pressable
+        testID="workspace-switcher"
         accessibilityRole="button"
         accessibilityLabel={label}
         onPress={() => {

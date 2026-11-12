@@ -1,0 +1,7 @@
+# Starts signed out and asks for a sign-in link for ${EMAIL}.
+appId: ${APP_ID}
+---
+- clearKeychain
+- launchApp:
+    clearState: true
+- runFlow: common/request-link.yaml

@@ -1,0 +1,12 @@
+# Opens the sign-in link, then the invitation link; the app accepts it and opens the owner's workspace.
+appId: ${APP_ID}
+---
+- openLink: ${LINK}
+- extendedWaitUntil:
+    visible: 'Name your workspace. You can invite your team next.'
+    timeout: 30000
+- openLink: ${INVITE_LINK}
+- extendedWaitUntil:
+    notVisible: 'Name your workspace. You can invite your team next.'
+    timeout: 30000
+- runFlow: common/workspace-shown.yaml

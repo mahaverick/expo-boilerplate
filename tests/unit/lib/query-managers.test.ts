@@ -7,6 +7,8 @@ import { AppState } from 'react-native'
 import { installQueryManagers } from '@/lib/query-managers'
 import { afterEach, beforeEach, describe, expect, it } from '@/tests/support/runner'
 
+jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }))
+
 /** The listener the module gave NetInfo, once installed. */
 type NetListener = (state: NetInfoState) => void
 
@@ -44,6 +46,7 @@ afterEach(() => {
   jest.restoreAllMocks()
   removeApp.mockClear()
   removeNet.mockClear()
+  jest.mocked(NetInfo.configure).mockClear()
   onlineManager.setOnline(true)
 })
 
@@ -94,5 +97,49 @@ describe('installQueryManagers', () => {
   it('is idempotent: a second call returns the same cleanup', () => {
     cleanup = installQueryManagers()
     expect(installQueryManagers()).toBe(cleanup)
+  })
+
+  it("judges reachability by express's /health on both platforms, not Google", () => {
+    cleanup = installQueryManagers()
+    expect(NetInfo.configure).toHaveBeenCalledTimes(1)
+    const config = jest.mocked(NetInfo.configure).mock.calls[0]?.[0]
+    expect(config).toMatchObject({
+      reachabilityUrl: 'https://api.example.test/health',
+      useNativeReachability: false,
+      reachabilityMethod: 'HEAD',
+      reachabilityHeaders: { 'x-client': 'native', 'Cache-Control': 'no-cache' },
+    })
+  })
+
+  it('leaves NetInfo on its defaults when the build names no API origin', () => {
+    const saved = process.env.EXPO_PUBLIC_API_URL
+    delete process.env.EXPO_PUBLIC_API_URL
+    try {
+      jest.isolateModules(() => {
+        const netInfo = jest.requireActual<{ default: typeof NetInfo }>(
+          '@react-native-community/netinfo'
+        ).default
+        const managers =
+          jest.requireActual<typeof import('@/lib/query-managers')>('@/lib/query-managers')
+        cleanup = managers.installQueryManagers()
+        expect(netInfo.configure).not.toHaveBeenCalled()
+      })
+    } finally {
+      process.env.EXPO_PUBLIC_API_URL = saved
+    }
+  })
+
+  it("counts any HTTP answer as reachable, a proxy's 5xx included", async () => {
+    cleanup = installQueryManagers()
+    const test = jest.mocked(NetInfo.configure).mock.calls[0]?.[0].reachabilityTest
+    for (const status of [204, 200, 503]) {
+      await expect(test?.({ status } as Response)).resolves.toBe(true)
+    }
+  })
+
+  it('configures NetInfo once when installed twice', () => {
+    cleanup = installQueryManagers()
+    installQueryManagers()
+    expect(NetInfo.configure).toHaveBeenCalledTimes(1)
   })
 })

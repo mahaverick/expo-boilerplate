@@ -301,16 +301,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ['expo-build-properties', { android: { usesCleartextTraffic: localNetwork } }],
     ],
     ...updates,
-    ...((host || storeId || policyUrl || projectId || certificateSha256 || line) && {
-      extra: {
-        ...(host && { webUrl: `https://${host}` }),
-        ...(storeId && { iosAppStoreId: storeId }),
-        ...(policyUrl && { privacyPolicyUrl: policyUrl }),
-        ...(projectId && { eas: { projectId } }),
-        ...(certificateSha256 && { updatesCertificate: certificateSha256 }),
-        ...(line && { releaseLine: line }),
-      },
-    }),
+    extra: {
+      appVariant: variant,
+      ...(host && { webUrl: `https://${host}` }),
+      ...(storeId && { iosAppStoreId: storeId }),
+      ...(policyUrl && { privacyPolicyUrl: policyUrl }),
+      ...(projectId && { eas: { projectId } }),
+      ...(certificateSha256 && { updatesCertificate: certificateSha256 }),
+      ...(line && { releaseLine: line }),
+    },
     experiments: {
       typedRoutes: true,
       reactCompiler: true,

@@ -1,0 +1,7 @@
+# SHA-256 of the Maestro CLI zip that the e2e workflows install, checked
+# before it is unzipped. The hash is over the release asset
+# https://github.com/mobile-dev-inc/Maestro/releases/download/cli-2.11.0/maestro.zip
+# and matches the release's checksums_sha256.txt. A Maestro version bump in a
+# workflow MUST update this hash and the URL in the same change.
+# Maestro CLI 2.11.0
+5384593cb4e7a106489e75a821d157dd43f4e438df6bc308b72e82c685e1283a  maestro.zip

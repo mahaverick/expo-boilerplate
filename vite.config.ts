@@ -2,7 +2,7 @@ import { defineConfig } from 'vite-plus'
 
 /**
  * Type-aware rules off for the root configs, the pre-paint scripts and the `.mjs`
- * scripts, as typescript-eslint's `disableTypeChecked` turned them off in ESLint.
+ * scripts (under scripts/ and e2e/), as typescript-eslint's `disableTypeChecked` turned them off in ESLint.
  */
 const typeAwareRulesOff = {
   'typescript/await-thenable': 'off',
@@ -277,7 +277,7 @@ export default defineConfig({
         rules: { 'typescript/no-require-imports': 'off' },
       },
       {
-        files: ['scripts/**/*.mjs', 'scripts/**/*.d.mts'],
+        files: ['scripts/**/*.mjs', 'scripts/**/*.d.mts', 'e2e/**/*.mjs'],
         rules: typeAwareRulesOff,
         env: { node: true },
       },

@@ -1,0 +1,19 @@
+# Asks for a sign-in link for ${EMAIL} on the login screen. The runner then reads the link from Mailpit.
+appId: ${APP_ID}
+---
+- extendedWaitUntil:
+    visible: 'Sign in'
+    timeout: 30000
+- tapOn:
+    id: 'sign-in-email'
+- inputText: ${EMAIL}
+# On iOS the button sits above the keyboard, and Maestro's hideKeyboard can time out while the simulator's keyboard queue stalls.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - hideKeyboard
+- tapOn: 'Email me a link'
+- extendedWaitUntil:
+    visible: 'Check your inbox'
+    timeout: 30000

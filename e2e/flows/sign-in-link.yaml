@@ -1,0 +1,8 @@
+# Opens the sign-in link; a new account lands on Welcome.
+appId: ${APP_ID}
+---
+- openLink: ${LINK}
+- extendedWaitUntil:
+    visible: 'Name your workspace. You can invite your team next.'
+    timeout: 30000
+- assertVisible: 'Create your workspace'

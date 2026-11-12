@@ -72,6 +72,17 @@ describe('app.config', () => {
     expect(config.name).toBe(name)
   })
 
+  it.each(['development', 'e2e', 'preview', 'production'])(
+    'puts the %s variant in extra.appVariant',
+    (variant) => {
+      expect(configFor({ APP_VARIANT: variant }).extra?.appVariant).toBe(variant)
+    }
+  )
+
+  it('sets extra.appVariant to production with no variant', () => {
+    expect(configFor({}).extra?.appVariant).toBe('production')
+  })
+
   it('builds production with every variable unset: no local networking and no cleartext', () => {
     const config = configFor({})
     expect(config.ios?.bundleIdentifier).toBe('com.mahaverick.expoboilerplate')

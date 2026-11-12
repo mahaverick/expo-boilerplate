@@ -191,7 +191,8 @@ event. These expo-owned modules hold the session:
 - `src/lib/app-links.ts`: `TOKEN_PATHS`, the paths whose query holds a one-time
   token.
 - `src/app/+native-intent.tsx`: Expo Router's hook for an incoming URL. It
-  strips the query and fragment from every non-https link.
+  strips the query and fragment from every non-https link, in every variant
+  but `e2e`, which keeps the query for the Maestro flows.
 - `plugins/with-backup-rules.js`: the config plugin that writes Android's two
   backup rule files and points the manifest at them.
 
@@ -294,7 +295,9 @@ src/app/
 ### The modules
 
 - **The query managers.** `src/lib/query-managers.ts` ties TanStack Query's
-  focus to `AppState` and its online state to NetInfo.
+  focus to `AppState` and its online state to NetInfo, whose internet check
+  probes express's `/health` (`apiOriginUrl` in `src/http/client.ts`) on both
+  platforms.
   `src/hooks/use-is-online.ts` reads the online state for the offline banner.
 - **Maintenance.** `src/http/maintenance.ts` holds the response interceptor
   (installed on `apiClient` in `src/http/client.ts`), the recovery after
@@ -592,6 +595,47 @@ takes the same path from `release.yml`, at 10% of installs.
    TestFlight and the Play internal track. EAS Build's hooks upload the
    native maps. A person promotes each build.
 
+## End-to-end tests
+
+The Maestro flows drive the `e2e` build on an Android emulator or an iOS
+simulator against a local express. The rules and their reasons are in
+[CLAUDE.md](CLAUDE.md#end-to-end-tests), and how to run them is in
+[README.md](README.md#end-to-end-tests).
+
+**The files.**
+
+- `e2e/flows/`: one `<flow>.yaml` per flow, a `<flow>-link.yaml` for each flow
+  that opens a mailed link, and `common/` for the steps they share (ask for a
+  link, check a workspace screen, choose a workspace).
+- `e2e/helpers/`: Node modules with no npm dependencies. `api.mjs` signs in,
+  creates workspaces and invites through express's native API; `mailpit.mjs`
+  reads the newest matching link from Mailpit; `links.mjs` turns an https
+  link into the app's scheme; `maintenance.mjs` sets the mode in Postgres
+  and publishes it on Redis.
+- `scripts/e2e-run.mjs`: the runner. `planFlows(platform)` returns the plan,
+  and `runPlan` runs it.
+- `scripts/e2e-api-restart.sh`: restarts express by the pid in its
+  `api.pid`, for the forced-update flow.
+- `scripts/e2e-android-ready.sh`: bounded waits for the emulator's boot, its
+  network and its setup app before the flows.
+- `scripts/maestro.sha256`: the pinned hash of the Maestro 2.11.0 zip.
+- `.github/workflows/e2e-android.yml` and `.github/workflows/e2e-ios-nightly.yml`.
+
+**How the runner orders the flows.** Each plan entry has a `before`, an
+ordered list of steps, and a `cleanup`. A step is either a Maestro file or a
+runner action, such as a mail snapshot, a link read or a maintenance change,
+whose result becomes variables for the next file. So one flow can ask for a
+link in the app, read it from Mailpit, then open it in a second Maestro run.
+The order is sign-in, cold-start, first-workspace, switch-workspace,
+accept-invitation, maintenance, forced-update. cold-start clears nothing and
+reuses sign-in's session, so it runs second. Maintenance and forced-update
+each change express for everyone, and each has a cleanup that runs even
+after a failed step: maintenance sets the mode back to `off`, and
+forced-update restarts express without the raised minimum. forced-update
+runs last, so no other flow meets a restarting express. The runner stops at
+the first failed flow and marks the rest `not run`; it exits 0, 1, or 75 for
+a lost device connection, which alone makes a workflow rerun the flows once.
+
 ## The theme and the splash screen
 
 - **Tokens.** `tailwind.config.ts` holds react's STYLESEED colours in sRGB hex
@@ -642,8 +686,11 @@ Expo's answers to what the shared files assume are in
   screens, the UI kit, the accessibility harness (`tests/unit/a11y/`), the app
   config and backup plugin, `eas.json`, the `.gitignore` certificate rule, the
   bundle-size check, the release route, the native source-map upload, the
-  STYLESEED table, the contrast of the tokens, the lint design lock and the
-  sync check.
+  STYLESEED table, the contrast of the tokens, the lint design lock, the
+  sync check, the e2e helpers (`tests/unit/e2e/`) and the e2e runner
+  (`tests/unit/scripts/e2e-run.test.ts`).
+- `e2e/` holds the Maestro flows, which need a device and a local express,
+  so `pnpm gate` does not run them ([End-to-end tests](#end-to-end-tests)).
 - `tests/setup.ts` unrefs TanStack Query's timers so a shared test needs no
   teardown.
 - `jest.config.ts` maps `@/` to `src/`, `@/tests/` to `tests/`, and `.css`

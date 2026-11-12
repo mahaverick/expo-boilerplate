@@ -26,6 +26,9 @@ export { unwrap } from '@/http/create-api-client'
  */
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? ''
 
+/** Whether this build names an API origin. False when `EXPO_PUBLIC_API_URL` is unset. */
+export const hasApiOrigin = API_URL !== ''
+
 /**
  * The absolute URL of an API path, for the one caller that cannot go through
  * axios (the notification stream).
@@ -34,6 +37,16 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL ?? ''
  */
 export function apiUrl(path: string): string {
   return `${API_URL}${API_PREFIX}${path}`
+}
+
+/**
+ * The absolute URL of a path on the API's origin, outside the API prefix,
+ * such as express's `/health`.
+ * @param path - The path from the origin's root, with a leading slash.
+ * @returns The origin and the path.
+ */
+export function apiOriginUrl(path: string): string {
+  return `${API_URL}${path}`
 }
 
 /**
@@ -54,13 +67,19 @@ function isApiRequest(client: AxiosInstance, config: InternalAxiosRequestConfig)
 /**
  * Names this client to the API on each of its requests: `X-Client: native`,
  * so express answers in the native shape, and `X-Device-Name`, the device's
- * model, which the session list shows.
+ * model, which the session list shows. It also sends `Cache-Control:
+ * no-cache`, so every API answer comes from the network. The app acts on the
+ * `Maintenance-Mode` header of every answer, and on iOS `NSURLCache` would
+ * replay a cached answer (client settings are cacheable for 5 minutes) with
+ * the header it had during maintenance. That puts the app back into `full`
+ * each time maintenance ends, and every recovery refetches it again, in a loop.
  */
 function addClientHeaders(
   client: AxiosInstance,
   config: InternalAxiosRequestConfig
 ): InternalAxiosRequestConfig {
   if (!isApiRequest(client, config)) return config
+  config.headers.set('Cache-Control', 'no-cache')
   config.headers.set('X-Client', 'native')
   if (modelName) config.headers.set('X-Device-Name', modelName)
   return config

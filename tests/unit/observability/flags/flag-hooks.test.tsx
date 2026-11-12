@@ -92,9 +92,14 @@ describe('useFlagValues', () => {
   })
 
   it('returns the fallbacks while pending, then the server’s values', async () => {
+    // Held, since the clock moves on real time and a slow render would land it.
+    const deferred = Promise.withResolvers<void>()
+    gate = deferred.promise
     serveFlags({ 'GET /flags': flags({ example_beta_page: true }) })
     const { result } = await renderHook(() => useFlagValues(), { wrapper })
+    await act(() => jest.advanceTimersByTimeAsync(20))
     expect(result.current).toEqual(fallbackFlags())
+    deferred.resolve()
     await waitFor(() => {
       expect(result.current.example_beta_page).toBe(true)
     })

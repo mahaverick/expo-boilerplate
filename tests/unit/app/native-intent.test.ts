@@ -1,6 +1,22 @@
+import { jest } from '@jest/globals'
+import Constants from 'expo-constants'
 import { redirectSystemPath } from '@/app/+native-intent'
 import { isTokenBearingPath, TOKEN_PATHS } from '@/lib/app-links'
-import { describe, expect, it } from '@/tests/support/runner'
+import { beforeEach, describe, expect, it } from '@/tests/support/runner'
+
+jest.mock('expo-constants', () => ({ __esModule: true, default: { expoConfig: {} } }))
+
+/**
+ * Sets the build variant that `expo-constants` reports.
+ * @param variant - The `extra.appVariant` value, or undefined for none.
+ */
+function mockVariant(variant: string | undefined): void {
+  Constants.expoConfig = { name: 'x', slug: 'x', extra: { appVariant: variant } }
+}
+
+beforeEach(() => {
+  mockVariant('production')
+})
 
 describe('redirectSystemPath', () => {
   it.each([
@@ -20,6 +36,76 @@ describe('redirectSystemPath', () => {
   ])('drops a custom-scheme path that carries a token: %s', (path) => {
     expect(redirectSystemPath({ path, initial: true })).toBe('/')
     expect(redirectSystemPath({ path, initial: false })).toBe('/')
+  })
+
+  it('keeps the token on a custom-scheme link in the e2e build', () => {
+    mockVariant('e2e')
+    expect(
+      redirectSystemPath({ path: 'expo-boilerplate://auth/link?token=abc', initial: true })
+    ).toBe('/auth/link?token=abc')
+  })
+
+  it('keeps an e2e invitation link whole and drops its fragment', () => {
+    mockVariant('e2e')
+    expect(
+      redirectSystemPath({
+        path: 'expo-boilerplate://invitations/accept?token=t1',
+        initial: false,
+      })
+    ).toBe('/invitations/accept?token=t1')
+    expect(
+      redirectSystemPath({ path: 'expo-boilerplate:///auth/link?token=a#frag', initial: false })
+    ).toBe('/auth/link?token=a')
+    expect(redirectSystemPath({ path: 'expo-boilerplate://settings#a', initial: false })).toBe(
+      '/settings'
+    )
+  })
+
+  /** Odd-slash and percent-encoded token paths, and what the e2e build opens for each. */
+  const ODD_TOKEN_PATHS: [string, string][] = [
+    ['expo-boilerplate:///auth/link?token=x', '/auth/link?token=x'],
+    ['expo-boilerplate:/auth/link?token=x', '/auth/link?token=x'],
+    ['expo-boilerplate://auth//link?token=x', '/auth//link?token=x'],
+    ['expo-boilerplate://auth/link/?token=x', '/auth/link/?token=x'],
+    ['expo-boilerplate://auth%2Flink?token=x', '/auth%2Flink?token=x'],
+    ['expo-boilerplate://%2Fauth%2Flink?token=x', '/%2Fauth%2Flink?token=x'],
+    ['expo-boilerplate://auth/%6Cink?token=x', '/auth/%6Cink?token=x'],
+    ['expo-boilerplate://AUTH/Link?token=x#frag', '/AUTH/Link?token=x'],
+  ]
+
+  it.each(ODD_TOKEN_PATHS)(
+    'passes an odd token path through unchanged in the e2e build: %s',
+    (path, opened) => {
+      mockVariant('e2e')
+      expect(redirectSystemPath({ path, initial: true })).toBe(opened)
+      expect(redirectSystemPath({ path, initial: false })).toBe(opened)
+    }
+  )
+
+  it.each(
+    ['development', 'preview', 'production', undefined].flatMap((variant) =>
+      ODD_TOKEN_PATHS.map(([path]) => [variant, path] as const)
+    )
+  )('drops an odd token path for %s: %s', (variant, path) => {
+    mockVariant(variant)
+    expect(redirectSystemPath({ path, initial: true })).toBe('/')
+  })
+
+  it.each(['development', 'preview', 'production', undefined])(
+    'strips the token for %s',
+    (variant) => {
+      mockVariant(variant)
+      expect(
+        redirectSystemPath({ path: 'expo-boilerplate://auth/link?token=abc', initial: true })
+      ).toBe('/')
+    }
+  )
+
+  it('strips the token when the config has no extra', () => {
+    Constants.expoConfig = null
+    expect(
+      redirectSystemPath({ path: 'expo-boilerplate://auth/link?token=abc', initial: true })
+    ).toBe('/')
   })
 
   it('keeps an https app link', () => {

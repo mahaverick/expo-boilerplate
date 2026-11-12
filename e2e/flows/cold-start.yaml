@@ -1,0 +1,9 @@
+# Restarts the app without clearing it; the session from sign-in opens Home.
+appId: ${APP_ID}
+---
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: 'You don’t belong to a workspace yet.'
+    timeout: 30000
+- assertVisible: 'Welcome back, .+'

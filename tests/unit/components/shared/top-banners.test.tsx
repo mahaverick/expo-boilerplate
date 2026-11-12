@@ -20,7 +20,9 @@ describe('TopBanners', () => {
     onlineManager.setOnline(false)
     useMaintenanceModeStore.setState({ mode: 'read_only', message: 'Back at noon.' })
     const view = await renderWithProviders(<TopBanners />)
-    const offline = screen.getByText('You’re offline. The app refreshes when you reconnect.')
+    const offline = screen.getByText(
+      'You’re offline, or the app can’t reach its server. It refreshes when the connection returns.'
+    )
     const readOnly = screen.getByText(/Maintenance is in progress/)
     const text = JSON.stringify(view.toJSON())
     expect(text.indexOf('offline')).toBeLessThan(text.indexOf('Maintenance is in progress'))
