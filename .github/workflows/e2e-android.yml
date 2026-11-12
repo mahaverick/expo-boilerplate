@@ -9,9 +9,7 @@ name: E2E Android
 on:
   pull_request:
   push:
-    # feat/e2e runs the job while plan 3e2 is in progress, since that branch
-    # has no pull request; remove it before the branch merges.
-    branches: [main, feat/e2e]
+    branches: [main]
 
 # PR runs are grouped per PR, and a newer push cancels the older run. Push
 # runs are grouped per commit, as ci.yml groups them.
@@ -145,11 +143,6 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-        # The action's default writes the cache only on the default branch. A
-        # push to any branch writes it here, so a branch's later runs skip
-        # the downloads; pull requests only read it.
-        with:
-          cache-read-only: ${{ github.event_name == 'pull_request' }}
       # The template signs a release build with the debug key, which suits a
       # build that never leaves CI. Only the emulator's ABI is built. The
       # Gradle distribution and some build dependencies download from GitHub
