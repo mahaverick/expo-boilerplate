@@ -150,7 +150,9 @@ Each tool below was checked on 6 November 2026 against Expo SDK 58
 (`expo` 58.0.23, React Native 0.88.1), pnpm 12.16.1 and Node 26.13.0. On
 11 November 2026 `npx expo install --fix` moved `expo` to 58.0.24 and eight
 companion packages to their matching patches; `expo-doctor` passed 20 of 20
-checks and the gate passed on it.
+checks and the gate passed on it. On 13 November 2026 it moved `expo` to
+58.0.25 and `expo-dev-client` to 58.0.20, and the online `expo-doctor` passed
+20 of 20.
 
 - **`vp check` runs as the siblings run it.** `pnpm check` is `vp check`
   (Oxfmt, then Oxlint with type-aware rules), then `eslint . --max-warnings 0`.
