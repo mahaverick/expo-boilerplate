@@ -29,6 +29,11 @@ afterEach(() => {
 })
 
 describe('CreateWorkspaceForm', () => {
+  it('turns autocorrect off on the name, so iOS never rewrites a name such as "Acme-1"', async () => {
+    await renderScreen(<CreateWorkspaceForm onCreated={() => {}} />)
+    expect(screen.getByLabelText('Name').props.autoCorrect).toBe(false)
+  })
+
   it('shows the fields with their hints', async () => {
     await renderScreen(<CreateWorkspaceForm onCreated={() => {}} />)
     expect(screen.getByText('Name')).toBeTruthy()

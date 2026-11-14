@@ -22,6 +22,8 @@ appId: ${APP_ID}
       platform: iOS
     commands:
       - tapOn: 'Name your workspace. You can invite your team next.'
+# The name must hold every character typed; a lost one fails here, not on the overview.
+- assertVisible: ${WORKSPACE}
 - scrollUntilVisible:
     element:
       text: 'Create workspace'

@@ -449,6 +449,12 @@ The files are listed in [ARCHITECTURE.md](ARCHITECTURE.md#workspaces-and-the-she
   Welcome leaves with `router.dismissTo`, since a replace to a tab stacks a
   second `(tabs)`, and the Workspace tab pushes `/welcome`, since a replace
   from a tab removes `(tabs)`.
+- **The new workspace's name field turns autocorrect off.** iOS applies a
+  pending correction when a field loses focus, and a name is a proper noun
+  that the dictionary does not know. On 13 November 2026 the iOS e2e run
+  43466202837 created "E2E 43466202837" from a typed "E2E 43466202837-1"; the
+  keyboard log shows all 17 characters typed and a correction list built
+  after the last one. The web address field already turns it off.
 - **A new workspace opens on the Workspace tab.** Welcome remembers the new
   workspace's web address, then dismisses to `/workspace`. Landing on
   `/tenants/{slug}` would leave the person outside the tabs.
