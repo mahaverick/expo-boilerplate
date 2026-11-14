@@ -51,7 +51,12 @@ jobs:
       # because expo-doctor rejects a script named like a binary.
       - run: pnpm knip
       - run: pnpm typecheck
+      # Offline, the version check reads the installed expo's
+      # bundledNativeModules.json, so an Expo patch published upstream cannot
+      # turn this job red; expo-sdk-drift.yml reports new patches instead.
       - run: pnpm expo:doctor
+        env:
+          EXPO_OFFLINE: '1'
       # A Hermes bundle for iOS and one for Android: proves Metro resolves
       # every import from pnpm's isolated node_modules.
       - run: pnpm export

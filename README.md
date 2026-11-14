@@ -246,7 +246,7 @@ update screen offers a button to the store.
 | `pnpm lint:docs`     | History phrasing and broken links in markdown and config comments. CI runs it                                                                             |
 | `pnpm sync:check`    | `shared-core.json` and every expo row in it are react's copies, byte for byte. Without a react checkout it warns and passes, and under `CI=true` it fails |
 | `pnpm styleseed`     | Prints the token table generated from react's `globals.css`; `--write` rewrites `STYLESEED.md`                                                            |
-| `pnpm expo:doctor`   | `expo-doctor`: the SDK's version and configuration checks                                                                                                 |
+| `pnpm expo:doctor`   | `expo-doctor`: the SDK's version and configuration checks, online. The gate and CI run it with `EXPO_OFFLINE=1`                                           |
 | `pnpm export`        | A Hermes bundle for iOS and one for Android, into `dist/`                                                                                                 |
 | `pnpm bundle:size`   | Fails when either Hermes bundle in `dist/` is over its budget, 7,500,000 bytes each (`scripts/check-bundle-size.mjs`). Run it after `pnpm export`         |
 | `pnpm gate`          | Every check above in order: check, typecheck, lint:docs, sync:check, knip, expo:doctor, test:coverage, export, bundle:size                                |

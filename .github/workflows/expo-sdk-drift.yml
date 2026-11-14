@@ -1,0 +1,35 @@
+name: Expo SDK drift
+
+# Runs expo-doctor online, against the versions Expo lists for the installed
+# SDK today. CI and the gate run it offline, against the installed expo's
+# bundledNativeModules.json, so a patch Expo publishes cannot turn a pull
+# request or main red. This job turns red instead and names the packages to
+# move with `pnpm exec expo install --fix`. GitHub mails a failed scheduled
+# run to the person who last changed the schedule.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # setup-vp installs Vite+, Node and the pnpm that packageManager names.
+      - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+        with:
+          node-version-file: .node-version
+          cache: true
+          run-install: false
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: '0'
+          VP_GIT_HOOKS: '0'
+      - run: pnpm expo:doctor
