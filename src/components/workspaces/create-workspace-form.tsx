@@ -154,6 +154,7 @@ export function CreateWorkspaceForm({ onCreated }: CreateWorkspaceFormProps) {
             onBlur={field.handleBlur}
             error={firstMessage(field.state.meta.errors) ?? serverFields.name}
             autoCapitalize="words"
+            autoCorrect={false}
             returnKeyType="next"
           />
         )}
