@@ -91,7 +91,7 @@ function sharedExpoRows() {
 }
 
 module.exports = tseslint.config(
-  { ignores: ['dist', 'coverage', '.expo'] },
+  { ignores: ['dist', 'coverage', '.expo', '.worktrees'] },
   { files: ['**/*.{ts,tsx,mts,cts}'], languageOptions: { parser: tseslint.parser } },
   { linterOptions: { reportUnusedDisableDirectives: 'error' } },
   {

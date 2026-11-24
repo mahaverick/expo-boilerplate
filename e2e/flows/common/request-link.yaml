@@ -4,9 +4,19 @@ appId: ${APP_ID}
 - extendedWaitUntil:
     visible: 'Sign in'
     timeout: 30000
-- tapOn:
-    id: 'sign-in-email'
-- inputText: ${EMAIL}
+# The iOS simulator's keyboard queue can drop keystrokes, leaving only the first
+# letter in the field (nightly 45321527448, 2026-11-24). Retype until the field ends
+# with the address's domain.
+- retry:
+    maxRetries: 2
+    commands:
+      - tapOn:
+          id: 'sign-in-email'
+      - eraseText: 100
+      - inputText: ${EMAIL}
+      - assertVisible:
+          id: 'sign-in-email'
+          text: '.*@example\.test'
 # On iOS the button sits above the keyboard, and Maestro's hideKeyboard can time out while the simulator's keyboard queue stalls.
 - runFlow:
     when:

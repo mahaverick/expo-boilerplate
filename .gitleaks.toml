@@ -2,10 +2,11 @@
 # vector file: it holds deliberately secret-shaped inputs (a fake key, tokens,
 # an email) that the error scrubber must redact, and nothing else. It is the
 # singular [allowlist] table because the gitleaks the CI action runs (8.24.x)
-# ignores the newer [[allowlists]] array form.
+# ignores the newer [[allowlists]] array form. The path also matches the copy in a
+# local worktree under .worktrees/, so `gitleaks dir .` from the checkout passes.
 [extend]
 useDefault = true
 
 [allowlist]
 description = "secret-shaped inputs the error scrubber's vectors must redact"
-paths = ['''^tests/fixtures/error-scrub-vectors\.json$''']
+paths = ['''^(\.worktrees/[^/]+/)?tests/fixtures/error-scrub-vectors\.json$''']
