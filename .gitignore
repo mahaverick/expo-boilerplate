@@ -55,3 +55,6 @@ docs/superpowers/plans/
 
 # Maestro screenshots, logs and commands from an e2e run
 maestro-output*/
+
+# Local worktrees
+.worktrees/
