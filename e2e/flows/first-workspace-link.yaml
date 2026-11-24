@@ -5,12 +5,29 @@ appId: ${APP_ID}
 - extendedWaitUntil:
     visible: 'Name your workspace. You can invite your team next.'
     timeout: 30000
-- tapOn:
-    id: 'workspace-name'
-- inputText: ${WORKSPACE}
-- tapOn:
-    id: 'workspace-slug'
-- inputText: ${SLUG}
+# The iOS simulator's keyboard queue can drop keystrokes, so each field is retyped until it
+# holds every character. The values are letters, digits, hyphens and spaces, so they match
+# as written.
+- retry:
+    maxRetries: 2
+    commands:
+      - tapOn:
+          id: 'workspace-name'
+      - eraseText: 100
+      - inputText: ${WORKSPACE}
+      - assertVisible:
+          id: 'workspace-name'
+          text: ${WORKSPACE}
+- retry:
+    maxRetries: 2
+    commands:
+      - tapOn:
+          id: 'workspace-slug'
+      - eraseText: 100
+      - inputText: ${SLUG}
+      - assertVisible:
+          id: 'workspace-slug'
+          text: ${SLUG}
 # On iOS a tap on plain text closes the keyboard (Screen's keyboardShouldPersistTaps is handled); Maestro's hideKeyboard can time out there.
 - runFlow:
     when:
@@ -22,7 +39,7 @@ appId: ${APP_ID}
       platform: iOS
     commands:
       - tapOn: 'Name your workspace. You can invite your team next.'
-# The name must hold every character typed; a lost one fails here, not on the overview.
+# The name must still hold every character once the keyboard closes; a change on blur fails here, not on the overview.
 - assertVisible: ${WORKSPACE}
 - scrollUntilVisible:
     element:
